@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
@@ -39,6 +39,15 @@
             padding: 30px;
             border-radius: 8px;
             text-align: center;
+            position: relative;
+        }
+        .close-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            color: #aaa;
         }
         input, button, select {
             padding: 10px;
@@ -53,7 +62,7 @@
             border-radius: 4px;
         }
         button:hover { background: #1E90FF; }
-        .hidden { display: none; }
+        .hidden { display: none !important; }
         
         /* Tabs */
         .tabs { display: flex; margin-bottom: 20px; border-bottom: 2px solid #ccc; }
@@ -76,9 +85,10 @@
 </head>
 <body>
 
-<!-- Login Overlay -->
-<div id="loginOverlay" class="login-overlay">
+<!-- Login Overlay (Initially Hidden) -->
+<div id="loginOverlay" class="login-overlay hidden">
     <div class="login-box">
+        <span class="close-btn" onclick="hideLoginModal()">X</span>
         <h2>請登入</h2>
         <input type="text" id="username" placeholder="帳號">
         <input type="password" id="password" placeholder="密碼">
@@ -88,12 +98,18 @@
     </div>
 </div>
 
-<div class="container hidden" id="mainApp">
+<div class="container" id="mainApp">
     <div style="display: flex; justify-content: space-between; align-items: center;">
         <h1>資料查詢系統</h1>
         <div>
-            <span id="userInfo"></span>
-            <button onclick="logout()" style="background: #CD5C5C;">登出</button>
+            <!-- Login Button (Visible when logged out) -->
+            <button id="loginBtn" onclick="showLoginModal()">管理員登入</button>
+            
+            <!-- User Info & Logout (Visible when logged in) -->
+            <span id="userControls" class="hidden">
+                <span id="userInfo"></span>
+                <button onclick="logout()" style="background: #CD5C5C;">登出</button>
+            </span>
         </div>
     </div>
 
@@ -108,8 +124,12 @@
         <div class="toolbar">
             <input type="text" id="imgSearch" placeholder="搜尋圖片 (模糊搜尋)..." style="width: 300px;">
             <button onclick="searchImages()">搜尋</button>
-            <button onclick="document.getElementById('imgUploadInput').click()" style="background: #228B22;">+ 上傳圖片</button>
-            <input type="file" id="imgUploadInput" multiple accept="image/*" style="display: none;" onchange="handleImageUpload(this)">
+            
+            <!-- Auth Only Controls -->
+            <div id="imgAuthControls" class="hidden">
+                <button onclick="document.getElementById('imgUploadInput').click()" style="background: #228B22;">+ 上傳圖片</button>
+                <input type="file" id="imgUploadInput" multiple accept="image/*" style="display: none;" onchange="handleImageUpload(this)">
+            </div>
         </div>
         <div id="imageGrid" class="image-grid"></div>
     </div>
@@ -119,7 +139,9 @@
         <div class="toolbar">
             <input type="text" id="phoneSearch" placeholder="搜尋分機..." style="width: 300px;">
             <button onclick="searchPhones()">搜尋</button>
-            <div>
+            
+            <!-- Auth Only Controls -->
+            <div id="phoneAuthControls" class="hidden">
                 <button onclick="exportToExcel('phones')" style="background: #20B2AA;">匯出 Excel</button>
                 <button onclick="document.getElementById('phoneImport').click()" style="background: #DAA520;">匯入 Excel</button>
                 <input type="file" id="phoneImport" accept=".xlsx" style="display: none;" onchange="importExcel('phones', this)">
@@ -133,7 +155,9 @@
         <div class="toolbar">
             <input type="text" id="dispatchSearch" placeholder="搜尋調度電話..." style="width: 300px;">
             <button onclick="searchDispatch()">搜尋</button>
-            <div>
+            
+            <!-- Auth Only Controls -->
+            <div id="dispatchAuthControls" class="hidden">
                 <button onclick="exportToExcel('dispatch')" style="background: #20B2AA;">匯出 Excel</button>
                 <button onclick="document.getElementById('dispatchImport').click()" style="background: #DAA520;">匯入 Excel</button>
                 <input type="file" id="dispatchImport" accept=".xlsx" style="display: none;" onchange="importExcel('dispatch', this)">
@@ -147,8 +171,8 @@
     // ==========================================
     // CONFIGURATION
     // ==========================================
-    const SUPABASE_URL = 'YOUR_SUPABASE_URL';
-    const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY';
+    const SUPABASE_URL = 'https://uelrewmkmderacsqqkpk.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_LOi6vuzP3h-T14-43ujocQ_gjJpsToT';
     // ==========================================
 
     const supabase = (SUPABASE_URL !== 'YOUR_SUPABASE_URL') 
@@ -156,10 +180,26 @@
         : null;
 
     if (!supabase) {
-        alert('請設定 index_v2.html 中的 SUPABASE_URL 和 SUPABASE_KEY');
+        alert('請設定 index.html 中的 SUPABASE_URL 和 SUPABASE_KEY');
     }
 
     let currentUser = null;
+
+    // Initialize
+    window.addEventListener('DOMContentLoaded', () => {
+        loadInitialData();
+        updateUIState();
+    });
+
+    function showLoginModal() {
+        document.getElementById('loginOverlay').classList.remove('hidden');
+        document.getElementById('loginError').style.display = 'none';
+        document.getElementById('password').value = '';
+    }
+
+    function hideLoginModal() {
+        document.getElementById('loginOverlay').classList.add('hidden');
+    }
 
     // Login Logic
     async function handleLogin() {
@@ -186,10 +226,8 @@
 
             if (data.password === hashHex) {
                 currentUser = data;
-                document.getElementById('loginOverlay').classList.add('hidden');
-                document.getElementById('mainApp').classList.remove('hidden');
-                document.getElementById('userInfo').textContent = `你好, ${currentUser.username} (${getRoleName(currentUser.role)})`;
-                loadInitialData();
+                hideLoginModal();
+                updateUIState();
             } else {
                 document.getElementById('loginError').style.display = 'block';
             }
@@ -199,19 +237,45 @@
         }
     }
 
+    function logout() {
+        currentUser = null;
+        updateUIState();
+    }
+
     function getRoleName(role) {
         return role === 'admin' ? '管理員' : '一般用戶';
     }
 
-    function logout() {
-        location.reload();
+    function updateUIState() {
+        const isLoggedIn = !!currentUser;
+        
+        // Header Buttons
+        if (isLoggedIn) {
+            document.getElementById('loginBtn').classList.add('hidden');
+            document.getElementById('userControls').classList.remove('hidden');
+            document.getElementById('userInfo').textContent = `你好, ${currentUser.username} (${getRoleName(currentUser.role)})`;
+        } else {
+            document.getElementById('loginBtn').classList.remove('hidden');
+            document.getElementById('userControls').classList.add('hidden');
+        }
+
+        // Auth Controls (Upload/Import/Export)
+        const authControls = ['imgAuthControls', 'phoneAuthControls', 'dispatchAuthControls'];
+        authControls.forEach(id => {
+            if (isLoggedIn) document.getElementById(id).classList.remove('hidden');
+            else document.getElementById(id).classList.add('hidden');
+        });
+
+        // Re-render tables to update contenteditable and delete buttons
+        // Only if data exists (to avoid clearing tables on simple logout)
+        if (phoneData.length > 0) renderPhoneTable(phoneData);
+        if (dispatchData.length > 0) renderDispatchTable(dispatchData);
     }
 
     function switchTab(tabName) {
         document.querySelectorAll('.section').forEach(el => el.classList.add('hidden'));
         document.getElementById(tabName + 'Section').classList.remove('hidden');
         document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
-        // Find the tab that calls this and add active - simplified
         event.target.classList.add('active');
     }
 
@@ -231,7 +295,7 @@
         }
         
         const { data, error } = await dbQuery;
-        if (error) { alert('Error loading images'); return; }
+        if (error) { console.error('Error loading images', error); return; }
 
         const grid = document.getElementById('imageGrid');
         grid.innerHTML = '';
@@ -249,12 +313,15 @@
     }
 
     async function handleImageUpload(input) {
+        if (!currentUser) return;
         if (!input.files.length) return;
         
         for (const file of input.files) {
-            const fileName = `${Date.now()}_${file.name}`;
+            // Generate Safe Storage Path (ASCII only)
+            const ext = file.name.split('.').pop();
+            const safeName = `${Date.now()}_${Math.random().toString(36).substring(2, 10)}.${ext}`;
             const groupFolder = `group_${currentUser.group_id}`;
-            const filePath = `${groupFolder}/${fileName}`;
+            const filePath = `${groupFolder}/${safeName}`;
             
             // 1. Upload to Storage
             const { error: uploadError } = await supabase.storage
@@ -288,12 +355,8 @@
         const query = document.getElementById('phoneSearch').value;
         let dbQuery = supabase.from('phones').select('*').order('extension');
         
-        // Supabase doesn't support OR across multiple columns easily with ilike in one go without custom RPC or complex syntax
-        // For simplicity, we fetch all (or limit) and filter client side if dataset is small (<10000). 
-        // Given Excel files, it's likely < 5000 rows.
-        
         const { data, error } = await dbQuery;
-        if (error) { alert('Error loading phones'); return; }
+        if (error) { console.error('Error loading phones', error); return; }
         
         phoneData = data;
         const filtered = query ? data.filter(row => JSON.stringify(row).toLowerCase().includes(query.toLowerCase())) : data;
@@ -304,17 +367,20 @@
         const container = document.getElementById('phonesTableContainer');
         if (!data.length) { container.innerHTML = '無資料'; return; }
         
+        const isEditable = !!currentUser;
+        
         let html = `<table><thead><tr>
-            <th>分機</th><th>單位</th><th>位置</th><th>備註</th><th>操作</th>
+            <th>分機</th><th>單位</th><th>位置</th><th>備註</th>
+            ${isEditable ? '<th>操作</th>' : ''}
         </tr></thead><tbody>`;
         
         data.forEach(row => {
             html += `<tr>
-                <td contenteditable="true" onblur="updatePhone('${row.id}', 'extension', this.innerText)">${row.extension || ''}</td>
-                <td contenteditable="true" onblur="updatePhone('${row.id}', 'unit', this.innerText)">${row.unit || ''}</td>
-                <td contenteditable="true" onblur="updatePhone('${row.id}', 'location', this.innerText)">${row.location || ''}</td>
-                <td contenteditable="true" onblur="updatePhone('${row.id}', 'note', this.innerText)">${row.note || ''}</td>
-                <td><button onclick="deletePhone('${row.id}')">刪除</button></td>
+                <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'extension', this.innerText)">${row.extension || ''}</td>
+                <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'unit', this.innerText)">${row.unit || ''}</td>
+                <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'location', this.innerText)">${row.location || ''}</td>
+                <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'note', this.innerText)">${row.note || ''}</td>
+                ${isEditable ? `<td><button onclick="deletePhone('${row.id}')">刪除</button></td>` : ''}
             </tr>`;
         });
         html += '</tbody></table>';
@@ -322,10 +388,12 @@
     }
 
     async function updatePhone(id, field, value) {
+        if (!currentUser) return;
         await supabase.from('phones').update({ [field]: value }).eq('id', id);
     }
     
     async function deletePhone(id) {
+        if (!currentUser) return;
         if(confirm('確定刪除?')) {
             await supabase.from('phones').delete().eq('id', id);
             searchPhones();
@@ -339,7 +407,7 @@
         let dbQuery = supabase.from('dispatch_phones').select('*').order('extension');
         
         const { data, error } = await dbQuery;
-        if (error) { alert('Error loading dispatch'); return; }
+        if (error) { console.error('Error loading dispatch', error); return; }
         
         dispatchData = data;
         const filtered = query ? data.filter(row => JSON.stringify(row).toLowerCase().includes(query.toLowerCase())) : data;
@@ -350,18 +418,21 @@
         const container = document.getElementById('dispatchTableContainer');
         if (!data.length) { container.innerHTML = '無資料'; return; }
         
+        const isEditable = !!currentUser;
+
         let html = `<table><thead><tr>
-            <th>分機</th><th>C端子</th><th>LENS</th><th>單位</th><th>連絡電話</th><th>操作</th>
+            <th>分機</th><th>C端子</th><th>LENS</th><th>單位</th><th>連絡電話</th>
+            ${isEditable ? '<th>操作</th>' : ''}
         </tr></thead><tbody>`;
         
         data.forEach(row => {
             html += `<tr>
-                <td contenteditable="true" onblur="updateDispatch('${row.id}', 'extension', this.innerText)">${row.extension || ''}</td>
-                <td contenteditable="true" onblur="updateDispatch('${row.id}', 'c_terminal', this.innerText)">${row.c_terminal || ''}</td>
-                <td contenteditable="true" onblur="updateDispatch('${row.id}', 'lens', this.innerText)">${row.lens || ''}</td>
-                <td contenteditable="true" onblur="updateDispatch('${row.id}', 'unit', this.innerText)">${row.unit || ''}</td>
-                <td contenteditable="true" onblur="updateDispatch('${row.id}', 'contact_tel', this.innerText)">${row.contact_tel || ''}</td>
-                <td><button onclick="deleteDispatch('${row.id}')">刪除</button></td>
+                <td contenteditable="${isEditable}" onblur="updateDispatch('${row.id}', 'extension', this.innerText)">${row.extension || ''}</td>
+                <td contenteditable="${isEditable}" onblur="updateDispatch('${row.id}', 'c_terminal', this.innerText)">${row.c_terminal || ''}</td>
+                <td contenteditable="${isEditable}" onblur="updateDispatch('${row.id}', 'lens', this.innerText)">${row.lens || ''}</td>
+                <td contenteditable="${isEditable}" onblur="updateDispatch('${row.id}', 'unit', this.innerText)">${row.unit || ''}</td>
+                <td contenteditable="${isEditable}" onblur="updateDispatch('${row.id}', 'contact_tel', this.innerText)">${row.contact_tel || ''}</td>
+                ${isEditable ? `<td><button onclick="deleteDispatch('${row.id}')">刪除</button></td>` : ''}
             </tr>`;
         });
         html += '</tbody></table>';
@@ -369,10 +440,12 @@
     }
 
     async function updateDispatch(id, field, value) {
+        if (!currentUser) return;
         await supabase.from('dispatch_phones').update({ [field]: value }).eq('id', id);
     }
     
     async function deleteDispatch(id) {
+        if (!currentUser) return;
         if(confirm('確定刪除?')) {
             await supabase.from('dispatch_phones').delete().eq('id', id);
             searchDispatch();
@@ -389,6 +462,7 @@
     }
 
     function importExcel(type, input) {
+        if (!currentUser) return;
         const file = input.files[0];
         const reader = new FileReader();
         reader.onload = async function(e) {
@@ -396,17 +470,12 @@
             const workbook = XLSX.read(data, {type: 'array'});
             const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
             
-            // Map Excel columns to DB columns (simplified mapping)
-            // Ideally, we reuse the logic from migrate.js or make it dynamic
-            // For now, we assume the user uploads the same format as exported
-            
             const table = type === 'phones' ? 'phones' : 'dispatch_phones';
             
-            // Basic mapping attempt
+            // Map Excel columns to DB columns (simplified mapping)
             const records = jsonData.map(row => {
                 // If importing original format, we need mapping
-                // If importing exported format, keys are already db columns
-                // We'll assume column matching for now
+                // For simplicity, assuming headers match DB columns or are handled
                 return row; 
             });
             
