@@ -639,7 +639,8 @@
     async function searchDispatch() {
         if (!supabaseClient) return;
         const query = document.getElementById('dispatchSearch').value;
-        let dbQuery = supabaseClient.from('dispatch_phones').select('*').order('extension');
+        // Increase limit to 10000 to ensure all records are fetched
+        let dbQuery = supabaseClient.from('dispatch_phones').select('*').limit(10000).order('extension');
         
         const { data, error } = await dbQuery;
         if (error) { console.error('Error loading dispatch', error); return; }
@@ -688,12 +689,44 @@
     }
 
     // ================= EXCEL IMPORT/EXPORT =================
-    function exportToExcel(type) {
-        const data = type === 'phones' ? phoneData : dispatchData;
-        const ws = XLSX.utils.json_to_sheet(data);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-        XLSX.writeFile(wb, `${type}_data.xlsx`);
+    async function exportToExcel(type) {
+        if (!supabaseClient) return;
+        
+        const btn = event.target;
+        const originalText = btn.innerText;
+        btn.innerText = '匯出中...';
+        btn.disabled = true;
+
+        try {
+            const tableName = type === 'phones' ? 'phones' : 'dispatch_phones';
+            const { data, error } = await supabaseClient
+                .from(tableName)
+                .select('*')
+                .limit(10000)
+                .order('extension');
+
+            if (error) {
+                alert('匯出失敗: ' + error.message);
+                console.error(error);
+                return;
+            }
+
+            if (!data || data.length === 0) {
+                alert('無資料可匯出');
+                return;
+            }
+
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+            XLSX.writeFile(wb, `${type}_data.xlsx`);
+        } catch (e) {
+            console.error('Export error:', e);
+            alert('匯出發生錯誤');
+        } finally {
+            btn.innerText = originalText;
+            btn.disabled = false;
+        }
     }
 
     function importExcel(type, input) {
