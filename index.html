@@ -762,17 +762,19 @@
             { key: 'note', label: '備註' }
         ];
 
-        // Determine active columns based on result dataset
-        const allResultData = [...displayData, ...hiddenData];
-        const activeColumns = columns.filter(col => 
-            allResultData.some(row => {
-                const val = row[col.key] ? String(row[col.key]).trim() : '';
-                return val !== '' && val !== '-';
-            })
-        );
+        const getActiveColumns = (rows) => {
+            return columns.filter(col => 
+                rows.some(row => {
+                    const val = row[col.key] ? String(row[col.key]).trim() : '';
+                    return val !== '' && val !== '-';
+                })
+            );
+        };
 
         const generateTable = (rows) => {
             if (rows.length === 0) return '';
+            const activeColumns = getActiveColumns(rows);
+            
             let html = `<table><thead><tr>`;
             activeColumns.forEach(col => {
                 html += `<th>${col.label}</th>`;
@@ -868,17 +870,19 @@
             { key: 'contact_tel', label: '連絡電話' }
         ];
 
-        // Determine active columns based on result dataset
-        const allResultData = [...displayData, ...hiddenData];
-        const activeColumns = columns.filter(col => 
-            allResultData.some(row => {
-                const val = row[col.key] ? String(row[col.key]).trim() : '';
-                return val !== '' && val !== '-';
-            })
-        );
+        const getActiveColumns = (rows) => {
+            return columns.filter(col => 
+                rows.some(row => {
+                    const val = row[col.key] ? String(row[col.key]).trim() : '';
+                    return val !== '' && val !== '-';
+                })
+            );
+        };
 
         const generateTable = (rows) => {
             if (rows.length === 0) return '';
+            const activeColumns = getActiveColumns(rows);
+
             let html = `<table><thead><tr>`;
             activeColumns.forEach(col => {
                 html += `<th>${col.label}</th>`;
