@@ -165,6 +165,7 @@
 
         /* Utility Classes */
         .hidden { display: none !important; }
+        .editing-cell { background-color: #fffde7; border: 2px solid #ff9800; }
         
         /* Tabs */
         .tabs { 
@@ -581,6 +582,7 @@
         // Only if data exists (to avoid clearing tables on simple logout)
         if (phoneData.length > 0) renderPhoneTable(phoneData);
         if (dispatchData.length > 0) renderDispatchTable(dispatchData);
+        searchImages(); // Refresh images to update delete buttons
     }
 
     function switchTab(tabName, clickedElement) {
@@ -632,9 +634,16 @@
             div.className = 'image-item';
             // Construct Public URL
             const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/images/${img.file_path}`;
+            
+            let deleteBtn = '';
+            if (currentUser && currentUser.role === 'admin') {
+                deleteBtn = `<div style="margin-top:5px;"><button onclick="deleteImage('${img.id}', '${img.file_path}')" style="background:#ff4444;color:white;border:none;padding:5px 10px;cursor:pointer;border-radius:3px;">刪除</button></div>`;
+            }
+
             div.innerHTML = `
                 <img src="${publicUrl}" loading="lazy" onclick="window.open('${publicUrl}')">
                 <div>${img.filename}</div>
+                ${deleteBtn}
             `;
             grid.appendChild(div);
         });
@@ -675,6 +684,35 @@
         
         alert('上傳完成');
         searchImages();
+    }
+
+    async function deleteImage(id, filePath) {
+        if (!currentUser || currentUser.role !== 'admin') return;
+        if (!confirm('確定刪除此圖片?')) return;
+
+        // 1. Delete from Storage
+        const { error: storageError } = await supabaseClient.storage
+            .from('images')
+            .remove([filePath]);
+
+        if (storageError) {
+            console.error('Storage delete error:', storageError);
+            alert('圖片檔案刪除失敗: ' + storageError.message);
+            return;
+        }
+
+        // 2. Delete from DB
+        const { error: dbError } = await supabaseClient
+            .from('images')
+            .delete()
+            .eq('id', id);
+
+        if (dbError) {
+            console.error('DB delete error:', dbError);
+            alert('資料庫刪除失敗');
+        } else {
+            searchImages();
+        }
     }
 
     // Helper to fetch ALL records with pagination loop
@@ -783,11 +821,16 @@
             html += `</tr></thead><tbody>`;
             
             rows.forEach(row => {
-                html += `<tr>`;
+                html += `<tr data-id="${row.id}">`;
                 activeColumns.forEach(col => {
-                    html += `<td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', '${col.key}', this.innerText)">${row[col.key] || ''}</td>`;
+                    html += `<td data-key="${col.key}">${row[col.key] || ''}</td>`;
                 });
-                if (isEditable) html += `<td><button onclick="deletePhone('${row.id}')">刪除</button></td>`;
+                if (isEditable) {
+                    html += `<td>
+                        <button onclick="enableEdit(this, 'phones')">修改</button>
+                        <button onclick="deletePhone('${row.id}')">刪除</button>
+                    </td>`;
+                }
                 html += `</tr>`;
             });
             html += '</tbody></table>';
@@ -808,7 +851,93 @@
         container.innerHTML = html;
     }
 
+    // ================= EDIT / SAVE / CANCEL HELPERS =================
+    let originalRowData = {};
+
+    function enableEdit(btn, type) {
+        const tr = btn.closest('tr');
+        const rowId = tr.dataset.id;
+        
+        // Store original data
+        originalRowData[rowId] = tr.innerHTML;
+
+        // Make cells editable
+        const cells = tr.querySelectorAll('td[data-key]');
+        cells.forEach(td => {
+            td.contentEditable = true;
+            td.classList.add('editing-cell');
+        });
+
+        // Change buttons
+        const actionTd = btn.closest('td');
+        // We assume delete function names based on type
+        const deleteFunc = type === 'phones' ? `deletePhone('${rowId}')` : `deleteDispatch('${rowId}')`;
+        
+        actionTd.innerHTML = `
+            <button class="btn-save" onclick="saveEdit(this, '${rowId}', '${type}')">確認</button>
+            <button class="btn-cancel" onclick="cancelEdit(this, '${rowId}')">取消</button>
+        `;
+    }
+
+    function cancelEdit(btn, rowId) {
+        const tr = btn.closest('tr');
+        if (originalRowData[rowId]) {
+            tr.innerHTML = originalRowData[rowId];
+            delete originalRowData[rowId];
+        }
+    }
+    
+    async function saveEdit(btn, id, table) {
+        if (!confirm('確定要修改嗎？')) return;
+        
+        const tr = btn.closest('tr');
+        const cells = tr.querySelectorAll('td[data-key]');
+        const updates = {};
+        
+        cells.forEach(td => {
+            const key = td.dataset.key;
+            const value = td.innerText;
+            updates[key] = value;
+        });
+        
+        const originalBtnText = btn.innerText;
+        btn.innerText = '儲存中...';
+        btn.disabled = true;
+        
+        const tableName = table === 'phones' ? 'phones' : 'dispatch_phones';
+        
+        const { error } = await supabaseClient
+            .from(tableName)
+            .update(updates)
+            .eq('id', id);
+            
+        if (error) {
+            alert('更新失敗: ' + error.message);
+            btn.innerText = originalBtnText;
+            btn.disabled = false;
+        } else {
+            // Success - refresh row state (turn off edit)
+            cells.forEach(td => {
+                td.contentEditable = false;
+                td.classList.remove('editing-cell');
+            });
+            
+            const actionTd = btn.closest('td');
+            const deleteFunc = table === 'phones' ? `deletePhone('${id}')` : `deleteDispatch('${id}')`;
+            actionTd.innerHTML = `
+                <button onclick="enableEdit(this, '${table}')">修改</button> 
+                <button onclick="${deleteFunc}">刪除</button>
+            `;
+            
+            delete originalRowData[id];
+            
+            // Optionally refresh data in background to keep local state in sync
+            // but for now UI update is sufficient
+        }
+    }
+
     async function updatePhone(id, field, value) {
+        // Deprecated - kept for reference or direct calls if any
         if (!currentUser) return;
         await supabaseClient.from('phones').update({ [field]: value }).eq('id', id);
     }
@@ -891,11 +1020,16 @@
             html += `</tr></thead><tbody>`;
             
             rows.forEach(row => {
-                html += `<tr>`;
+                html += `<tr data-id="${row.id}">`;
                 activeColumns.forEach(col => {
-                    html += `<td contenteditable="${isEditable}" onblur="updateDispatch('${row.id}', '${col.key}', this.innerText)">${row[col.key] || ''}</td>`;
+                    html += `<td data-key="${col.key}">${row[col.key] || ''}</td>`;
                 });
-                if (isEditable) html += `<td><button onclick="deleteDispatch('${row.id}')">刪除</button></td>`;
+                if (isEditable) {
+                    html += `<td>
+                        <button onclick="enableEdit(this, 'dispatch')">修改</button>
+                        <button onclick="deleteDispatch('${row.id}')">刪除</button>
+                    </td>`;
+                }
                 html += `</tr>`;
             });
             html += '</tbody></table>';
