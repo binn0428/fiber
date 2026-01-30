@@ -598,7 +598,7 @@
         const isEditable = !!currentUser;
         
         let html = `<table><thead><tr>
-            <th>分機</th><th>數位</th><th>LENS</th><th>MDF</th><th>G450</th><th>單位</th><th>位置</th><th>DID</th><th>備註</th>
+            <th>分機</th><th>數位</th><th>LENS</th><th>MDF</th><th>MC-ID</th><th>G450</th><th>單位</th><th>位置</th><th>DID</th><th>備註</th>
             ${isEditable ? '<th>操作</th>' : ''}
         </tr></thead><tbody>`;
         
@@ -608,6 +608,7 @@
                 <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'type', this.innerText)">${row.type || ''}</td>
                 <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'lens', this.innerText)">${row.lens || ''}</td>
                 <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'mdf_port', this.innerText)">${row.mdf_port || ''}</td>
+                <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'remote_mc_id', this.innerText)">${row.remote_mc_id || ''}</td>
                 <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'g450_port', this.innerText)">${row.g450_port || ''}</td>
                 <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'unit', this.innerText)">${row.unit || ''}</td>
                 <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'location', this.innerText)">${row.location || ''}</td>
