@@ -601,6 +601,18 @@
         searchDispatch();
     }
 
+    function toggleMore(id, count) {
+        const el = document.getElementById(id);
+        const btn = document.getElementById('btn-' + id);
+        if (el.classList.contains('hidden')) {
+            el.classList.remove('hidden');
+            btn.innerText = '隱藏其餘結果';
+        } else {
+            el.classList.add('hidden');
+            btn.innerText = `顯示其餘 ${count} 筆結果`;
+        }
+    }
+
     // ================= IMAGES =================
     async function searchImages() {
         const query = document.getElementById('imgSearch').value;
@@ -753,7 +765,10 @@
         // Determine active columns based on result dataset
         const allResultData = [...displayData, ...hiddenData];
         const activeColumns = columns.filter(col => 
-            allResultData.some(row => row[col.key] && String(row[col.key]).trim() !== '')
+            allResultData.some(row => {
+                const val = row[col.key] ? String(row[col.key]).trim() : '';
+                return val !== '' && val !== '-';
+            })
         );
 
         const generateTable = (rows) => {
@@ -781,7 +796,7 @@
 
         if (hiddenData.length > 0) {
             html += `<div style="margin-top: 10px; text-align: center;">
-                <button onclick="document.getElementById('morePhones').classList.remove('hidden'); this.style.display='none';">顯示其餘 ${hiddenData.length} 筆結果</button>
+                <button id="btn-morePhones" onclick="toggleMore('morePhones', ${hiddenData.length})">顯示其餘 ${hiddenData.length} 筆結果</button>
             </div>`;
             html += `<div id="morePhones" class="hidden">`;
             html += generateTable(hiddenData);
@@ -856,7 +871,10 @@
         // Determine active columns based on result dataset
         const allResultData = [...displayData, ...hiddenData];
         const activeColumns = columns.filter(col => 
-            allResultData.some(row => row[col.key] && String(row[col.key]).trim() !== '')
+            allResultData.some(row => {
+                const val = row[col.key] ? String(row[col.key]).trim() : '';
+                return val !== '' && val !== '-';
+            })
         );
 
         const generateTable = (rows) => {
@@ -884,7 +902,7 @@
 
         if (hiddenData.length > 0) {
             html += `<div style="margin-top: 10px; text-align: center;">
-                <button onclick="document.getElementById('moreDispatch').classList.remove('hidden'); this.style.display='none';">顯示其餘 ${hiddenData.length} 筆結果</button>
+                <button id="btn-moreDispatch" onclick="toggleMore('moreDispatch', ${hiddenData.length})">顯示其餘 ${hiddenData.length} 筆結果</button>
             </div>`;
             html += `<div id="moreDispatch" class="hidden">`;
             html += generateTable(hiddenData);
@@ -943,6 +961,7 @@
                     '數位': row.type || '',
                     'LENS': row.lens || '',
                     '機房端子編號': row.mdf_port || '',
+                    '遠端機櫃 MC-ID (第幾對線)': row.remote_mc_id || '',
                     '遠端機櫃UG-50編號': row.g450_port || '',
                     '線組編號': row.line_group_id || '',
                     '單位': row.unit || '',
