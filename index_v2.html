@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>資料查詢系統 (Supabase版)</title>
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- XLSX for Import/Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            background-image: url('back.jpg');
+            background-size: cover;
+            background-position: center;
+            margin: 0;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            min-height: 100vh;
+        }
+        .login-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        .login-box {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        input, button, select {
+            padding: 10px;
+            margin: 5px;
+            font-size: 16px;
+        }
+        button {
+            cursor: pointer;
+            background: #4169E1;
+            color: white;
+            border: none;
+            border-radius: 4px;
+        }
+        button:hover { background: #1E90FF; }
+        .hidden { display: none; }
+        
+        /* Tabs */
+        .tabs { display: flex; margin-bottom: 20px; border-bottom: 2px solid #ccc; }
+        .tab { padding: 10px 20px; cursor: pointer; background: #eee; margin-right: 5px; border-radius: 5px 5px 0 0; }
+        .tab.active { background: #4169E1; color: white; font-weight: bold; }
+
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; background: white; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+
+        /* Grid for Images */
+        .image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; margin-top: 15px; }
+        .image-item { border: 1px solid #ddd; padding: 5px; background: white; text-align: center; cursor: pointer; }
+        .image-item img { width: 100%; height: 150px; object-fit: contain; }
+        
+        .toolbar { display: flex; justify-content: space-between; align-items: center; background: #eee; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+
+<!-- Login Overlay -->
+<div id="loginOverlay" class="login-overlay">
+    <div class="login-box">
+        <h2>請登入</h2>
+        <input type="text" id="username" placeholder="帳號">
+        <input type="password" id="password" placeholder="密碼">
+        <br>
+        <button onclick="handleLogin()">登入</button>
+        <p id="loginError" style="color: red; display: none;">帳號或密碼錯誤</p>
+    </div>
+</div>
+
+<div class="container hidden" id="mainApp">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h1>資料查詢系統</h1>
+        <div>
+            <span id="userInfo"></span>
+            <button onclick="logout()" style="background: #CD5C5C;">登出</button>
+        </div>
+    </div>
+
+    <div class="tabs">
+        <div class="tab active" onclick="switchTab('images')">圖片資料</div>
+        <div class="tab" onclick="switchTab('phones')">分機資料</div>
+        <div class="tab" onclick="switchTab('dispatch')">調度電話</div>
+    </div>
+
+    <!-- Images Section -->
+    <div id="imagesSection" class="section">
+        <div class="toolbar">
+            <input type="text" id="imgSearch" placeholder="搜尋圖片 (模糊搜尋)..." style="width: 300px;">
+            <button onclick="searchImages()">搜尋</button>
+            <button onclick="document.getElementById('imgUploadInput').click()" style="background: #228B22;">+ 上傳圖片</button>
+            <input type="file" id="imgUploadInput" multiple accept="image/*" style="display: none;" onchange="handleImageUpload(this)">
+        </div>
+        <div id="imageGrid" class="image-grid"></div>
+    </div>
+
+    <!-- Phones Section -->
+    <div id="phonesSection" class="section hidden">
+        <div class="toolbar">
+            <input type="text" id="phoneSearch" placeholder="搜尋分機..." style="width: 300px;">
+            <button onclick="searchPhones()">搜尋</button>
+            <div>
+                <button onclick="exportToExcel('phones')" style="background: #20B2AA;">匯出 Excel</button>
+                <button onclick="document.getElementById('phoneImport').click()" style="background: #DAA520;">匯入 Excel</button>
+                <input type="file" id="phoneImport" accept=".xlsx" style="display: none;" onchange="importExcel('phones', this)">
+            </div>
+        </div>
+        <div id="phonesTableContainer"></div>
+    </div>
+
+    <!-- Dispatch Section -->
+    <div id="dispatchSection" class="section hidden">
+        <div class="toolbar">
+            <input type="text" id="dispatchSearch" placeholder="搜尋調度電話..." style="width: 300px;">
+            <button onclick="searchDispatch()">搜尋</button>
+            <div>
+                <button onclick="exportToExcel('dispatch')" style="background: #20B2AA;">匯出 Excel</button>
+                <button onclick="document.getElementById('dispatchImport').click()" style="background: #DAA520;">匯入 Excel</button>
+                <input type="file" id="dispatchImport" accept=".xlsx" style="display: none;" onchange="importExcel('dispatch', this)">
+            </div>
+        </div>
+        <div id="dispatchTableContainer"></div>
+    </div>
+</div>
+
+<script>
+    // ==========================================
+    // CONFIGURATION
+    // ==========================================
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+    const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY';
+    // ==========================================
+
+    const supabase = (SUPABASE_URL !== 'YOUR_SUPABASE_URL') 
+        ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
+        : null;
+
+    if (!supabase) {
+        alert('請設定 index_v2.html 中的 SUPABASE_URL 和 SUPABASE_KEY');
+    }
+
+    let currentUser = null;
+
+    // Login Logic
+    async function handleLogin() {
+        const user = document.getElementById('username').value;
+        const pass = document.getElementById('password').value;
+        
+        // Hash password with SHA-256
+        const encoder = new TextEncoder();
+        const dataBuffer = encoder.encode(pass);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+        try {
+            const { data, error } = await supabase
+                .from('users')
+                .select('*')
+                .eq('username', user)
+                .single();
+
+            if (error || !data) {
+                throw new Error('User not found');
+            }
+
+            if (data.password === hashHex) {
+                currentUser = data;
+                document.getElementById('loginOverlay').classList.add('hidden');
+                document.getElementById('mainApp').classList.remove('hidden');
+                document.getElementById('userInfo').textContent = `你好, ${currentUser.username} (${getRoleName(currentUser.role)})`;
+                loadInitialData();
+            } else {
+                document.getElementById('loginError').style.display = 'block';
+            }
+        } catch (e) {
+            console.error(e);
+            document.getElementById('loginError').style.display = 'block';
+        }
+    }
+
+    function getRoleName(role) {
+        return role === 'admin' ? '管理員' : '一般用戶';
+    }
+
+    function logout() {
+        location.reload();
+    }
+
+    function switchTab(tabName) {
+        document.querySelectorAll('.section').forEach(el => el.classList.add('hidden'));
+        document.getElementById(tabName + 'Section').classList.remove('hidden');
+        document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+        // Find the tab that calls this and add active - simplified
+        event.target.classList.add('active');
+    }
+
+    async function loadInitialData() {
+        searchImages();
+        searchPhones();
+        searchDispatch();
+    }
+
+    // ================= IMAGES =================
+    async function searchImages() {
+        const query = document.getElementById('imgSearch').value;
+        let dbQuery = supabase.from('images').select('*');
+        
+        if (query) {
+            dbQuery = dbQuery.ilike('filename', `%${query}%`);
+        }
+        
+        const { data, error } = await dbQuery;
+        if (error) { alert('Error loading images'); return; }
+
+        const grid = document.getElementById('imageGrid');
+        grid.innerHTML = '';
+        data.forEach(img => {
+            const div = document.createElement('div');
+            div.className = 'image-item';
+            // Construct Public URL
+            const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/images/${img.file_path}`;
+            div.innerHTML = `
+                <img src="${publicUrl}" loading="lazy" onclick="window.open('${publicUrl}')">
+                <div>${img.filename}</div>
+            `;
+            grid.appendChild(div);
+        });
+    }
+
+    async function handleImageUpload(input) {
+        if (!input.files.length) return;
+        
+        for (const file of input.files) {
+            const fileName = `${Date.now()}_${file.name}`;
+            const groupFolder = `group_${currentUser.group_id}`;
+            const filePath = `${groupFolder}/${fileName}`;
+            
+            // 1. Upload to Storage
+            const { error: uploadError } = await supabase.storage
+                .from('images')
+                .upload(filePath, file);
+                
+            if (uploadError) {
+                alert(`上傳失敗: ${file.name}`);
+                console.error(uploadError);
+                continue;
+            }
+
+            // 2. Insert Metadata
+            const { error: dbError } = await supabase.from('images').insert({
+                filename: file.name, // Display name
+                file_path: filePath,
+                group_id: currentUser.group_id,
+                uploaded_by: currentUser.id
+            });
+            
+            if (dbError) console.error(dbError);
+        }
+        
+        alert('上傳完成');
+        searchImages();
+    }
+
+    // ================= PHONES =================
+    let phoneData = [];
+    async function searchPhones() {
+        const query = document.getElementById('phoneSearch').value;
+        let dbQuery = supabase.from('phones').select('*').order('extension');
+        
+        // Supabase doesn't support OR across multiple columns easily with ilike in one go without custom RPC or complex syntax
+        // For simplicity, we fetch all (or limit) and filter client side if dataset is small (<10000). 
+        // Given Excel files, it's likely < 5000 rows.
+        
+        const { data, error } = await dbQuery;
+        if (error) { alert('Error loading phones'); return; }
+        
+        phoneData = data;
+        const filtered = query ? data.filter(row => JSON.stringify(row).toLowerCase().includes(query.toLowerCase())) : data;
+        renderPhoneTable(filtered);
+    }
+
+    function renderPhoneTable(data) {
+        const container = document.getElementById('phonesTableContainer');
+        if (!data.length) { container.innerHTML = '無資料'; return; }
+        
+        let html = `<table><thead><tr>
+            <th>分機</th><th>單位</th><th>位置</th><th>備註</th><th>操作</th>
+        </tr></thead><tbody>`;
+        
+        data.forEach(row => {
+            html += `<tr>
+                <td contenteditable="true" onblur="updatePhone('${row.id}', 'extension', this.innerText)">${row.extension || ''}</td>
+                <td contenteditable="true" onblur="updatePhone('${row.id}', 'unit', this.innerText)">${row.unit || ''}</td>
+                <td contenteditable="true" onblur="updatePhone('${row.id}', 'location', this.innerText)">${row.location || ''}</td>
+                <td contenteditable="true" onblur="updatePhone('${row.id}', 'note', this.innerText)">${row.note || ''}</td>
+                <td><button onclick="deletePhone('${row.id}')">刪除</button></td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
+    async function updatePhone(id, field, value) {
+        await supabase.from('phones').update({ [field]: value }).eq('id', id);
+    }
+    
+    async function deletePhone(id) {
+        if(confirm('確定刪除?')) {
+            await supabase.from('phones').delete().eq('id', id);
+            searchPhones();
+        }
+    }
+
+    // ================= DISPATCH =================
+    let dispatchData = [];
+    async function searchDispatch() {
+        const query = document.getElementById('dispatchSearch').value;
+        let dbQuery = supabase.from('dispatch_phones').select('*').order('extension');
+        
+        const { data, error } = await dbQuery;
+        if (error) { alert('Error loading dispatch'); return; }
+        
+        dispatchData = data;
+        const filtered = query ? data.filter(row => JSON.stringify(row).toLowerCase().includes(query.toLowerCase())) : data;
+        renderDispatchTable(filtered);
+    }
+
+    function renderDispatchTable(data) {
+        const container = document.getElementById('dispatchTableContainer');
+        if (!data.length) { container.innerHTML = '無資料'; return; }
+        
+        let html = `<table><thead><tr>
+            <th>分機</th><th>C端子</th><th>LENS</th><th>單位</th><th>連絡電話</th><th>操作</th>
+        </tr></thead><tbody>`;
+        
+        data.forEach(row => {
+            html += `<tr>
+                <td contenteditable="true" onblur="updateDispatch('${row.id}', 'extension', this.innerText)">${row.extension || ''}</td>
+                <td contenteditable="true" onblur="updateDispatch('${row.id}', 'c_terminal', this.innerText)">${row.c_terminal || ''}</td>
+                <td contenteditable="true" onblur="updateDispatch('${row.id}', 'lens', this.innerText)">${row.lens || ''}</td>
+                <td contenteditable="true" onblur="updateDispatch('${row.id}', 'unit', this.innerText)">${row.unit || ''}</td>
+                <td contenteditable="true" onblur="updateDispatch('${row.id}', 'contact_tel', this.innerText)">${row.contact_tel || ''}</td>
+                <td><button onclick="deleteDispatch('${row.id}')">刪除</button></td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
+    async function updateDispatch(id, field, value) {
+        await supabase.from('dispatch_phones').update({ [field]: value }).eq('id', id);
+    }
+    
+    async function deleteDispatch(id) {
+        if(confirm('確定刪除?')) {
+            await supabase.from('dispatch_phones').delete().eq('id', id);
+            searchDispatch();
+        }
+    }
+
+    // ================= EXCEL IMPORT/EXPORT =================
+    function exportToExcel(type) {
+        const data = type === 'phones' ? phoneData : dispatchData;
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+        XLSX.writeFile(wb, `${type}_data.xlsx`);
+    }
+
+    function importExcel(type, input) {
+        const file = input.files[0];
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, {type: 'array'});
+            const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+            
+            // Map Excel columns to DB columns (simplified mapping)
+            // Ideally, we reuse the logic from migrate.js or make it dynamic
+            // For now, we assume the user uploads the same format as exported
+            
+            const table = type === 'phones' ? 'phones' : 'dispatch_phones';
+            
+            // Basic mapping attempt
+            const records = jsonData.map(row => {
+                // If importing original format, we need mapping
+                // If importing exported format, keys are already db columns
+                // We'll assume column matching for now
+                return row; 
+            });
+            
+            const { error } = await supabase.from(table).insert(records);
+            if (error) alert('Import failed: ' + error.message);
+            else {
+                alert('Import successful');
+                if (type === 'phones') searchPhones(); else searchDispatch();
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+</script>
+
+</body>
+</html>
