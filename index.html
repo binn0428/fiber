@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
@@ -710,39 +710,84 @@
             
             phoneData = data;
             const filtered = query ? data.filter(row => JSON.stringify(row).toLowerCase().includes(query.toLowerCase())) : data;
-            renderPhoneTable(filtered);
+            renderPhoneTable(filtered, query);
         } catch (error) {
             container.innerHTML = '<div style="color:red; text-align:center;">載入失敗</div>';
         }
     }
 
-    function renderPhoneTable(data) {
+    function renderPhoneTable(data, query = '') {
         const container = document.getElementById('phonesTableContainer');
         if (!data.length) { container.innerHTML = '無資料'; return; }
         
         const isEditable = !!currentUser;
         
-        let html = `<table><thead><tr>
-            <th>分機</th><th>數位</th><th>LENS</th><th>MDF</th><th>MC-ID</th><th>G450</th><th>單位</th><th>位置</th><th>DID</th><th>備註</th>
-            ${isEditable ? '<th>操作</th>' : ''}
-        </tr></thead><tbody>`;
+        // Split data if query exists and exact match found
+        let displayData = data;
+        let hiddenData = [];
         
-        data.forEach(row => {
-            html += `<tr>
-                <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'extension', this.innerText)">${row.extension || ''}</td>
-                <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'type', this.innerText)">${row.type || ''}</td>
-                <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'lens', this.innerText)">${row.lens || ''}</td>
-                <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'mdf_port', this.innerText)">${row.mdf_port || ''}</td>
-                <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'remote_mc_id', this.innerText)">${row.remote_mc_id || ''}</td>
-                <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'g450_port', this.innerText)">${row.g450_port || ''}</td>
-                <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'unit', this.innerText)">${row.unit || ''}</td>
-                <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'location', this.innerText)">${row.location || ''}</td>
-                <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'did_number', this.innerText)">${row.did_number || ''}</td>
-                <td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', 'note', this.innerText)">${row.note || ''}</td>
-                ${isEditable ? `<td><button onclick="deletePhone('${row.id}')">刪除</button></td>` : ''}
-            </tr>`;
-        });
-        html += '</tbody></table>';
+        if (query) {
+             const exactMatches = data.filter(row => row.extension === query);
+             if (exactMatches.length > 0) {
+                 const otherMatches = data.filter(row => row.extension !== query);
+                 displayData = exactMatches;
+                 hiddenData = otherMatches;
+             }
+        }
+
+        // Define columns
+        const columns = [
+            { key: 'extension', label: '分機' },
+            { key: 'type', label: '數位' },
+            { key: 'lens', label: 'LENS' },
+            { key: 'mdf_port', label: 'MDF' },
+            { key: 'remote_mc_id', label: 'MC-ID' },
+            { key: 'g450_port', label: 'G450' },
+            { key: 'line_group_id', label: '線組' },
+            { key: 'unit', label: '單位' },
+            { key: 'location', label: '位置' },
+            { key: 'did_number', label: 'DID' },
+            { key: 'note', label: '備註' }
+        ];
+
+        // Determine active columns based on result dataset
+        const allResultData = [...displayData, ...hiddenData];
+        const activeColumns = columns.filter(col => 
+            allResultData.some(row => row[col.key] && String(row[col.key]).trim() !== '')
+        );
+
+        const generateTable = (rows) => {
+            if (rows.length === 0) return '';
+            let html = `<table><thead><tr>`;
+            activeColumns.forEach(col => {
+                html += `<th>${col.label}</th>`;
+            });
+            if (isEditable) html += `<th>操作</th>`;
+            html += `</tr></thead><tbody>`;
+            
+            rows.forEach(row => {
+                html += `<tr>`;
+                activeColumns.forEach(col => {
+                    html += `<td contenteditable="${isEditable}" onblur="updatePhone('${row.id}', '${col.key}', this.innerText)">${row[col.key] || ''}</td>`;
+                });
+                if (isEditable) html += `<td><button onclick="deletePhone('${row.id}')">刪除</button></td>`;
+                html += `</tr>`;
+            });
+            html += '</tbody></table>';
+            return html;
+        };
+
+        let html = generateTable(displayData);
+
+        if (hiddenData.length > 0) {
+            html += `<div style="margin-top: 10px; text-align: center;">
+                <button onclick="document.getElementById('morePhones').classList.remove('hidden'); this.style.display='none';">顯示其餘 ${hiddenData.length} 筆結果</button>
+            </div>`;
+            html += `<div id="morePhones" class="hidden">`;
+            html += generateTable(hiddenData);
+            html += `</div>`;
+        }
+        
         container.innerHTML = html;
     }
 
@@ -772,31 +817,79 @@
         
         dispatchData = data;
         const filtered = query ? data.filter(row => JSON.stringify(row).toLowerCase().includes(query.toLowerCase())) : data;
-        renderDispatchTable(filtered);
+        renderDispatchTable(filtered, query);
     }
 
-    function renderDispatchTable(data) {
+    function renderDispatchTable(data, query = '') {
         const container = document.getElementById('dispatchTableContainer');
         if (!data.length) { container.innerHTML = '無資料'; return; }
         
         const isEditable = !!currentUser;
 
-        let html = `<table><thead><tr>
-            <th>分機</th><th>C端子</th><th>LENS</th><th>單位</th><th>連絡電話</th>
-            ${isEditable ? '<th>操作</th>' : ''}
-        </tr></thead><tbody>`;
+        // Split data if query exists and exact match found
+        let displayData = data;
+        let hiddenData = [];
         
-        data.forEach(row => {
-            html += `<tr>
-                <td contenteditable="${isEditable}" onblur="updateDispatch('${row.id}', 'extension', this.innerText)">${row.extension || ''}</td>
-                <td contenteditable="${isEditable}" onblur="updateDispatch('${row.id}', 'c_terminal', this.innerText)">${row.c_terminal || ''}</td>
-                <td contenteditable="${isEditable}" onblur="updateDispatch('${row.id}', 'lens', this.innerText)">${row.lens || ''}</td>
-                <td contenteditable="${isEditable}" onblur="updateDispatch('${row.id}', 'unit', this.innerText)">${row.unit || ''}</td>
-                <td contenteditable="${isEditable}" onblur="updateDispatch('${row.id}', 'contact_tel', this.innerText)">${row.contact_tel || ''}</td>
-                ${isEditable ? `<td><button onclick="deleteDispatch('${row.id}')">刪除</button></td>` : ''}
-            </tr>`;
-        });
-        html += '</tbody></table>';
+        if (query) {
+             const exactMatches = data.filter(row => row.extension === query);
+             if (exactMatches.length > 0) {
+                 const otherMatches = data.filter(row => row.extension !== query);
+                 displayData = exactMatches;
+                 hiddenData = otherMatches;
+             }
+        }
+
+        // Define columns
+        // ['分機號碼', 'C端子位置', 'LENS', '線組編號(機房)', '線組編號(現場)', '使用單位', '裝機位置', '副機數量', '連絡電話']
+        const columns = [
+            { key: 'extension', label: '分機' },
+            { key: 'c_terminal', label: 'C端子' },
+            { key: 'lens', label: 'LENS' },
+            { key: 'line_group_room', label: '線組(機房)' },
+            { key: 'line_group_site', label: '線組(現場)' },
+            { key: 'unit', label: '單位' },
+            { key: 'location', label: '位置' },
+            { key: 'sub_count', label: '副機數量' },
+            { key: 'contact_tel', label: '連絡電話' }
+        ];
+
+        // Determine active columns based on result dataset
+        const allResultData = [...displayData, ...hiddenData];
+        const activeColumns = columns.filter(col => 
+            allResultData.some(row => row[col.key] && String(row[col.key]).trim() !== '')
+        );
+
+        const generateTable = (rows) => {
+            if (rows.length === 0) return '';
+            let html = `<table><thead><tr>`;
+            activeColumns.forEach(col => {
+                html += `<th>${col.label}</th>`;
+            });
+            if (isEditable) html += `<th>操作</th>`;
+            html += `</tr></thead><tbody>`;
+            
+            rows.forEach(row => {
+                html += `<tr>`;
+                activeColumns.forEach(col => {
+                    html += `<td contenteditable="${isEditable}" onblur="updateDispatch('${row.id}', '${col.key}', this.innerText)">${row[col.key] || ''}</td>`;
+                });
+                if (isEditable) html += `<td><button onclick="deleteDispatch('${row.id}')">刪除</button></td>`;
+                html += `</tr>`;
+            });
+            html += '</tbody></table>';
+            return html;
+        };
+
+        let html = generateTable(displayData);
+
+        if (hiddenData.length > 0) {
+            html += `<div style="margin-top: 10px; text-align: center;">
+                <button onclick="document.getElementById('moreDispatch').classList.remove('hidden'); this.style.display='none';">顯示其餘 ${hiddenData.length} 筆結果</button>
+            </div>`;
+            html += `<div id="moreDispatch" class="hidden">`;
+            html += generateTable(hiddenData);
+            html += `</div>`;
+        }
         container.innerHTML = html;
     }
 
@@ -841,7 +934,41 @@
                 return;
             }
 
-            const ws = XLSX.utils.json_to_sheet(data);
+            let exportData = [];
+            if (type === 'phones') {
+                // Mapping for phones based on import format
+                // ['號碼', '數位', 'LENS', '機房端子編號', '遠端機櫃UG-50編號', '線組編號', '單位', '裝機位置', '通話等級', '副機數量', 'DID', '備註']
+                exportData = data.map(row => ({
+                    '號碼': row.extension || '',
+                    '數位': row.type || '',
+                    'LENS': row.lens || '',
+                    '機房端子編號': row.mdf_port || '',
+                    '遠端機櫃UG-50編號': row.g450_port || '',
+                    '線組編號': row.line_group_id || '',
+                    '單位': row.unit || '',
+                    '裝機位置': row.location || '',
+                    '通話等級': row.call_class || '',
+                    '副機數量': row.sub_count || '',
+                    'DID': row.did_number || '',
+                    '備註': row.note || ''
+                }));
+            } else {
+                // Mapping for dispatch
+                // ['分機號碼', 'C端子位置', 'LENS', '線組編號(機房)', '線組編號(現場)', '使用單位', '裝機位置', '副機數量', '連絡電話']
+                exportData = data.map(row => ({
+                    '分機號碼': row.extension || '',
+                    'C端子位置': row.c_terminal || '',
+                    'LENS': row.lens || '',
+                    '線組編號(機房)': row.line_group_room || '',
+                    '線組編號(現場)': row.line_group_site || '',
+                    '使用單位': row.unit || '',
+                    '裝機位置': row.location || '',
+                    '副機數量': row.sub_count || '',
+                    '連絡電話': row.contact_tel || ''
+                }));
+            }
+
+            const ws = XLSX.utils.json_to_sheet(exportData);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
             XLSX.writeFile(wb, `${type}_data.xlsx`);
