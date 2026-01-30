@@ -194,37 +194,53 @@
             supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         } else {
             console.error('Supabase library not loaded (window.supabase is undefined)');
-            // Alert is too intrusive on load, use the UI error display instead
-            setTimeout(() => {
-                const errDiv = document.getElementById('globalError');
-                if (errDiv) {
-                    errDiv.style.display = 'block';
-                    errDiv.innerHTML += `<div>錯誤：無法載入 Supabase 系統元件。請確認您的設備已連上網際網路，且未封鎖 CDN (jsdelivr)。</div>`;
-                }
-            }, 1000);
+            // Fallback: Check if we can proceed anyway or show intrusive alert
+            // But let's assume it might load later or is network issue
         }
     } catch (e) {
         console.error('Supabase initialization failed:', e);
     }
 
     if (!supabase) {
-        // alert('系統初始化失敗，請檢查網路連線');
+        setTimeout(() => {
+             const errDiv = document.getElementById('globalError');
+             if (errDiv) {
+                 errDiv.style.display = 'block';
+                 errDiv.innerHTML += `<div>錯誤：無法載入 Supabase 系統元件。請確認網路連線。</div>`;
+             }
+        }, 2000);
     }
 
     let currentUser = null;
+    let phoneData = [];
+    let dispatchData = [];
 
     // Initialize
     window.addEventListener('DOMContentLoaded', () => {
         if (supabase) {
             loadInitialData();
         }
+        
+        // Force UI State Update to ensure buttons are correctly set
         updateUIState();
+        
+        // Attach event listeners explicitly if inline onclick fails
+        document.getElementById('imgSearch').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') searchImages();
+        });
+        document.getElementById('phoneSearch').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') searchPhones();
+        });
+         document.getElementById('dispatchSearch').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') searchDispatch();
+        });
     });
 
     function showLoginModal() {
         document.getElementById('loginOverlay').classList.remove('hidden');
         document.getElementById('loginError').style.display = 'none';
         document.getElementById('password').value = '';
+        setTimeout(() => document.getElementById('password').focus(), 100);
     }
 
     function hideLoginModal() {
@@ -386,8 +402,9 @@
     }
 
     // ================= PHONES =================
-    let phoneData = [];
+    // phoneData is declared globally above
     async function searchPhones() {
+        if (!supabase) return;
         const query = document.getElementById('phoneSearch').value;
         let dbQuery = supabase.from('phones').select('*').order('extension');
         
@@ -442,8 +459,9 @@
     }
 
     // ================= DISPATCH =================
-    let dispatchData = [];
+    // dispatchData is declared globally above
     async function searchDispatch() {
+        if (!supabase) return;
         const query = document.getElementById('dispatchSearch').value;
         let dbQuery = supabase.from('dispatch_phones').select('*').order('extension');
         
