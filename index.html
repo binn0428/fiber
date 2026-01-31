@@ -85,24 +85,53 @@
             if (log.action === 'DELETE') { actionColor = '#F44336'; actionText = '刪除'; }
             if (log.action === 'INSERT') { actionColor = '#4CAF50'; actionText = '新增'; }
 
+            let deleteBtn = '';
+            if (currentUser && currentUser.role === 'admin') {
+                deleteBtn = `<button onclick="deleteModLog('${log.id}', '${table}')" style="background:#d32f2f; color:white; border:none; padding:3px 8px; border-radius:3px; font-size:0.8em; margin-left:10px; cursor:pointer;">刪除</button>`;
+            }
+
             // Collapsible Details using <details>
             html += `
-            <details class="mod-log-card" style="margin-bottom: 8px; padding: 8px 12px; border: 1px solid #eee;">
-                <summary class="mod-log-header" style="cursor: pointer; margin-bottom: 0; border-bottom: none; display: flex; justify-content: space-between; align-items: center; outline: none; list-style: none;">
+            <details class="mod-log-card">
+                <summary class="mod-log-header" style="cursor: pointer;">
                     <div style="display:flex; gap:12px; align-items:center;">
                         <span style="color: ${actionColor}; font-weight:bold; min-width: 40px;">${actionText}</span>
                         <span style="font-weight:bold; color:#333;">${log.modified_by || 'Unknown'}</span>
                         <span style="color: #666; font-size: 0.9em;">(點擊展開)</span>
+                        ${deleteBtn}
                     </div>
-                    <span class="mod-log-time" style="font-size: 0.85em;">${time}</span>
+                    <span class="mod-log-time">${time}</span>
                 </summary>
-                <div class="mod-log-content" style="margin-top: 8px; border-top: 1px solid #f0f0f0; padding-top: 8px;">
-                    <div style="background: #fcfcfc; padding: 10px; border-radius: 4px; border: 1px solid #eee; white-space: pre-wrap; font-size: 0.95em; line-height: 1.4; color: #444;">${log.changed_fields || log.content || '無詳細內容'}</div>
+                <div class="mod-log-content" style="margin-top: 5px; border-top: 1px solid #f0f0f0; padding-top: 5px;">
+                    <div style="background: #fcfcfc; padding: 5px; border-radius: 4px; border: 1px solid #eee; white-space: pre-wrap; color: #444;">${log.changed_fields || log.content || '無詳細內容'}</div>
                 </div>
             </details>`;
         });
         
         listDiv.innerHTML = html;
+    }
+
+    async function deleteModLog(id, table) {
+        if (!currentUser || currentUser.role !== 'admin') {
+            alert('只有管理員可以刪除紀錄');
+            return;
+        }
+        if (!confirm('確定刪除此紀錄？')) return;
+        
+        try {
+            const { error } = await supabaseClient
+                .from('modification_logs')
+                .delete()
+                .eq('id', id);
+                
+            if (error) throw error;
+            
+            // Reload logs
+            loadModRecords(table);
+        } catch (e) {
+            console.error('Delete log error:', e);
+            alert('刪除失敗');
+        }
     }
 
     async function exportModLogs(table) {
@@ -727,26 +756,75 @@
             background: #fff;
             color: #333;
             border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 15px;
+            padding: 10px; /* Reduced padding */
+            margin-bottom: 10px; /* Reduced margin */
             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
         .mod-log-header {
             display: flex;
             justify-content: space-between;
             border-bottom: 1px solid #eee;
-            padding-bottom: 8px;
-            margin-bottom: 8px;
+            padding-bottom: 5px; /* Reduced padding */
+            margin-bottom: 5px; /* Reduced margin */
             font-weight: bold;
             color: #555;
+            font-size: 0.9em; /* Slightly smaller font */
         }
         .mod-log-content {
             white-space: pre-wrap;
-            line-height: 1.5;
+            line-height: 1.4;
+            font-size: 0.9em; /* Smaller content font */
         }
         .mod-log-time {
             font-size: 0.85em;
             color: #888;
+        }
+
+        /* Back to Top Button */
+        #backToTop {
+            position: fixed;
+            bottom: 40px; /* Above footer */
+            right: 20px;
+            background: rgba(63, 81, 181, 0.7);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            font-size: 20px;
+            cursor: pointer;
+            display: none; /* Hidden by default */
+            z-index: 999;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            transition: opacity 0.3s, background 0.3s;
+            justify-content: center;
+            align-items: center;
+        }
+        #backToTop:hover {
+            background: rgba(63, 81, 181, 1);
+        }
+        
+        /* Footer Status */
+        #footerStatus {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            text-align: center;
+            padding: 5px 0;
+            font-size: 0.8rem;
+            z-index: 1000;
+            backdrop-filter: blur(3px);
+        }
+        
+        /* Search Count Style */
+        .search-count {
+            font-size: 0.75rem;
+            color: #aaa;
+            margin-bottom: 2px;
+            margin-left: 2px;
         }
 
     </style>
@@ -772,13 +850,13 @@
         <h1>資料查詢系統</h1>
         <div>
             <!-- Modification Record Button -->
-            <button id="modRecordBtn" onclick="showModRecordPage()" style="background: #4CAF50; color: #FFEB3B; margin-right: 10px;">修改紀錄</button>
+            <button id="modRecordBtn" onclick="showModRecordPage()" style="background: #4CAF50; color: #FFEB3B; margin-right: 10px; font-size: 0.8rem; padding: 5px 10px;">修改紀錄</button>
             <!-- Login Button (Visible when logged out) -->
             <button id="loginBtn" onclick="showLoginModal()">登入修改</button>
             
             <!-- User Info & Logout (Visible when logged in) -->
             <span id="userControls" class="hidden">
-                <span id="userInfo"></span>
+                <!-- User Info moved to footer -->
                 <button onclick="logout()" style="background: #CD5C5C;">登出</button>
             </span>
         </div>
@@ -793,7 +871,8 @@
     <!-- Phones Section -->
     <div id="phonesSection" class="section">
         <div class="toolbar">
-            <div class="search-group">
+            <div class="search-group" style="flex-wrap: wrap;">
+                <div id="phoneSearchCount" class="search-count" style="width: 100%;"></div>
                 <input type="text" id="phoneSearch" placeholder="搜尋分機..." style="width: 300px;">
                 <button onclick="searchPhones()">搜尋</button>
                 <button class="btn-clear" onclick="clearInput('phoneSearch')">清除</button>
@@ -813,7 +892,8 @@
     <!-- Dispatch Section -->
     <div id="dispatchSection" class="section hidden">
         <div class="toolbar">
-            <div class="search-group">
+            <div class="search-group" style="flex-wrap: wrap;">
+                <div id="dispatchSearchCount" class="search-count" style="width: 100%;"></div>
                 <input type="text" id="dispatchSearch" placeholder="搜尋調度電話..." style="width: 300px;">
                 <button onclick="searchDispatch()">搜尋</button>
                 <button class="btn-clear" onclick="clearInput('dispatchSearch')">清除</button>
@@ -833,7 +913,8 @@
     <!-- Images Section -->
     <div id="imagesSection" class="section hidden">
         <div class="toolbar">
-            <div class="search-group">
+            <div class="search-group" style="flex-wrap: wrap;">
+                <div id="imgSearchCount" class="search-count" style="width: 100%;"></div>
                 <input type="text" id="imgSearch" placeholder="搜尋PA天車資料..." style="width: 300px;">
                 <button onclick="searchImages()">搜尋</button>
                 <button onclick="searchLatestImages()" style="background-color: #008CBA;">最新圖片</button>
@@ -879,6 +960,9 @@
         <p style="text-align: center; color: #888;">請選擇上方類別查看紀錄</p>
     </div>
 </div>
+
+<button id="backToTop" title="回到最上方">▲</button>
+<div id="footerStatus" class="hidden"></div>
 
 <script>
     // ==========================================
@@ -927,6 +1011,19 @@
 
     // Initialize
     window.addEventListener('DOMContentLoaded', () => {
+        // Back to Top Logic
+        const backToTopBtn = document.getElementById('backToTop');
+        window.addEventListener('scroll', () => {
+            if (window.scrollY > 300) {
+                backToTopBtn.style.display = 'flex';
+            } else {
+                backToTopBtn.style.display = 'none';
+            }
+        });
+        backToTopBtn.addEventListener('click', () => {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+
         // if (supabaseClient) {
         //     loadInitialData(); // Removed as per user request: "Show data only after search"
         // }
@@ -1030,10 +1127,17 @@
         if (isLoggedIn) {
             document.getElementById('loginBtn').classList.add('hidden');
             document.getElementById('userControls').classList.remove('hidden');
-            document.getElementById('userInfo').textContent = `你好, ${currentUser.username} (${getRoleName(currentUser.role)})`;
+            
+            // Footer Status
+            const footer = document.getElementById('footerStatus');
+            footer.textContent = `已登入: ${currentUser.username} (${getRoleName(currentUser.role)})`;
+            footer.classList.remove('hidden');
         } else {
             document.getElementById('loginBtn').classList.remove('hidden');
             document.getElementById('userControls').classList.add('hidden');
+            
+            // Hide Footer
+            document.getElementById('footerStatus').classList.add('hidden');
         }
 
         // Auth Controls (Upload/Import/Export)
@@ -1110,6 +1214,8 @@
     // ================= IMAGES =================
     async function searchImages() {
         const query = document.getElementById('imgSearch').value;
+        const countEl = document.getElementById('imgSearchCount');
+        countEl.innerText = '';
 
         
         let dbQuery = supabaseClient.from('images').select('*');
@@ -1121,6 +1227,7 @@
         const { data, error } = await dbQuery;
         if (error) { console.error('Error loading images', error); return; }
 
+        if (data) countEl.innerText = `搜尋結果: ${data.length} 筆`;
         renderImages(data);
     }
 
@@ -1128,6 +1235,8 @@
     async function searchLatestImages() {
         const date = new Date();
         date.setDate(date.getDate() - 30);
+        const countEl = document.getElementById('imgSearchCount');
+        countEl.innerText = '';
         
         const { data, error } = await supabaseClient
             .from('images')
@@ -1136,6 +1245,7 @@
             .order('created_at', { ascending: false });
             
         if (error) { console.error('Error loading latest images', error); alert('載入失敗'); return; }
+        if (data) countEl.innerText = `最新圖片: ${data.length} 筆`;
         renderImages(data);
     }
 
@@ -1512,6 +1622,8 @@
     async function searchPhones() {
         if (!supabaseClient) return;
         const query = document.getElementById('phoneSearch').value.trim();
+        const countEl = document.getElementById('phoneSearchCount');
+        countEl.innerText = '';
 
 
         const container = document.getElementById('phonesTableContainer');
@@ -1536,6 +1648,7 @@
             if (error) throw error;
             
             phoneData = data;
+            if (data) countEl.innerText = `搜尋結果: ${data.length} 筆`;
             renderPhoneTable(data, query);
             
         } catch (error) {
@@ -1777,7 +1890,9 @@
                 // Log Modification to DB
                 // Use try-catch for log specifically to ensure UI recovery even if log fails
                 try {
-                    await logModification(tableName, 'UPDATE', id, changeLog, originalValues, updates);
+                    // Include extension in change details
+                    const detailedChangeLog = `分機: ${extension}\n${changeLog}`;
+                    await logModification(tableName, 'UPDATE', id, detailedChangeLog, originalValues, updates);
                 } catch (logErr) {
                     console.error('Logging failed but update succeeded:', logErr);
                 }
@@ -1893,6 +2008,8 @@
     async function searchDispatch() {
         if (!supabaseClient) return;
         const query = document.getElementById('dispatchSearch').value.trim();
+        const countEl = document.getElementById('dispatchSearchCount');
+        countEl.innerText = '';
 
 
         const container = document.getElementById('dispatchTableContainer');
@@ -1914,6 +2031,7 @@
             if (error) throw error;
             
             dispatchData = data;
+            if (data) countEl.innerText = `搜尋結果: ${data.length} 筆`;
             renderDispatchTable(data, query);
             
         } catch (error) {
