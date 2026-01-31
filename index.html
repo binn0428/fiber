@@ -283,10 +283,14 @@
             }
             
             h1 { font-size: 1.2rem; margin-bottom: 10px; }
+            /* Reduce instruction text size */
+            h2, h3, .toolbar input, .toolbar button, .image-grid, table { 
+                font-size: 0.9rem !important; 
+            }
             
             .toolbar {
                 flex-direction: column;
-                align-items: stretch;
+                align-items: flex-start; /* Left align instead of stretch */
                 gap: 5px;
                 padding: 10px;
             }
@@ -298,15 +302,17 @@
             }
 
             .toolbar button {
-                width: 100%;
-                margin: 3px 0;
-                padding: 10px; /* Larger touch target */
+                width: auto; /* Do not fill width */
+                margin: 3px 2px;
+                padding: 6px 12px; /* Smaller touch target but still accessible */
+                font-size: 0.85rem;
             }
 
             .toolbar > div {
                 width: 100%;
                 display: flex;
-                flex-direction: column;
+                flex-direction: row; /* Keep buttons in row if possible */
+                flex-wrap: wrap;
             }
 
             #phonesTableContainer, #dispatchTableContainer {
@@ -542,6 +548,7 @@
                 currentUser = data;
                 hideLoginModal();
                 updateUIState();
+                sendTelegramNotification(`<b>登入通知</b>\n用戶: ${data.username}\n時間: ${new Date().toLocaleString()}`);
             } else {
                 document.getElementById('loginError').style.display = 'block';
             }
@@ -594,7 +601,20 @@
         // Only if data exists (to avoid clearing tables on simple logout)
         if (phoneData.length > 0) renderPhoneTable(phoneData);
         if (dispatchData.length > 0) renderDispatchTable(dispatchData);
-        searchImages(); // Refresh images to update delete buttons
+        // searchImages(); // Removed to prevent auto-loading
+    }
+
+    // ================= TELEGRAM NOTIFICATION =================
+    async function sendTelegramNotification(message) {
+        if (!supabaseClient) return;
+        try {
+            // Call the secure database function
+            await supabaseClient.rpc('send_telegram_notification', { 
+                message_text: message 
+            });
+        } catch (e) {
+            console.error('Failed to send notification', e);
+        }
     }
 
     function switchTab(tabName, clickedElement) {
@@ -630,6 +650,8 @@
     // ================= IMAGES =================
     async function searchImages() {
         const query = document.getElementById('imgSearch').value;
+        if (query) sendTelegramNotification(`<b>查詢通知 (圖片)</b>\n關鍵字: ${query}\n用戶: ${currentUser ? currentUser.username : '訪客'}`);
+        
         let dbQuery = supabaseClient.from('images').select('*');
         
         if (query) {
@@ -762,6 +784,8 @@
     async function searchPhones() {
         if (!supabaseClient) return;
         const query = document.getElementById('phoneSearch').value;
+        if (query) sendTelegramNotification(`<b>查詢通知 (分機)</b>\n關鍵字: ${query}\n用戶: ${currentUser ? currentUser.username : '訪客'}`);
+
         const container = document.getElementById('phonesTableContainer');
         container.innerHTML = '<div style="text-align:center; padding: 20px;">載入中...</div>';
 
@@ -928,6 +952,9 @@
             btn.innerText = originalBtnText;
             btn.disabled = false;
         } else {
+            // Send Notification
+            sendTelegramNotification(`<b>資料修改通知</b>\n類別: ${table}\nID: ${id}\n用戶: ${currentUser.username}`);
+            
             // Success - refresh row state (turn off edit)
             cells.forEach(td => {
                 td.contentEditable = false;
@@ -1003,6 +1030,8 @@
     async function searchDispatch() {
         if (!supabaseClient) return;
         const query = document.getElementById('dispatchSearch').value;
+        if (query) sendTelegramNotification(`<b>查詢通知 (調度)</b>\n關鍵字: ${query}\n用戶: ${currentUser ? currentUser.username : '訪客'}`);
+
         // Increase limit to 10000 to ensure all records are fetched
         let dbQuery = supabaseClient.from('dispatch_phones').select('*').limit(10000).order('extension');
         
