@@ -33,6 +33,8 @@
     <!-- DOCX Preview & Dependencies (Client-side conversion) -->
     <script src="https://unpkg.com/jszip/dist/jszip.min.js"></script>
     <script src="https://unpkg.com/docx-preview/dist/docx-preview.min.js"></script>
+    <!-- html2pdf.js for PDF Generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     
     <style>
         :root {
@@ -604,15 +606,15 @@
     <!-- Word Convert Section -->
     <div id="wordConvertSection" class="section hidden">
         <div class="toolbar">
-            <h3>Word 轉 圖片 (僅支援 .docx)</h3>
+            <h3>Word 轉 PDF / 圖片</h3>
             <div style="flex-grow: 1;"></div>
         </div>
         <div style="padding: 20px; text-align: center; background: var(--card-bg); border-radius: 8px; margin-top: 15px;">
             <div id="dropZone" style="border: 2px dashed #666; padding: 40px; border-radius: 10px; cursor: pointer; transition: all 0.3s;" onclick="document.getElementById('wordInput').click()">
                 <p style="font-size: 1.2rem; color: #aaa; margin-bottom: 15px;">點擊選擇 Word 檔案 (.docx)</p>
-                <div style="font-size: 0.9rem; color: #FF9800; margin-bottom: 15px;">注意：網頁版僅支援 .docx 格式，不支援舊版 .doc</div>
+                <div style="font-size: 0.9rem; color: #FF9800; margin-bottom: 15px;">注意：網頁版主要支援 .docx 格式，.doc 請先另存新檔</div>
                 <button style="font-size: 1.1rem; padding: 10px 25px;">選擇檔案</button>
-                <input type="file" id="wordInput" accept=".docx" style="display: none;" onchange="handleWordUpload(this)">
+                <input type="file" id="wordInput" accept=".doc,.docx" style="display: none;" onchange="handleWordUpload(this)">
             </div>
             
             <div id="convertStatus" style="margin-top: 20px; display: none;">
@@ -628,7 +630,9 @@
                 <!-- Hidden container for rendering -->
                 <div id="docxContainer" style="background: white; color: black; padding: 20px; margin: 0 auto; box-shadow: 0 0 10px rgba(0,0,0,0.1); overflow: auto; max-height: 500px; width: fit-content; min-width: 600px;"></div>
                 
-                <div style="margin-top: 20px;">
+                <div style="margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
+                    <button onclick="savePdf()" style="background: #D32F2F; font-size: 1.1rem;">另存為 PDF</button>
+                    <button id="btnUploadPdf" onclick="uploadPdfAsImage()" style="background: #1976D2; font-size: 1.1rem; display: none;">上傳並轉圖</button>
                     <button onclick="downloadDocImage()" style="background: #228B22; font-size: 1.1rem;">下載為圖片 (JPG)</button>
                 </div>
             </div>
@@ -799,6 +803,12 @@
             else document.getElementById(id).classList.add('hidden');
         });
 
+        // Toggle Upload PDF Button
+        const btnUploadPdf = document.getElementById('btnUploadPdf');
+        if (btnUploadPdf) {
+            btnUploadPdf.style.display = isLoggedIn ? 'inline-block' : 'none';
+        }
+
         // Admin Only Controls
         const adminControls = ['btn-clearPhones', 'btn-clearDispatch'];
         adminControls.forEach(id => {
@@ -897,6 +907,78 @@
         document.getElementById('convertStatus').style.display='none';
         document.getElementById('dropZone').style.display='block';
         document.getElementById('wordInput').value = '';
+    }
+
+    async function generatePdfBlob() {
+        const element = document.getElementById('docxContainer');
+        // Use html2pdf to generate blob
+        const opt = {
+            margin:       10,
+            filename:     'converted.pdf',
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+        
+        // Return promise that resolves to blob
+        return await html2pdf().set(opt).from(element).output('blob');
+    }
+
+    async function savePdf() {
+        const btn = event.target;
+        const oldText = btn.textContent;
+        btn.textContent = '產生 PDF 中...';
+        btn.disabled = true;
+
+        try {
+            const element = document.getElementById('docxContainer');
+            const opt = {
+                margin:       10,
+                filename:     'converted.pdf',
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+            await html2pdf().set(opt).from(element).save();
+        } catch (e) {
+            console.error(e);
+            alert('PDF 產生失敗: ' + e.message);
+        } finally {
+            btn.textContent = oldText;
+            btn.disabled = false;
+        }
+    }
+
+    async function uploadPdfAsImage() {
+        if (!currentUser) {
+            alert('請先登入');
+            showLoginModal();
+            return;
+        }
+        
+        const btn = event.target;
+        const oldText = btn.textContent;
+        btn.textContent = '轉換並上傳中...';
+        btn.disabled = true;
+
+        try {
+            const pdfBlob = await generatePdfBlob();
+            // Create a File object from Blob
+            const pdfFile = new File([pdfBlob], "converted_word.pdf", { type: "application/pdf" });
+            
+            // Create dummy input object to mimic <input type="file">
+            const dummyInput = { files: [pdfFile] };
+            
+            // Call existing upload handler
+            await handleImageUpload(dummyInput);
+            
+        } catch (e) {
+            console.error(e);
+            alert('處理失敗: ' + e.message);
+        } finally {
+            btn.textContent = oldText;
+            btn.disabled = false;
+        }
     }
 
     async function downloadDocImage() {
