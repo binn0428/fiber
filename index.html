@@ -408,7 +408,7 @@
                 <button onclick="exportToExcel('phones')" style="background: #20B2AA;">匯出 Excel</button>
                 <button onclick="document.getElementById('phoneImport').click()" style="background: #DAA520;">匯入 Excel</button>
                 <input type="file" id="phoneImport" accept=".xlsx" style="display: none;" onchange="importExcel('phones', this)">
-                <button onclick="deleteAllPhones()" style="background: #CD5C5C; margin-left: 10px;">清空資料</button>
+                <button id="btn-clearPhones" onclick="deleteAllPhones()" style="background: #CD5C5C; margin-left: 10px;" class="hidden">清空資料</button>
             </div>
         </div>
         <div id="phonesTableContainer"></div>
@@ -577,6 +577,16 @@
         authControls.forEach(id => {
             if (isLoggedIn) document.getElementById(id).classList.remove('hidden');
             else document.getElementById(id).classList.add('hidden');
+        });
+
+        // Admin Only Controls
+        const adminControls = ['btn-clearPhones'];
+        adminControls.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                if (isLoggedIn && currentUser.role === 'admin') el.classList.remove('hidden');
+                else el.classList.add('hidden');
+            }
         });
 
         // Re-render tables to update contenteditable and delete buttons
@@ -968,10 +978,11 @@
 
         try {
             // Delete all records where id is not null (effectively all records)
+            // Use not('id', 'is', null) which is valid for UUIDs
             const { error, count } = await supabaseClient
                 .from('phones')
                 .delete()
-                .neq('id', 0); // Assuming IDs are non-zero, or use another always-true condition
+                .not('id', 'is', null);
             
             if (error) throw error;
             
