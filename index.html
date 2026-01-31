@@ -1719,12 +1719,12 @@
         // Detect changes for notification
         let changedDetails = [];
         let extension = updates['extension'] || ''; // Default, will try to find below
+        let originalValues = {}; // Moved outside for scope visibility
         
         if (originalRowData[id]) {
             const tempDiv = document.createElement('div');
             tempDiv.innerHTML = originalRowData[id];
             
-            const originalValues = {};
             tempDiv.querySelectorAll('.info-value[data-key]').forEach(div => {
                 originalValues[div.dataset.key] = div.innerText.trim();
             });
@@ -1759,53 +1759,69 @@
         btn.innerText = '儲存中...';
         btn.disabled = true;
         
-        const tableName = table === 'phones' ? 'phones' : 'dispatch_phones';
-        
-        const { error } = await supabaseClient
-            .from(tableName)
-            .update(updates)
-            .eq('id', id);
+        try {
+            const tableName = table === 'phones' ? 'phones' : 'dispatch_phones';
             
-        if (error) {
-            alert('更新失敗: ' + error.message);
-            btn.innerText = originalBtnText;
-            btn.disabled = false;
-        } else {
-            // Send Notification
-            const time = new Date().toLocaleString();
-            const changeLog = changedDetails.length > 0 ? changedDetails.join('\n') : '無明顯變更';
-            
-            // Log Modification to DB
-            await logModification(tableName, 'UPDATE', id, changeLog, originalValues, updates);
+            const { error } = await supabaseClient
+                .from(tableName)
+                .update(updates)
+                .eq('id', id);
+                
+            if (error) {
+                throw error;
+            } else {
+                // Send Notification
+                const time = new Date().toLocaleString();
+                const changeLog = changedDetails.length > 0 ? changedDetails.join('\n') : '無明顯變更';
+                
+                // Log Modification to DB
+                // Use try-catch for log specifically to ensure UI recovery even if log fails
+                try {
+                    await logModification(tableName, 'UPDATE', id, changeLog, originalValues, updates);
+                } catch (logErr) {
+                    console.error('Logging failed but update succeeded:', logErr);
+                }
 
-            sendTelegramNotification(
-`<b>資料修改通知</b>
-修改帳號: ${currentUser.username}
-修改分機: ${extension}
-時間: ${time}
-修改欄位:
-${changeLog}`
-            );
-            
-            // Success - refresh row state (turn off edit)
-            values.forEach(div => {
-                div.contentEditable = false;
-            });
-            
-            const actionDiv = card.querySelector('.card-actions');
-            const deleteFunc = table === 'phones' ? `deletePhone('${id}')` : `deleteDispatch('${id}')`;
-            
-            let deleteBtn = '';
-            if (currentUser && currentUser.role === 'admin') {
-                deleteBtn = `<button onclick="${deleteFunc}" style="background:#d32f2f;">刪除</button>`;
+                sendTelegramNotification(
+    `<b>資料修改通知</b>
+    修改帳號: ${currentUser.username}
+    修改分機: ${extension}
+    時間: ${time}
+    修改欄位:
+    ${changeLog}`
+                );
+                
+                // Success - refresh row state (turn off edit)
+                values.forEach(div => {
+                    div.contentEditable = false;
+                });
+                
+                const actionDiv = card.querySelector('.card-actions');
+                const deleteFunc = table === 'phones' ? `deletePhone('${id}')` : `deleteDispatch('${id}')`;
+                
+                let deleteBtn = '';
+                if (currentUser && currentUser.role === 'admin') {
+                    deleteBtn = `<button onclick="${deleteFunc}" style="background:#d32f2f;">刪除</button>`;
+                }
+                
+                actionDiv.innerHTML = `
+                    <button onclick="enableEdit(this, '${table}')">修改</button> 
+                    ${deleteBtn}
+                `;
+                
+                delete originalRowData[id];
             }
-            
-            actionDiv.innerHTML = `
-                <button onclick="enableEdit(this, '${table}')">修改</button> 
-                ${deleteBtn}
-            `;
-            
-            delete originalRowData[id];
+        } catch (error) {
+            alert('更新失敗: ' + (error.message || error));
+            // Restore button state on error
+        } finally {
+             // Always restore button state if it's still in "Saving" mode and we are done
+             // Note: In success case, we replaced the button HTML, so this might refer to a detached element.
+             // But if we failed, we need to restore.
+             if (btn && btn.isConnected && btn.innerText === '儲存中...') {
+                 btn.innerText = originalBtnText;
+                 btn.disabled = false;
+             }
         }
     }
 
