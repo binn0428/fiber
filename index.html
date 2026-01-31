@@ -1034,11 +1034,12 @@
                 columns.forEach(col => {
                     const val = row[col.key] || '';
                     // Logic: Always render if value exists.
-                    // If empty:
-                    //   - If !isEditable: Don't render (display: none via class or just omit) -> User said "Don't show"
+                    // If empty (or just placeholder like '-'):
+                    //   - If !isEditable: Don't render (display: none via class or just omit)
                     //   - If isEditable: Render but hidden, so enableEdit can show it.
                     
-                    const isEmpty = !val;
+                    const strVal = String(val).trim();
+                    const isEmpty = !strVal || strVal === '-' || strVal === '無資料';
                     
                     if (isEmpty && !isEditable) return; // Skip completely for viewers
                     
@@ -1305,11 +1306,12 @@
                 columns.forEach(col => {
                     const val = row[col.key] || '';
                     // Logic: Always render if value exists.
-                    // If empty:
+                    // If empty (or just placeholder like '-'):
                     //   - If !isEditable: Don't render (display: none via class or just omit)
                     //   - If isEditable: Render but hidden, so enableEdit can show it.
                     
-                    const isEmpty = !val;
+                    const strVal = String(val).trim();
+                    const isEmpty = !strVal || strVal === '-' || strVal === '無資料';
                     
                     if (isEmpty && !isEditable) return; // Skip completely for viewers
                     
