@@ -533,6 +533,7 @@
             <div class="search-group">
                 <input type="text" id="imgSearch" placeholder="搜尋圖片..." style="width: 300px;">
                 <button onclick="searchImages()">搜尋</button>
+                <button onclick="searchLatestImages()" style="background-color: #008CBA;">最新圖片</button>
                 <button class="btn-clear" onclick="clearInput('imgSearch')">清除</button>
             </div>
             
@@ -823,8 +824,31 @@
         const { data, error } = await dbQuery;
         if (error) { console.error('Error loading images', error); return; }
 
+        renderImages(data);
+    }
+
+    async function searchLatestImages() {
+        if (currentUser) sendTelegramNotification(`<b>查詢通知 (最新圖片)</b>\n用戶: ${currentUser.username}`);
+        
+        const { data, error } = await supabaseClient
+            .from('images')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(50);
+            
+        if (error) { console.error('Error loading latest images', error); alert('載入失敗'); return; }
+        renderImages(data);
+    }
+
+    function renderImages(data) {
         const grid = document.getElementById('imageGrid');
         grid.innerHTML = '';
+        
+        if (!data || data.length === 0) {
+            grid.innerHTML = '<div style="width:100%; text-align:center; color:#666; padding:20px;">無符合圖片</div>';
+            return;
+        }
+
         data.forEach(img => {
             const div = document.createElement('div');
             div.className = 'image-item';
@@ -836,13 +860,83 @@
                 deleteBtn = `<div style="margin-top:5px;"><button onclick="deleteImage('${img.id}', '${img.file_path}')" style="background:#ff4444;color:white;border:none;padding:5px 10px;cursor:pointer;border-radius:3px;">刪除</button></div>`;
             }
 
+            // Name Display / Edit Logic
+            let nameHtml = `<div style="margin-top:5px; word-break:break-all;">${img.filename}</div>`;
+            
+            if (currentUser) {
+                const safeName = (img.filename || '').replace(/"/g, '&quot;');
+                nameHtml = `
+                <div class="img-name-container" style="margin-top:5px;">
+                    <div id="name-display-${img.id}" style="display:flex; justify-content:center; align-items:center; gap:5px;">
+                        <span style="word-break:break-all;">${img.filename}</span>
+                        <button onclick="enableImageEdit('${img.id}')" style="background:none; border:none; cursor:pointer; opacity:0.6;" title="修改名稱">✏️</button>
+                    </div>
+                    <div id="name-edit-${img.id}" style="display:none;">
+                        <input type="text" id="input-${img.id}" value="${safeName}" style="width:100%; box-sizing:border-box; padding:4px; margin-bottom:4px; border:1px solid #ccc; border-radius:3px;">
+                        <div>
+                            <button onclick="saveImageName('${img.id}')" style="background:#4caf50; color:white; border:none; padding:3px 8px; border-radius:3px; font-size:12px; cursor:pointer;">儲存</button>
+                            <button onclick="cancelImageEdit('${img.id}')" style="background:#757575; color:white; border:none; padding:3px 8px; border-radius:3px; font-size:12px; cursor:pointer;">取消</button>
+                        </div>
+                    </div>
+                </div>`;
+            }
+
             div.innerHTML = `
                 <img src="${publicUrl}" loading="lazy" onclick="window.open('${publicUrl}')">
-                <div>${img.filename}</div>
+                ${nameHtml}
                 ${deleteBtn}
             `;
             grid.appendChild(div);
         });
+    }
+
+    function enableImageEdit(id) {
+        const display = document.getElementById(`name-display-${id}`);
+        const edit = document.getElementById(`name-edit-${id}`);
+        if(display) display.style.display = 'none';
+        if(edit) edit.style.display = 'block';
+    }
+
+    function cancelImageEdit(id) {
+        const display = document.getElementById(`name-display-${id}`);
+        const edit = document.getElementById(`name-edit-${id}`);
+        const input = document.getElementById(`input-${id}`);
+        const nameSpan = display ? display.querySelector('span') : null;
+        
+        if(display) display.style.display = 'flex';
+        if(edit) edit.style.display = 'none';
+        if(input && nameSpan) input.value = nameSpan.innerText;
+    }
+
+    async function saveImageName(id) {
+        const input = document.getElementById(`input-${id}`);
+        const newName = input.value.trim();
+        if (!newName) return alert('名稱不能為空');
+        
+        const btn = event.target; 
+        const originalText = btn.innerText;
+        btn.innerText = '...';
+        btn.disabled = true;
+
+        const { error } = await supabaseClient
+            .from('images')
+            .update({ filename: newName })
+            .eq('id', id);
+            
+        btn.innerText = originalText;
+        btn.disabled = false;
+
+        if (error) {
+            alert('更新失敗: ' + error.message);
+        } else {
+            const display = document.getElementById(`name-display-${id}`);
+            const nameSpan = display.querySelector('span');
+            if(nameSpan) nameSpan.innerText = newName;
+            
+            sendTelegramNotification(`<b>圖片名稱修改通知</b>\nID: ${id}\n新名稱: ${newName}\n用戶: ${currentUser.username}`);
+            
+            cancelImageEdit(id);
+        }
     }
 
     async function handleImageUpload(input) {
