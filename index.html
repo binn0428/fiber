@@ -203,6 +203,26 @@
             box-shadow: 0 -2px 10px rgba(0,0,0,0.2);
         }
 
+        /* Custom Tab Colors */
+        .tab.active.tab-phones {
+            background: #FFD700; /* Yellow */
+            color: #000;
+        }
+        .tab.active.tab-images {
+            background: #4CAF50; /* Green */
+            color: #fff;
+        }
+
+        /* Blinking Animation */
+        @keyframes blink-orange {
+            0% { background-color: var(--accent-color); box-shadow: 0 0 0 0 rgba(255, 165, 0, 0.7); }
+            50% { background-color: #ff9800; box-shadow: 0 0 10px 5px rgba(255, 165, 0, 0.5); transform: scale(1.05); }
+            100% { background-color: var(--accent-color); box-shadow: 0 0 0 0 rgba(255, 165, 0, 0); }
+        }
+        .blink-orange {
+            animation: blink-orange 1.5s infinite;
+        }
+
         /* Tables */
         table { 
             width: 100%; 
@@ -533,9 +553,9 @@
     </div>
 
     <div class="tabs">
-        <div class="tab active" onclick="switchTab('phones', this)">分機資料</div>
-        <div class="tab" onclick="switchTab('dispatch', this)">調度電話</div>
-        <div class="tab" onclick="switchTab('images', this)">PA天車資料</div>
+        <div class="tab active tab-phones" onclick="switchTab('phones', this)">分機資料</div>
+        <div class="tab tab-dispatch" onclick="switchTab('dispatch', this)">調度電話</div>
+        <div class="tab tab-images" onclick="switchTab('images', this)">PA天車資料</div>
     </div>
 
     <!-- Phones Section -->
@@ -848,6 +868,7 @@
 
     async function searchLatestImages() {
         const { data, error } = await supabaseClient
+            .from('images')
             .order('created_at', { ascending: false })
             .limit(50);
             
@@ -904,6 +925,16 @@
             `;
             grid.appendChild(div);
         });
+
+        // Blinking Login Button Effect
+        const loginBtn = document.getElementById('loginBtn');
+        if (loginBtn) {
+            if (!currentUser && data.length > 0) {
+                loginBtn.classList.add('blink-orange');
+            } else {
+                loginBtn.classList.remove('blink-orange');
+            }
+        }
     }
 
     function enableImageEdit(id) {
@@ -1313,10 +1344,15 @@
                 html += `</div>`; // End card-body
                 
                 if (isEditable) {
+                    let deleteBtn = '';
+                    if (currentUser && currentUser.role === 'admin') {
+                        deleteBtn = `<button onclick="deletePhone('${row.id}')" style="background:#d32f2f;">刪除</button>`;
+                    }
+                    
                     html += `
                     <div class="card-actions">
                         <button onclick="enableEdit(this, 'phones')">修改</button>
-                        <button onclick="deletePhone('${row.id}')" style="background:#d32f2f;">刪除</button>
+                        ${deleteBtn}
                     </div>`;
                 }
                 
@@ -1337,6 +1373,16 @@
         }
         
         container.innerHTML = html;
+
+        // Blinking Login Button Effect
+        const loginBtn = document.getElementById('loginBtn');
+        if (loginBtn) {
+            if (!currentUser && data.length > 0) {
+                loginBtn.classList.add('blink-orange');
+            } else {
+                loginBtn.classList.remove('blink-orange');
+            }
+        }
     }
 
     // ================= EDIT / SAVE / CANCEL HELPERS =================
@@ -1466,9 +1512,15 @@ ${changeLog}`
             
             const actionDiv = card.querySelector('.card-actions');
             const deleteFunc = table === 'phones' ? `deletePhone('${id}')` : `deleteDispatch('${id}')`;
+            
+            let deleteBtn = '';
+            if (currentUser && currentUser.role === 'admin') {
+                deleteBtn = `<button onclick="${deleteFunc}" style="background:#d32f2f;">刪除</button>`;
+            }
+            
             actionDiv.innerHTML = `
                 <button onclick="enableEdit(this, '${table}')">修改</button> 
-                <button onclick="${deleteFunc}" style="background:#d32f2f;">刪除</button>
+                ${deleteBtn}
             `;
             
             delete originalRowData[id];
@@ -1644,10 +1696,15 @@ ${changeLog}`
                 html += `</div>`; // End card-body
                 
                 if (isEditable) {
+                    let deleteBtn = '';
+                    if (currentUser && currentUser.role === 'admin') {
+                        deleteBtn = `<button onclick="deleteDispatch('${row.id}')" style="background:#d32f2f;">刪除</button>`;
+                    }
+
                     html += `
                     <div class="card-actions">
                         <button onclick="enableEdit(this, 'dispatch')">修改</button>
-                        <button onclick="deleteDispatch('${row.id}')" style="background:#d32f2f;">刪除</button>
+                        ${deleteBtn}
                     </div>`;
                 }
                 
@@ -1667,6 +1724,16 @@ ${changeLog}`
             html += `</div>`;
         }
         container.innerHTML = html;
+
+        // Blinking Login Button Effect
+        const loginBtn = document.getElementById('loginBtn');
+        if (loginBtn) {
+            if (!currentUser && data.length > 0) {
+                loginBtn.classList.add('blink-orange');
+            } else {
+                loginBtn.classList.remove('blink-orange');
+            }
+        }
     }
 
     async function updateDispatch(id, field, value) {
