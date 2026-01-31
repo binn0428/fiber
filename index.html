@@ -30,11 +30,7 @@
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     </script>
     
-    <!-- DOCX Preview & Dependencies (Client-side conversion) -->
-    <script src="https://unpkg.com/jszip/dist/jszip.min.js"></script>
-    <script src="https://unpkg.com/docx-preview/dist/docx-preview.min.js"></script>
-    <!-- html2pdf.js for PDF Generation -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
     
     <style>
         :root {
@@ -540,7 +536,6 @@
         <div class="tab active" onclick="switchTab('phones', this)">分機資料</div>
         <div class="tab" onclick="switchTab('dispatch', this)">調度電話</div>
         <div class="tab" onclick="switchTab('images', this)">PA天車資料</div>
-        <div class="tab" onclick="switchTab('wordConvert', this)">Word轉圖檔</div>
     </div>
 
     <!-- Phones Section -->
@@ -603,41 +598,7 @@
         <div id="imageGrid" class="image-grid"></div>
     </div>
 
-    <!-- Word Convert Section -->
-    <div id="wordConvertSection" class="section hidden">
-        <div class="toolbar">
-            <h3>Word 轉 PDF / 圖片</h3>
-            <div style="flex-grow: 1;"></div>
-        </div>
-        <div style="padding: 20px; text-align: center; background: var(--card-bg); border-radius: 8px; margin-top: 15px;">
-            <div id="dropZone" style="border: 2px dashed #666; padding: 40px; border-radius: 10px; cursor: pointer; transition: all 0.3s;" onclick="document.getElementById('wordInput').click()">
-                <p style="font-size: 1.2rem; color: #aaa; margin-bottom: 15px;">點擊選擇 Word 檔案 (.docx)</p>
-                <div style="font-size: 0.9rem; color: #FF9800; margin-bottom: 15px;">注意：網頁版主要支援 .docx 格式，.doc 請先另存新檔</div>
-                <button style="font-size: 1.1rem; padding: 10px 25px;">選擇檔案</button>
-                <input type="file" id="wordInput" accept=".doc,.docx" style="display: none;" onchange="handleWordUpload(this)">
-            </div>
-            
-            <div id="convertStatus" style="margin-top: 20px; display: none;">
-                <div id="convertSpinner" style="display: inline-block; width: 20px; height: 20px; border: 3px solid rgba(255,255,255,.3); border-radius: 50%; border-top-color: #fff; animation: spin 1s ease-in-out infinite; vertical-align: middle;"></div>
-                <span id="convertMsg" style="margin-left: 10px; font-size: 1.1rem; vertical-align: middle;">正在處理中...</span>
-            </div>
 
-            <div id="convertResult" style="margin-top: 20px; display: none;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <h3>預覽與下載</h3>
-                    <button onclick="resetWordConvert()">重新上傳</button>
-                </div>
-                <!-- Hidden container for rendering -->
-                <div id="docxContainer" style="background: white; color: black; padding: 20px; margin: 0 auto; box-shadow: 0 0 10px rgba(0,0,0,0.1); overflow: auto; max-height: 500px; width: fit-content; min-width: 600px;"></div>
-                
-                <div style="margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
-                    <button onclick="savePdf()" style="background: #D32F2F; font-size: 1.1rem;">另存為 PDF</button>
-                    <button id="btnUploadPdf" onclick="uploadPdfAsImage()" style="background: #1976D2; font-size: 1.1rem; display: none;">上傳並轉圖</button>
-                    <button onclick="downloadDocImage()" style="background: #228B22; font-size: 1.1rem;">下載為圖片 (JPG)</button>
-                </div>
-            </div>
-        </div>
-    </div>
 </div>
 
 <script>
@@ -803,11 +764,7 @@
             else document.getElementById(id).classList.add('hidden');
         });
 
-        // Toggle Upload PDF Button
-        const btnUploadPdf = document.getElementById('btnUploadPdf');
-        if (btnUploadPdf) {
-            btnUploadPdf.style.display = isLoggedIn ? 'inline-block' : 'none';
-        }
+
 
         // Admin Only Controls
         const adminControls = ['btn-clearPhones', 'btn-clearDispatch'];
@@ -839,188 +796,7 @@
         }
     }
 
-    // Word Conversion Logic (Client-side)
-    async function handleWordUpload(input) {
-        const file = input.files[0];
-        if (!file) return;
 
-        const statusDiv = document.getElementById('convertStatus');
-        const msgSpan = document.getElementById('convertMsg');
-        const resultDiv = document.getElementById('convertResult');
-        const dropZone = document.getElementById('dropZone');
-        const container = document.getElementById('docxContainer');
-        
-        dropZone.style.display = 'none';
-        statusDiv.style.display = 'block';
-        msgSpan.textContent = '正在解析文件...';
-        resultDiv.style.display = 'none';
-        container.innerHTML = '';
-
-        try {
-            // Read file as ArrayBuffer
-            const arrayBuffer = await file.arrayBuffer();
-            
-            // Render DOCX
-            msgSpan.textContent = '正在渲染...';
-            await renderDocx(arrayBuffer, container);
-            
-            statusDiv.style.display = 'none';
-            resultDiv.style.display = 'block';
-
-        } catch (error) {
-            console.error(error);
-            msgSpan.textContent = '錯誤: ' + error.message;
-            if (file.name.endsWith('.doc')) {
-                 msgSpan.innerHTML += '<br><br><b>注意：不支援 .doc 舊版格式，請另存為 .docx 後再試。</b>';
-            }
-            // Provide a button to retry
-            const retryBtn = document.createElement('button');
-            retryBtn.textContent = '重試';
-            retryBtn.style.marginTop = '10px';
-            retryBtn.onclick = () => {
-                resetWordConvert();
-            };
-            msgSpan.appendChild(document.createElement('br'));
-            msgSpan.appendChild(retryBtn);
-        }
-    }
-
-    function renderDocx(arrayBuffer, container) {
-        return new Promise((resolve, reject) => {
-            const options = {
-                className: "docx-wrapper",
-                inWrapper: false, // Don't create wrapper, render directly
-                ignoreWidth: false,
-                ignoreHeight: false,
-                breakPages: true,
-                useBase64URL: true // Important for images
-            };
-            
-            docx.renderAsync(arrayBuffer, container, null, options)
-                .then(() => resolve())
-                .catch(err => reject(err));
-        });
-    }
-    
-    function resetWordConvert() {
-        document.getElementById('convertResult').style.display='none'; 
-        document.getElementById('convertStatus').style.display='none';
-        document.getElementById('dropZone').style.display='block';
-        document.getElementById('wordInput').value = '';
-    }
-
-    async function generatePdfBlob() {
-        const element = document.getElementById('docxContainer');
-        // Use html2pdf to generate blob
-        const opt = {
-            margin:       10,
-            filename:     'converted.pdf',
-            image:        { type: 'jpeg', quality: 0.98 },
-            html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-        };
-        
-        // Return promise that resolves to blob
-        return await html2pdf().set(opt).from(element).output('blob');
-    }
-
-    async function savePdf() {
-        const btn = event.target;
-        const oldText = btn.textContent;
-        btn.textContent = '產生 PDF 中...';
-        btn.disabled = true;
-
-        try {
-            const element = document.getElementById('docxContainer');
-            const opt = {
-                margin:       10,
-                filename:     'converted.pdf',
-                image:        { type: 'jpeg', quality: 0.98 },
-                html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-            };
-            await html2pdf().set(opt).from(element).save();
-        } catch (e) {
-            console.error(e);
-            alert('PDF 產生失敗: ' + e.message);
-        } finally {
-            btn.textContent = oldText;
-            btn.disabled = false;
-        }
-    }
-
-    async function uploadPdfAsImage() {
-        if (!currentUser) {
-            alert('請先登入');
-            showLoginModal();
-            return;
-        }
-        
-        const btn = event.target;
-        const oldText = btn.textContent;
-        btn.textContent = '轉換並上傳中...';
-        btn.disabled = true;
-
-        try {
-            const pdfBlob = await generatePdfBlob();
-            // Create a File object from Blob
-            const pdfFile = new File([pdfBlob], "converted_word.pdf", { type: "application/pdf" });
-            
-            // Create dummy input object to mimic <input type="file">
-            const dummyInput = { files: [pdfFile] };
-            
-            // Call existing upload handler
-            await handleImageUpload(dummyInput);
-            
-        } catch (e) {
-            console.error(e);
-            alert('處理失敗: ' + e.message);
-        } finally {
-            btn.textContent = oldText;
-            btn.disabled = false;
-        }
-    }
-
-    async function downloadDocImage() {
-        const container = document.getElementById('docxContainer');
-        if (!container) return;
-        
-        const originalOverflow = container.style.overflow;
-        const originalMaxHeight = container.style.maxHeight;
-        
-        // Temporarily expand for full screenshot
-        container.style.overflow = 'visible';
-        container.style.maxHeight = 'none';
-        
-        // Show loading
-        const btn = event.target;
-        const originalText = btn.textContent;
-        btn.textContent = '處理中...';
-        btn.disabled = true;
-
-        try {
-            const canvas = await html2canvas(container, {
-                scale: 2, // Higher resolution
-                useCORS: true,
-                backgroundColor: '#ffffff'
-            });
-            
-            // Trigger download
-            const link = document.createElement('a');
-            link.download = 'converted-document.jpg';
-            link.href = canvas.toDataURL('image/jpeg', 0.9);
-            link.click();
-            
-        } catch (e) {
-            alert('圖片產生失敗: ' + e.message);
-        } finally {
-            // Restore styles
-            container.style.overflow = originalOverflow;
-            container.style.maxHeight = originalMaxHeight;
-            btn.textContent = originalText;
-            btn.disabled = false;
-        }
-    }
 
     function switchTab(tabName, clickedElement) {
         document.querySelectorAll('.section').forEach(el => el.classList.add('hidden'));
