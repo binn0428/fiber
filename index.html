@@ -16,7 +16,108 @@
             .catch(err => console.log('Service Worker registration failed: ', err));
         });
       }
-    </script>
+        // ================= MODIFICATION RECORD LOGIC =================
+    function showModRecordPage() {
+        document.getElementById('mainApp').classList.add('hidden');
+        document.getElementById('modRecordPage').classList.remove('hidden');
+        // Load initial times
+        updateLastModTimes();
+    }
+
+    function hideModRecordPage() {
+        document.getElementById('modRecordPage').classList.add('hidden');
+        document.getElementById('mainApp').classList.remove('hidden');
+    }
+
+    async function updateLastModTimes() {
+        const tables = ['phones', 'dispatch_phones', 'images'];
+        for (const table of tables) {
+            const { data, error } = await supabaseClient
+                .from('modification_logs')
+                .select('modified_at')
+                .eq('table_name', table)
+                .order('modified_at', { ascending: false })
+                .limit(1);
+            
+            const el = document.getElementById(`lastModTime-${table}`);
+            if (el) {
+                if (data && data.length > 0) {
+                    el.innerText = '最新修改: ' + new Date(data[0].modified_at).toLocaleString();
+                } else {
+                    el.innerText = '最新修改: 無紀錄';
+                }
+            }
+        }
+    }
+
+    async function loadModRecords(table) {
+        const listDiv = document.getElementById('modRecordList');
+        listDiv.innerHTML = '<p style="text-align: center;">載入中...</p>';
+        
+        const { data, error } = await supabaseClient
+            .from('modification_logs')
+            .select('*')
+            .eq('table_name', table)
+            .order('modified_at', { ascending: false })
+            .limit(50); // Limit to last 50 records
+            
+        if (error) {
+            listDiv.innerHTML = `<p style="color: red; text-align: center;">載入失敗: ${error.message}</p>`;
+            return;
+        }
+
+        if (!data || data.length === 0) {
+            listDiv.innerHTML = '<p style="text-align: center; color: #888;">尚無修改紀錄</p>';
+            return;
+        }
+
+        let html = '';
+        data.forEach(log => {
+            const time = new Date(log.modified_at).toLocaleString();
+            let actionColor = '#555';
+            if (log.action === 'UPDATE') actionColor = '#2196F3'; // Blue
+            if (log.action === 'DELETE') actionColor = '#F44336'; // Red
+            if (log.action === 'INSERT') actionColor = '#4CAF50'; // Green
+
+            html += `
+            <div class="mod-log-card">
+                <div class="mod-log-header">
+                    <span style="color: ${actionColor};">${log.action}</span>
+                    <span class="mod-log-time">${time}</span>
+                </div>
+                <div class="mod-log-content">
+                    <div><b>修改人:</b> ${log.modified_by || 'Unknown'}</div>
+                    <div style="margin-top: 5px;"><b>內容:</b></div>
+                    <div style="background: #f9f9f9; padding: 8px; border-radius: 4px; border: 1px solid #eee; margin-top: 4px;">
+                        ${log.changed_fields || log.content || '無詳細內容'}
+                    </div>
+                </div>
+            </div>`;
+        });
+        
+        listDiv.innerHTML = html;
+    }
+
+    async function logModification(tableName, action, recordId, changes, oldData, newData) {
+        if (!currentUser) return;
+        
+        const { error } = await supabaseClient
+            .from('modification_logs')
+            .insert({
+                table_name: tableName,
+                record_id: recordId,
+                action: action,
+                changed_fields: changes,
+                old_data: oldData,
+                new_data: newData,
+                modified_by: currentUser.username
+            });
+            
+        if (error) {
+            console.error('Failed to log modification:', error);
+        }
+    }
+</script>
 
     <!-- Supabase JS -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -519,6 +620,37 @@
         /* Dark mode adjustments for cards if needed, but screenshot shows white cards */
         /* Keeping white cards as requested/shown in screenshot */
 
+        /* Modification Record Page Styles */
+        #modRecordPage {
+            /* Inherits container styles */
+            z-index: 100;
+        }
+        .mod-log-card {
+            background: #fff;
+            color: #333;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .mod-log-header {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 8px;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #555;
+        }
+        .mod-log-content {
+            white-space: pre-wrap;
+            line-height: 1.5;
+        }
+        .mod-log-time {
+            font-size: 0.85em;
+            color: #888;
+        }
+
     </style>
 </head>
 <body>
@@ -541,6 +673,8 @@
     <div style="display: flex; justify-content: space-between; align-items: center;">
         <h1>資料查詢系統</h1>
         <div>
+            <!-- Modification Record Button -->
+            <button id="modRecordBtn" onclick="showModRecordPage()" style="background: #4CAF50; color: #FFEB3B; margin-right: 10px;">修改紀錄</button>
             <!-- Login Button (Visible when logged out) -->
             <button id="loginBtn" onclick="showLoginModal()">登入修改</button>
             
@@ -619,6 +753,33 @@
     </div>
 
 
+</div>
+
+<!-- Modification Record Page -->
+<div id="modRecordPage" class="container hidden">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h1>修改紀錄</h1>
+        <button onclick="hideModRecordPage()" style="background: #757575;">返回查詢</button>
+    </div>
+
+    <div class="mod-nav" style="display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; justify-content: center;">
+        <div style="text-align: center;">
+            <button onclick="loadModRecords('phones')" style="width: 200px; margin-bottom: 5px;">分機修改紀錄</button>
+            <div id="lastModTime-phones" style="color: #bbb; font-size: 0.9em;">最新修改: 讀取中...</div>
+        </div>
+        <div style="text-align: center;">
+            <button onclick="loadModRecords('dispatch_phones')" style="width: 200px; margin-bottom: 5px;">調度修改紀錄</button>
+            <div id="lastModTime-dispatch_phones" style="color: #bbb; font-size: 0.9em;">最新修改: 讀取中...</div>
+        </div>
+        <div style="text-align: center;">
+            <button onclick="loadModRecords('images')" style="width: 200px; margin-bottom: 5px;">PA天車修改紀錄</button>
+            <div id="lastModTime-images" style="color: #bbb; font-size: 0.9em;">最新修改: 讀取中...</div>
+        </div>
+    </div>
+
+    <div id="modRecordList" style="margin-top: 20px;">
+        <p style="text-align: center; color: #888;">請選擇上方類別查看紀錄</p>
+    </div>
 </div>
 
 <script>
@@ -985,6 +1146,9 @@
             const oldName = nameSpan ? nameSpan.innerText : '(Unknown)';
             if(nameSpan) nameSpan.innerText = newName;
             
+            // Log Modification
+            await logModification('images', 'UPDATE', id, `圖片更名: ${oldName} -> ${newName}`, {filename: oldName}, {filename: newName});
+
             const time = new Date().toLocaleString();
             sendTelegramNotification(`<b>圖片名稱修改通知</b>\n用戶: ${currentUser.username}\n時間: ${time}\n舊名稱: ${oldName}\n新名稱: ${newName}`);
             
@@ -1099,13 +1263,18 @@
                                 console.error(`Failed to upload page ${pageNum}:`, uploadError);
                             } else {
                                 // Insert Metadata
-                                await supabaseClient.from('images').insert({
-                                    filename: finalName,
-                                    file_path: filePath,
-                                    group_id: currentUser.group_id,
-                                    uploaded_by: currentUser.id
-                                });
+                            const { data: newImg, error: uploadDbError } = await supabaseClient.from('images').insert({
+                                filename: finalName,
+                                file_path: filePath,
+                                group_id: currentUser.group_id,
+                                uploaded_by: currentUser.id
+                            }).select().single();
+
+                            if (!uploadDbError && newImg) {
                                 uploadedFiles.push(finalName);
+                                // Log Modification
+                                await logModification('images', 'INSERT', newImg.id, `上傳圖片 (PDF轉檔): ${finalName}`, null, newImg);
+                            }
                             }
                         }
                     }
@@ -1143,17 +1312,19 @@
             }
 
             // 2. Insert Metadata
-            const { error: dbError } = await supabaseClient.from('images').insert({
+            const { data: newImg, error: dbError } = await supabaseClient.from('images').insert({
                 filename: originalName, // Display name
                 file_path: filePath,
                 group_id: currentUser.group_id,
                 uploaded_by: currentUser.id
-            });
+            }).select().single();
             
             if (dbError) {
                 console.error(dbError);
             } else {
                 uploadedFiles.push(originalName);
+                // Log Modification
+                await logModification('images', 'INSERT', newImg.id, `上傳圖片: ${originalName}`, null, newImg);
             }
         }
         
@@ -1169,6 +1340,9 @@
     async function deleteImage(id, filePath, filename) {
         if (!currentUser || currentUser.role !== 'admin') return;
         if (!confirm('確定刪除此圖片?')) return;
+
+        // Fetch full record for logging
+        const { data: imgData } = await supabaseClient.from('images').select('*').eq('id', id).single();
 
         // 1. Delete from Storage
         const { error: storageError } = await supabaseClient.storage
@@ -1191,6 +1365,9 @@
             console.error('DB delete error:', dbError);
             alert('資料庫刪除失敗');
         } else {
+            // Log Modification
+            await logModification('images', 'DELETE', id, `刪除圖片: ${filename || filePath}`, imgData, null);
+
             const time = new Date().toLocaleString();
             sendTelegramNotification(`<b>圖片刪除通知</b>\n用戶: ${currentUser.username}\n時間: ${time}\n刪除檔案: ${filename || filePath}`);
             searchImages();
@@ -1500,6 +1677,9 @@
             const time = new Date().toLocaleString();
             const changeLog = changedDetails.length > 0 ? changedDetails.join('\n') : '無明顯變更';
             
+            // Log Modification to DB
+            await logModification(tableName, 'UPDATE', id, changeLog, originalValues, updates);
+
             sendTelegramNotification(
 `<b>資料修改通知</b>
 修改帳號: ${currentUser.username}
@@ -1540,10 +1720,13 @@ ${changeLog}`
     async function deletePhone(id) {
         if (!currentUser) return;
         if(confirm('確定刪除?')) {
-            const { data } = await supabaseClient.from('phones').select('extension').eq('id', id).single();
+            const { data } = await supabaseClient.from('phones').select('*').eq('id', id).single();
             const ext = data ? data.extension : 'Unknown';
 
             await supabaseClient.from('phones').delete().eq('id', id);
+
+            // Log Modification
+            await logModification('phones', 'DELETE', id, `刪除分機: ${ext}`, data, null);
 
             const time = new Date().toLocaleString();
             sendTelegramNotification(`<b>資料刪除通知 (分機)</b>\n用戶: ${currentUser.username}\n時間: ${time}\n刪除分機: ${ext}`);
@@ -1748,10 +1931,13 @@ ${changeLog}`
     async function deleteDispatch(id) {
         if (!currentUser) return;
         if(confirm('確定刪除?')) {
-            const { data } = await supabaseClient.from('dispatch_phones').select('extension').eq('id', id).single();
+            const { data } = await supabaseClient.from('dispatch_phones').select('*').eq('id', id).single();
             const ext = data ? data.extension : 'Unknown';
 
             await supabaseClient.from('dispatch_phones').delete().eq('id', id);
+
+            // Log Modification
+            await logModification('dispatch_phones', 'DELETE', id, `刪除調度電話: ${ext}`, data, null);
 
             const time = new Date().toLocaleString();
             sendTelegramNotification(`<b>資料刪除通知 (調度)</b>\n用戶: ${currentUser.username}\n時間: ${time}\n刪除分機: ${ext}`);
