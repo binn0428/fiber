@@ -867,10 +867,14 @@
 
 
     async function searchLatestImages() {
+        const date = new Date();
+        date.setDate(date.getDate() - 30);
+        
         const { data, error } = await supabaseClient
             .from('images')
-            .order('created_at', { ascending: false })
-            .limit(50);
+            .select('*')
+            .gte('created_at', date.toISOString())
+            .order('created_at', { ascending: false });
             
         if (error) { console.error('Error loading latest images', error); alert('載入失敗'); return; }
         renderImages(data);
