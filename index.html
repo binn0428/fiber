@@ -87,7 +87,7 @@
 
             let deleteBtn = '';
             if (currentUser && currentUser.role === 'admin') {
-                deleteBtn = `<button onclick="deleteModLog('${log.id}', '${table}')" style="background:#d32f2f; color:white; border:none; padding:3px 8px; border-radius:3px; font-size:0.8em; margin-left:10px; cursor:pointer;">刪除</button>`;
+                deleteBtn = `<button onclick="deleteModLog('${log.id}', '${table}')" style="background:#d32f2f; color:white; border:none; padding:2px 6px; border-radius:3px; font-size:0.8em; margin-left:10px; cursor:pointer; min-width: 20px;">X</button>`;
             }
 
             // Collapsible Details using <details>
@@ -175,6 +175,33 @@
         } finally {
             btn.innerText = originalText;
             btn.disabled = false;
+        }
+    }
+
+    async function clearAllModLogs(table) {
+        if (!currentUser || currentUser.role !== 'admin') {
+            alert('只有管理員可以清空修改紀錄');
+            return;
+        }
+        
+        const label = table === 'phones' ? '分機' : (table === 'dispatch_phones' ? '調度' : 'PA天車');
+        if (!confirm(`確定要清空所有「${label}」的修改紀錄嗎？此動作無法復原！`)) return;
+        
+        try {
+            const { error } = await supabaseClient
+                .from('modification_logs')
+                .delete()
+                .eq('table_name', table);
+                
+            if (error) throw error;
+            
+            alert(`已清空所有${label}修改紀錄`);
+            loadModRecords(table); // Refresh view
+            updateLastModTimes(); // Refresh times
+            
+        } catch (e) {
+            console.error('Clear logs error:', e);
+            alert('清空失敗: ' + e.message);
         }
     }
 
@@ -743,6 +770,13 @@
             justify-content: flex-end;
             gap: 10px;
         }
+
+        /* Smaller buttons in result cards */
+        .card-actions button {
+            padding: 4px 8px;
+            font-size: 0.8rem;
+            margin: 0;
+        }
         
         /* Dark mode adjustments for cards if needed, but screenshot shows white cards */
         /* Keeping white cards as requested/shown in screenshot */
@@ -850,7 +884,7 @@
         <h1>資料查詢系統</h1>
         <div>
             <!-- Modification Record Button -->
-            <button id="modRecordBtn" onclick="showModRecordPage()" style="background: #4CAF50; color: #FFEB3B; margin-right: 10px; font-size: 0.8rem; padding: 5px 10px;">修改紀錄</button>
+            <button id="modRecordBtn" onclick="showModRecordPage()" style="background: #4CAF50; color: #FFEB3B; margin-right: 10px; font-size: 0.75rem; padding: 4px 8px;">修改紀錄</button>
             <!-- Login Button (Visible when logged out) -->
             <button id="loginBtn" onclick="showLoginModal()">登入修改</button>
             
@@ -943,15 +977,15 @@
 
     <div class="mod-nav" style="display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; justify-content: center;">
         <div style="text-align: center;">
-            <button onclick="loadModRecords('phones')" style="width: 200px; margin-bottom: 5px;">分機修改紀錄</button>
+            <button class="mod-cat-btn" data-table="phones" onclick="loadModRecords('phones')" style="width: 200px; margin-bottom: 5px;">分機修改紀錄</button>
             <div id="lastModTime-phones" style="color: #bbb; font-size: 0.9em;">最新修改: 讀取中...</div>
         </div>
         <div style="text-align: center;">
-            <button onclick="loadModRecords('dispatch_phones')" style="width: 200px; margin-bottom: 5px;">調度修改紀錄</button>
+            <button class="mod-cat-btn" data-table="dispatch_phones" onclick="loadModRecords('dispatch_phones')" style="width: 200px; margin-bottom: 5px;">調度修改紀錄</button>
             <div id="lastModTime-dispatch_phones" style="color: #bbb; font-size: 0.9em;">最新修改: 讀取中...</div>
         </div>
         <div style="text-align: center;">
-            <button onclick="loadModRecords('images')" style="width: 200px; margin-bottom: 5px;">PA天車修改紀錄</button>
+            <button class="mod-cat-btn" data-table="images" onclick="loadModRecords('images')" style="width: 200px; margin-bottom: 5px;">PA天車修改紀錄</button>
             <div id="lastModTime-images" style="color: #bbb; font-size: 0.9em;">最新修改: 讀取中...</div>
         </div>
     </div>
@@ -1022,6 +1056,31 @@
         });
         backToTopBtn.addEventListener('click', () => {
             window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+        
+        // Long Press Logic for Mod Record Category Buttons
+        const modCatBtns = document.querySelectorAll('.mod-cat-btn');
+        modCatBtns.forEach(btn => {
+            let pressTimer;
+            const startPress = () => {
+                pressTimer = setTimeout(() => {
+                    const table = btn.dataset.table;
+                    clearAllModLogs(table);
+                }, 1000); // 1 second long press
+            };
+            const cancelPress = () => {
+                clearTimeout(pressTimer);
+            };
+            
+            // Mouse
+            btn.addEventListener('mousedown', startPress);
+            btn.addEventListener('mouseup', cancelPress);
+            btn.addEventListener('mouseleave', cancelPress);
+            
+            // Touch
+            btn.addEventListener('touchstart', startPress);
+            btn.addEventListener('touchend', cancelPress);
+            btn.addEventListener('touchcancel', cancelPress);
         });
 
         // if (supabaseClient) {
