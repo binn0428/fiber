@@ -857,7 +857,8 @@
             
             let deleteBtn = '';
             if (currentUser && currentUser.role === 'admin') {
-                deleteBtn = `<div style="margin-top:5px;"><button onclick="deleteImage('${img.id}', '${img.file_path}')" style="background:#ff4444;color:white;border:none;padding:5px 10px;cursor:pointer;border-radius:3px;">刪除</button></div>`;
+                const safeFilename = (img.filename || '').replace(/'/g, "\\'");
+                deleteBtn = `<div style="margin-top:5px;"><button onclick="deleteImage('${img.id}', '${img.file_path}', '${safeFilename}')" style="background:#ff4444;color:white;border:none;padding:5px 10px;cursor:pointer;border-radius:3px;">刪除</button></div>`;
             }
 
             // Name Display / Edit Logic
@@ -931,9 +932,11 @@
         } else {
             const display = document.getElementById(`name-display-${id}`);
             const nameSpan = display.querySelector('span');
+            const oldName = nameSpan ? nameSpan.innerText : '(Unknown)';
             if(nameSpan) nameSpan.innerText = newName;
             
-            sendTelegramNotification(`<b>圖片名稱修改通知</b>\nID: ${id}\n新名稱: ${newName}\n用戶: ${currentUser.username}`);
+            const time = new Date().toLocaleString();
+            sendTelegramNotification(`<b>圖片名稱修改通知</b>\n用戶: ${currentUser.username}\n時間: ${time}\n舊名稱: ${oldName}\n新名稱: ${newName}`);
             
             cancelImageEdit(id);
         }
@@ -943,6 +946,8 @@
         if (!currentUser) return;
         if (!input.files.length) return;
         
+        let uploadedFiles = [];
+
         for (const file of input.files) {
             // Generate Safe Storage Path (ASCII only)
             const ext = file.name.split('.').pop();
@@ -969,14 +974,23 @@
                 uploaded_by: currentUser.id
             });
             
-            if (dbError) console.error(dbError);
+            if (dbError) {
+                console.error(dbError);
+            } else {
+                uploadedFiles.push(file.name);
+            }
         }
         
+        if (uploadedFiles.length > 0) {
+            const time = new Date().toLocaleString();
+            sendTelegramNotification(`<b>圖片上傳通知</b>\n用戶: ${currentUser.username}\n時間: ${time}\n上傳檔案:\n${uploadedFiles.join('\n')}`);
+        }
+
         alert('上傳完成');
         searchImages();
     }
 
-    async function deleteImage(id, filePath) {
+    async function deleteImage(id, filePath, filename) {
         if (!currentUser || currentUser.role !== 'admin') return;
         if (!confirm('確定刪除此圖片?')) return;
 
@@ -1001,6 +1015,8 @@
             console.error('DB delete error:', dbError);
             alert('資料庫刪除失敗');
         } else {
+            const time = new Date().toLocaleString();
+            sendTelegramNotification(`<b>圖片刪除通知</b>\n用戶: ${currentUser.username}\n時間: ${time}\n刪除檔案: ${filename || filePath}`);
             searchImages();
         }
     }
