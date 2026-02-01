@@ -440,11 +440,35 @@
             margin: 10px auto;
             padding: 15px;
             background: rgba(30, 30, 30, 0.95);
-            min-height: 85vh;
+            height: 90vh; /* Changed from min-height to fixed height for internal scrolling */
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
             border-radius: 12px;
             box-shadow: 0 8px 32px 0 var(--shadow-color);
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .section {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        #phonesTableContainer, #dispatchTableContainer {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: auto;
+        }
+
+        #imageGrid {
+            flex: 1;
+            overflow-y: auto;
+            display: grid; /* Keep grid display */
+            align-content: start; /* Prevent spacing out if few items */
         }
 
         h1 { font-size: 1.5rem; margin-bottom: 15px; }
@@ -724,6 +748,7 @@
             border: 1px solid var(--border-color);
             flex-wrap: wrap;
             gap: 10px;
+            flex-shrink: 0; /* Prevent shrinking */
         }
 
         /* Scrollbar */
@@ -3103,6 +3128,10 @@
                     return;
                 }
 
+                // Calculate Duplicates (Updates) vs New (Inserts)
+                const duplicateCount = validRecords.filter(r => r.id).length;
+                const newCount = validRecords.length - duplicateCount;
+
                 // 4. Perform Upsert (Batched)
                 let { successCount, errorCount, lastError } = await runBatchUpsert(validRecords);
                 
@@ -3149,9 +3178,9 @@
                 sendTelegramNotification(msg);
 
                 if (errorCount > 0) {
-                    alert(`匯入完成，但有 ${errorCount} 筆失敗 (成功: ${successCount} 筆)\n失敗原因可能是資料重複或格式錯誤。\n錯誤訊息: ${lastError ? lastError.message : '未知'}`);
+                    alert(`匯入完成，但有 ${errorCount} 筆失敗 (成功: ${successCount} 筆)\n新增: ${newCount} 筆\n更新(重複): ${duplicateCount} 筆\n失敗原因可能是資料重複或格式錯誤。\n錯誤訊息: ${lastError ? lastError.message : '未知'}`);
                 } else {
-                    alert(`匯入成功 (共 ${successCount} 筆)`);
+                    alert(`匯入成功 (共 ${successCount} 筆)\n新增: ${newCount} 筆\n更新(重複): ${duplicateCount} 筆`);
                 }
                 
                 // Reset input
