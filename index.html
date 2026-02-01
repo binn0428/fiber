@@ -154,6 +154,7 @@
     async function loadModRecords(table) {
         const listDiv = document.getElementById('modRecordList');
         listDiv.innerHTML = '<p style="text-align: center;">載入中...</p>';
+        listDiv.scrollTop = 0; // Reset scroll position
         
         const { data, error } = await supabaseClient
             .from('modification_logs')
@@ -1079,10 +1080,10 @@
         .mod-cat-btn:hover { opacity: 0.8; }
         
         /* Specific Colors for Mod Buttons */
-        .btn-phones { background-color: #FBC02D; color: #000; } /* Yellow */
+        .btn-phones { background-color: #FBC02D; color: #000; } /* Yellow bg, Black text */
         .btn-dispatch { background-color: #2196F3; } /* Blue */
-        .btn-images { background-color: #4CAF50; } /* Green */
-        .btn-search { background-color: #FF9800; } /* Orange */
+        .btn-images { background-color: #4CAF50; color: #FFEB3B; } /* Green bg, Yellow text */
+        .btn-search { background-color: #FF9800; color: #D32F2F; font-weight: bold; } /* Orange bg, Red text */
 
         /* Back to Top Button */
         #backToTop {
@@ -1098,7 +1099,7 @@
             font-size: 20px;
             cursor: pointer;
             display: none; /* Hidden by default */
-            z-index: 999;
+            z-index: 2000; /* Ensure above everything */
             box-shadow: 0 2px 10px rgba(0,0,0,0.3);
             transition: opacity 0.3s, background 0.3s;
             justify-content: center;
@@ -1476,13 +1477,24 @@
         const modCatBtns = document.querySelectorAll('.mod-cat-btn');
         modCatBtns.forEach(btn => {
             let pressTimer;
-            const startPress = () => {
+            let isScrolling = false;
+            
+            const startPress = (e) => {
+                isScrolling = false;
                 pressTimer = setTimeout(() => {
-                    const table = btn.dataset.table;
-                    clearAllModLogs(table);
+                    if (!isScrolling) {
+                        const table = btn.dataset.table;
+                        clearAllModLogs(table);
+                    }
                 }, 1000); // 1 second long press
             };
+            
             const cancelPress = () => {
+                clearTimeout(pressTimer);
+            };
+            
+            const handleTouchMove = () => {
+                isScrolling = true;
                 clearTimeout(pressTimer);
             };
             
@@ -1492,9 +1504,10 @@
             btn.addEventListener('mouseleave', cancelPress);
             
             // Touch
-            btn.addEventListener('touchstart', startPress);
+            btn.addEventListener('touchstart', startPress, { passive: true });
             btn.addEventListener('touchend', cancelPress);
             btn.addEventListener('touchcancel', cancelPress);
+            btn.addEventListener('touchmove', handleTouchMove, { passive: true }); // Improve precision by cancelling on move
         });
 
         // if (supabaseClient) {
