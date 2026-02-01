@@ -3140,78 +3140,55 @@
                 const records = jsonData.map(row => {
                     const newRow = {};
                     
-                    if (type === 'phones') {
-                        // Map Chinese headers or English headers to DB columns
-                        if (row['號碼'] !== undefined) newRow.extension = row['號碼'];
-                        else if (row['分機'] !== undefined) newRow.extension = row['分機'];
-                        else if (row['extension'] !== undefined) newRow.extension = row['extension'];
-                        else if (row['Extension'] !== undefined) newRow.extension = row['Extension'];
+                    // Helper to find value from possible headers
+                    const getValue = (possibleHeaders) => {
+                        for (const header of possibleHeaders) {
+                            if (row[header] !== undefined) return row[header];
+                            // Try lowercase match
+                            const lowerHeader = header.toLowerCase();
+                            const rowKey = Object.keys(row).find(k => k.toLowerCase() === lowerHeader);
+                            if (rowKey) return row[rowKey];
+                        }
+                        return undefined;
+                    };
 
-                        if (row['數位'] !== undefined) newRow.type = row['數位'];
-                        else if (row['type'] !== undefined) newRow.type = row['type'];
+                    const MAPPING = {
+                        phones: {
+                            extension: ['號碼', '分機', 'extension', 'Extension', '分機號碼'],
+                            type: ['數位', 'type', '分機種類'],
+                            lens: ['LENS', 'lens'],
+                            mdf_port: ['機房端子編號', 'mdf_port', 'MDF'],
+                            remote_mc_id: ['遠端機櫃 MC-ID (第幾對線)', 'remote_mc_id', 'MC-ID'],
+                            UG50_port: ['遠端機櫃UG-50編號', 'UG50_port', 'UG50'],
+                            line_group_id: ['線組編號', 'line_group_id'],
+                            unit: ['單位', 'unit', '使用單位'],
+                            location: ['裝機位置', 'location'],
+                            call_class: ['通話等級', 'call_class'],
+                            sub_count: ['副機數量', 'sub_count'],
+                            did_number: ['DID', 'did_number', 'DID號碼'],
+                            note: ['備註', 'note']
+                        },
+                        dispatch: {
+                            extension: ['分機號碼', 'extension', 'Extension', '號碼', '分機'],
+                            c_terminal: ['C端子位置', 'c_terminal'],
+                            lens: ['LENS', 'lens'],
+                            line_group_room: ['線組編號(機房)', 'line_group_room', '機房線組'],
+                            line_group_site: ['線組編號(現場)', 'line_group_site', '現場線組'],
+                            unit: ['使用單位', 'unit', '單位'],
+                            location: ['裝機位置', 'location'],
+                            sub_count: ['副機數量', 'sub_count'],
+                            contact_tel: ['連絡電話', 'contact_tel']
+                        }
+                    };
 
-                        if (row['LENS'] !== undefined) newRow.lens = row['LENS'];
-                        else if (row['lens'] !== undefined) newRow.lens = row['lens'];
+                    const mappingType = type === 'phones' ? 'phones' : 'dispatch';
+                    const currentMapping = MAPPING[mappingType];
 
-                        if (row['機房端子編號'] !== undefined) newRow.mdf_port = row['機房端子編號'];
-                        else if (row['mdf_port'] !== undefined) newRow.mdf_port = row['mdf_port'];
-
-                        if (row['遠端機櫃 MC-ID (第幾對線)'] !== undefined) newRow.remote_mc_id = row['遠端機櫃 MC-ID (第幾對線)'];
-                        else if (row['remote_mc_id'] !== undefined) newRow.remote_mc_id = row['remote_mc_id'];
-
-                        if (row['遠端機櫃UG-50編號'] !== undefined) newRow.UG50_port = row['遠端機櫃UG-50編號'];
-                        else if (row['UG50_port'] !== undefined) newRow.UG50_port = row['UG50_port'];
-
-                        if (row['線組編號'] !== undefined) newRow.line_group_id = row['線組編號'];
-                        else if (row['line_group_id'] !== undefined) newRow.line_group_id = row['line_group_id'];
-
-                        if (row['單位'] !== undefined) newRow.unit = row['單位'];
-                        else if (row['unit'] !== undefined) newRow.unit = row['unit'];
-
-                        if (row['裝機位置'] !== undefined) newRow.location = row['裝機位置'];
-                        else if (row['location'] !== undefined) newRow.location = row['location'];
-
-                        if (row['通話等級'] !== undefined) newRow.call_class = row['通話等級'];
-                        else if (row['call_class'] !== undefined) newRow.call_class = row['call_class'];
-
-                        if (row['副機數量'] !== undefined) newRow.sub_count = row['副機數量'];
-                        else if (row['sub_count'] !== undefined) newRow.sub_count = row['sub_count'];
-
-                        if (row['DID'] !== undefined) newRow.did_number = row['DID'];
-                        else if (row['did_number'] !== undefined) newRow.did_number = row['did_number'];
-
-                        if (row['備註'] !== undefined) newRow.note = row['備註'];
-                        else if (row['note'] !== undefined) newRow.note = row['note'];
-
-                    } else {
-                        // Dispatch
-                        if (row['分機號碼'] !== undefined) newRow.extension = row['分機號碼'];
-                        else if (row['extension'] !== undefined) newRow.extension = row['extension'];
-                        else if (row['Extension'] !== undefined) newRow.extension = row['Extension'];
-
-                        if (row['C端子位置'] !== undefined) newRow.c_terminal = row['C端子位置'];
-                        else if (row['c_terminal'] !== undefined) newRow.c_terminal = row['c_terminal'];
-
-                        if (row['LENS'] !== undefined) newRow.lens = row['LENS'];
-                        else if (row['lens'] !== undefined) newRow.lens = row['lens'];
-
-                        if (row['線組編號(機房)'] !== undefined) newRow.line_group_room = row['線組編號(機房)'];
-                        else if (row['line_group_room'] !== undefined) newRow.line_group_room = row['line_group_room'];
-
-                        if (row['線組編號(現場)'] !== undefined) newRow.line_group_site = row['線組編號(現場)'];
-                        else if (row['line_group_site'] !== undefined) newRow.line_group_site = row['line_group_site'];
-
-                        if (row['使用單位'] !== undefined) newRow.unit = row['使用單位'];
-                        else if (row['unit'] !== undefined) newRow.unit = row['unit'];
-
-                        if (row['裝機位置'] !== undefined) newRow.location = row['裝機位置'];
-                        else if (row['location'] !== undefined) newRow.location = row['location'];
-
-                        if (row['副機數量'] !== undefined) newRow.sub_count = row['副機數量'];
-                        else if (row['sub_count'] !== undefined) newRow.sub_count = row['sub_count'];
-
-                        if (row['連絡電話'] !== undefined) newRow.contact_tel = row['連絡電話'];
-                        else if (row['contact_tel'] !== undefined) newRow.contact_tel = row['contact_tel'];
+                    for (const [dbField, headers] of Object.entries(currentMapping)) {
+                        const val = getValue(headers);
+                        if (val !== undefined) {
+                            newRow[dbField] = val;
+                        }
                     }
                     
                     // Force extension to string and trim
