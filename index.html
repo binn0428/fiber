@@ -1037,6 +1037,14 @@
             border-bottom: 1px solid #333;
         }
 
+        .mod-nav > div {
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
         #modRecordList {
             flex: 1;
             overflow-y: auto;
@@ -3085,8 +3093,9 @@
                     const progress = 50 + Math.floor((i / records.length) * 40);
                     updateProgress(progress, `匯入中... (${i + 1}/${records.length})`);
 
-                    // Use onConflict to handle duplicates by updating based on extension
-                    const { error } = await supabaseClient.from(table).upsert(batch, { onConflict: 'extension' }); 
+                    // Use standard upsert without specific onConflict constraint
+                    // Rely on 'id' being present for updates (mapped from extensionMap)
+                    const { error } = await supabaseClient.from(table).upsert(batch);  
                     
                     if (error) {
                         console.error('Import batch error:', error);
