@@ -16,10 +16,38 @@
             .catch(err => console.log('Service Worker registration failed: ', err));
         });
       }
-        // ================= MODIFICATION RECORD LOGIC =================
+        // ================= PROGRESS BAR LOGIC =================
+    function showProgress(title = '處理中...') {
+        document.getElementById('progressTitle').innerText = title;
+        document.getElementById('progressBar').style.width = '0%';
+        document.getElementById('progressBar').innerText = '0%';
+        document.getElementById('progressMessage').innerText = '';
+        document.getElementById('progressModal').style.display = 'flex';
+    }
+
+    function updateProgress(percent, message) {
+        const p = Math.round(percent);
+        document.getElementById('progressBar').style.width = p + '%';
+        document.getElementById('progressBar').innerText = p + '%';
+        if (message) document.getElementById('progressMessage').innerText = message;
+    }
+
+    function hideProgress() {
+        document.getElementById('progressModal').style.display = 'none';
+    }
+
+    // ================= MODIFICATION RECORD LOGIC =================
     function showModRecordPage() {
         document.getElementById('mainApp').classList.add('hidden');
         document.getElementById('modRecordPage').classList.remove('hidden');
+        
+        // Show/Hide Search Logs button based on role
+        if (currentUser && currentUser.role === 'admin') {
+            document.getElementById('searchLogContainer').classList.remove('hidden');
+        } else {
+            document.getElementById('searchLogContainer').classList.add('hidden');
+        }
+
         // Push state to history for Back button support
         window.history.pushState({ page: 'modRecord' }, '', '#modRecord');
         // Load initial times
@@ -147,6 +175,8 @@
         // Add Export Button
         let html = `
         <div style="text-align: right; margin-bottom: 10px;">
+            ${(table === 'search_logs' && currentUser && currentUser.role === 'admin') ? 
+                `<button onclick="clearAllModLogs('${table}')" style="background: #d32f2f; padding: 5px 15px; font-size: 0.9em; border-radius: 4px; color: white; border: none; cursor: pointer; margin-right: 10px;">清空此紀錄</button>` : ''}
             <button onclick="exportModLogs('${table}')" style="background: #009688; padding: 5px 15px; font-size: 0.9em; border-radius: 4px; color: white; border: none; cursor: pointer;">匯出此紀錄</button>
         </div>`;
 
@@ -157,6 +187,9 @@
             if (log.action === 'UPDATE') { actionColor = '#2196F3'; actionText = '修改'; }
             if (log.action === 'DELETE') { actionColor = '#F44336'; actionText = '刪除'; }
             if (log.action === 'INSERT') { actionColor = '#4CAF50'; actionText = '新增'; }
+            if (log.action === 'SEARCH') { actionColor = '#9C27B0'; actionText = '查詢'; }
+            if (log.action === 'IMPORT') { actionColor = '#FF9800'; actionText = '匯入'; }
+            if (log.action === 'EXPORT') { actionColor = '#00BCD4'; actionText = '匯出'; }
 
             let deleteBtn = '';
             if (currentUser && currentUser.role === 'admin') {
@@ -245,7 +278,12 @@
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Modification Logs");
             
-            const label = table === 'phones' ? '分機' : (table === 'dispatch_phones' ? '調度' : 'PA天車');
+            let label = '未知';
+            if (table === 'phones') label = '分機';
+            else if (table === 'dispatch_phones') label = '調度';
+            else if (table === 'images') label = 'PA天車';
+            else if (table === 'search_logs') label = '查詢';
+
             XLSX.writeFile(wb, `${label}_修改紀錄.xlsx`);
             
         } catch (e) {
@@ -263,8 +301,13 @@
             return;
         }
         
-        const label = table === 'phones' ? '分機' : (table === 'dispatch_phones' ? '調度' : 'PA天車');
-        if (!confirm(`確定要清空所有「${label}」的修改紀錄嗎？此動作無法復原！`)) return;
+        let label = '未知';
+        if (table === 'phones') label = '分機';
+        else if (table === 'dispatch_phones') label = '調度';
+        else if (table === 'images') label = 'PA天車';
+        else if (table === 'search_logs') label = '查詢';
+
+        if (!confirm(`確定要清空所有「${label}」的紀錄嗎？此動作無法復原！`)) return;
         
         try {
             const { error } = await supabaseClient
@@ -274,7 +317,7 @@
                 
             if (error) throw error;
             
-            alert(`已清空所有${label}修改紀錄`);
+            alert(`已清空所有${label}紀錄`);
             loadModRecords(table); // Refresh view
             updateLastModTimes(); // Refresh times
             
@@ -499,13 +542,64 @@
             content: '';
             position: absolute;
             top: 50%; left: 50%;
-            width: 0; height: 0;
-            background: rgba(255,255,255,0.2);
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            transition: width 0.3s, height 0.3s;
+            width: 5px; height: 5px;
+            background: rgba(255, 255, 255, 0.5);
+            opacity: 0;
+            border-radius: 100%;
+            transform: scale(1, 1) translate(-50%);
+            transform-origin: 50% 50%;
         }
-        button:active::after { width: 200px; height: 200px; }
+        
+        @keyframes ripple {
+            0% { transform: scale(0, 0); opacity: 1; }
+            20% { transform: scale(25, 25); opacity: 1; }
+            100% { transform: scale(40, 40); opacity: 0; }
+        }
+
+        button:focus:not(:active)::after {
+            animation: ripple 1s ease-out;
+        }
+
+        /* Progress Modal */
+        #progressModal {
+            display: none;
+            position: fixed;
+            z-index: 10000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.7);
+            align-items: center;
+            justify-content: center;
+        }
+        #progressContent {
+            background-color: #333;
+            padding: 20px;
+            border-radius: 8px;
+            width: 80%;
+            max-width: 400px;
+            text-align: center;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            border: 1px solid #555;
+        }
+        #progressBarContainer {
+            width: 100%;
+            background-color: #555;
+            border-radius: 4px;
+            margin: 15px 0;
+            overflow: hidden;
+        }
+        #progressBar {
+            width: 0%;
+            height: 20px;
+            background-color: #4CAF50;
+            text-align: center;
+            line-height: 20px;
+            color: white;
+            transition: width 0.3s;
+        }
+
 
         /* Utility Classes */
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -1202,6 +1296,10 @@
             <button class="mod-cat-btn" data-table="images" onclick="loadModRecords('images')" style="width: 200px; margin-bottom: 5px;">PA天車修改紀錄</button>
             <div id="lastModTime-images" style="color: #bbb; font-size: 0.9em;">最新修改: 讀取中...</div>
         </div>
+        <div style="text-align: center;" id="searchLogContainer" class="hidden">
+            <button class="mod-cat-btn" data-table="search_logs" onclick="loadModRecords('search_logs')" style="width: 200px; margin-bottom: 5px; background: #FF9800;">使用者查詢紀錄</button>
+            <div style="color: #bbb; font-size: 0.9em;">(管理者專用)</div>
+        </div>
     </div>
 
     <div id="modRecordList" style="margin-top: 20px;">
@@ -1723,6 +1821,11 @@
         const { data, error } = await dbQuery;
         if (error) { console.error('Error loading images', error); return; }
 
+        // Log Search
+        if (query && currentUser) {
+             logModification('search_logs', 'SEARCH', null, `搜尋圖片: ${query}`, null, null).catch(e => console.error('Log search error:', e));
+        }
+
         if (data) countEl.innerText = `搜尋結果: ${data.length} 筆`;
         renderImages(data);
     }
@@ -2142,6 +2245,11 @@
             const { data, error } = await dbQuery;
             
             if (error) throw error;
+
+            // Log Search
+            if (query && currentUser) {
+                 logModification('search_logs', 'SEARCH', null, `搜尋分機: ${query}`, null, null).catch(e => console.error('Log search error:', e));
+            }
             
             phoneData = data;
             if (data) countEl.innerText = `搜尋結果: ${data.length} 筆`;
@@ -2495,6 +2603,9 @@
             
             if (error) throw error;
             
+            // Log Modification
+            await logModification('phones', 'DELETE_ALL', null, '清空所有分機資料', null, null);
+
             const time = new Date().toLocaleString();
             sendTelegramNotification(`<b>資料清空通知 (分機)</b>\n用戶: ${currentUser.username}\n時間: ${time}\n動作: 清空所有分機資料`);
             
@@ -2535,6 +2646,11 @@
             const { data, error } = await dbQuery;
             
             if (error) throw error;
+
+            // Log Search
+            if (query && currentUser) {
+                 logModification('search_logs', 'SEARCH', null, `搜尋調度: ${query}`, null, null).catch(e => console.error('Log search error:', e));
+            }
             
             dispatchData = data;
             if (data) countEl.innerText = `搜尋結果: ${data.length} 筆`;
@@ -2708,6 +2824,9 @@
             
             if (error) throw error;
             
+            // Log Modification
+            await logModification('dispatch_phones', 'DELETE_ALL', null, '清空所有調度電話資料', null, null);
+
             const time = new Date().toLocaleString();
             sendTelegramNotification(`<b>資料清空通知 (調度)</b>\n用戶: ${currentUser.username}\n時間: ${time}\n動作: 清空所有調度電話資料`);
             
@@ -2731,13 +2850,19 @@
         btn.innerText = '匯出中...';
         btn.disabled = true;
 
+        showProgress('準備匯出...', 0);
+
         try {
             const tableName = type === 'phones' ? 'phones' : 'dispatch_phones';
+            
+            updateProgress(10, '讀取資料中...');
             
             let data;
             try {
                 data = await fetchAllRecords(tableName);
                 
+                updateProgress(40, '資料排序中...');
+
                 // Sort by extension length (ascending) then by value (numeric)
                 // User request: 4 digits first, then 5, then 7, etc. without mixing.
                 if (data && data.length > 0) {
@@ -2765,10 +2890,12 @@
                 return;
             }
 
+            updateProgress(60, '格式轉換中...');
+
             let exportData = [];
             if (type === 'phones') {
                 // Mapping for phones based on import format
-                // ['號碼', '數位', 'LENS', '機房端子編號', '遠端機櫃UG-50編號', '線組編號', '單位', '裝機位置', '通話等級', '副機數量', 'DID', '備註']
+                // ['號碼', '數位', 'LENS', '機房端子編號', '遠端機櫃 MC-ID (第幾對線)', '遠端機櫃UG-50編號', '線組編號', '單位', '裝機位置', '通話等級', '副機數量', 'DID', '備註']
                 exportData = data.map(row => ({
                     '號碼': row.extension || '',
                     '數位': row.type || '',
@@ -2800,13 +2927,21 @@
                 }));
             }
 
+            updateProgress(80, '產生 Excel 檔案...');
+
             const ws = XLSX.utils.json_to_sheet(exportData);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
             XLSX.writeFile(wb, `${type}_data.xlsx`);
             
+            updateProgress(100, '匯出完成');
+            
             const time = new Date().toLocaleString();
             const label = type === 'phones' ? '分機' : '調度電話';
+            
+            // Log Export
+            await logModification(tableName, 'EXPORT', null, `匯出${label}資料: ${data.length} 筆`, null, null);
+
             sendTelegramNotification(`<b>資料匯出通知</b>\n用戶: ${currentUser.username}\n時間: ${time}\n類型: ${label}\n筆數: ${data.length}`);
         } catch (e) {
             console.error('Export error:', e);
@@ -2814,6 +2949,7 @@
         } finally {
             btn.innerText = originalText;
             btn.disabled = false;
+            setTimeout(hideProgress, 1000);
         }
     }
 
@@ -2848,135 +2984,196 @@
         const file = input.files[0];
         if (!file) return;
 
+        showProgress('讀取檔案...', 0);
+
         const reader = new FileReader();
         reader.onload = async function(e) {
-            const data = new Uint8Array(e.target.result);
-            const workbook = XLSX.read(data, {type: 'array'});
-            const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-            
+            let validRecords = [];
             const table = type === 'phones' ? 'phones' : 'dispatch_phones';
-            
-            const btn = event.target; // Note: event.target might be the input, not the button if triggered by change
-            // Actually input onchange doesn't have a button reference easily unless we find it.
-            // But we can show a loading alert or use global UI blocking if needed.
-            // For now, standard alert flow is fine.
 
-            // 1. Fetch existing data to handle duplicates manually
-            // (Since we don't have a unique constraint on 'extension' in DB)
-            let existingRecords = [];
-            try {
-                existingRecords = await fetchExistingKeys(table);
-            } catch (err) {
-                console.error('Error fetching existing keys:', err);
-                alert('匯入前檢查失敗: ' + err.message);
-                return;
-            }
-            
-            // Map extension -> id
-            const extensionMap = new Map();
-            existingRecords.forEach(r => {
-                if (r.extension) extensionMap.set(String(r.extension).trim(), r.id);
-            });
+            // Helper function for batch upsert
+            const runBatchUpsert = async (records) => {
+                const BATCH_SIZE = 1000;
+                let successCount = 0;
+                let errorCount = 0;
+                let lastError = null;
+                
+                updateProgress(50, `開始匯入 ${records.length} 筆資料...`);
 
-            // 2. Map Excel columns to DB columns
-            const records = jsonData.map(row => {
-                const newRow = {};
-                
-                if (type === 'phones') {
-                    // Map Chinese headers to DB columns
-                    if (row['號碼'] !== undefined) newRow.extension = row['號碼'];
-                    if (row['數位'] !== undefined) newRow.type = row['數位'];
-                    if (row['LENS'] !== undefined) newRow.lens = row['LENS'];
-                    if (row['機房端子編號'] !== undefined) newRow.mdf_port = row['機房端子編號'];
-                    if (row['遠端機櫃 MC-ID (第幾對線)'] !== undefined) newRow.remote_mc_id = row['遠端機櫃 MC-ID (第幾對線)'];
-                    if (row['遠端機櫃UG-50編號'] !== undefined) newRow.UG50_port = row['遠端機櫃UG-50編號'];
-                    if (row['線組編號'] !== undefined) newRow.line_group_id = row['線組編號'];
-                    if (row['單位'] !== undefined) newRow.unit = row['單位'];
-                    if (row['裝機位置'] !== undefined) newRow.location = row['裝機位置'];
-                    if (row['通話等級'] !== undefined) newRow.call_class = row['通話等級'];
-                    if (row['副機數量'] !== undefined) newRow.sub_count = row['副機數量'];
-                    if (row['DID'] !== undefined) newRow.did_number = row['DID'];
-                    if (row['備註'] !== undefined) newRow.note = row['備註'];
+                for (let i = 0; i < records.length; i += BATCH_SIZE) {
+                    const batch = records.slice(i, i + BATCH_SIZE);
+                    const progress = 50 + Math.floor((i / records.length) * 40);
+                    updateProgress(progress, `匯入中... (${i + 1}/${records.length})`);
+
+                    const { error } = await supabaseClient.from(table).upsert(batch); 
                     
-                    // Fallback for English headers if present (mixed usage)
-                    if (Object.keys(newRow).length === 0) return row;
-                } else {
-                    if (row['分機號碼'] !== undefined) newRow.extension = row['分機號碼'];
-                    if (row['C端子位置'] !== undefined) newRow.c_terminal = row['C端子位置'];
-                    if (row['LENS'] !== undefined) newRow.lens = row['LENS'];
-                    if (row['線組編號(機房)'] !== undefined) newRow.line_group_room = row['線組編號(機房)'];
-                    if (row['線組編號(現場)'] !== undefined) newRow.line_group_site = row['線組編號(現場)'];
-                    if (row['使用單位'] !== undefined) newRow.unit = row['使用單位'];
-                    if (row['裝機位置'] !== undefined) newRow.location = row['裝機位置'];
-                    if (row['副機數量'] !== undefined) newRow.sub_count = row['副機數量'];
-                    if (row['連絡電話'] !== undefined) newRow.contact_tel = row['連絡電話'];
-                    
-                    if (Object.keys(newRow).length === 0) return row;
-                }
-                
-                // 3. Check for existing ID to perform Update instead of Insert
-                if (newRow.extension) {
-                    const extKey = String(newRow.extension).trim();
-                    if (extensionMap.has(extKey)) {
-                        newRow.id = extensionMap.get(extKey);
+                    if (error) {
+                        console.error('Import batch error:', error);
+                        errorCount += batch.length;
+                        lastError = error;
+                    } else {
+                        successCount += batch.length;
                     }
                 }
+                return { successCount, errorCount, lastError };
+            };
+
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
                 
-                return newRow;
-            });
-            
-            // Filter out empty rows
-            const validRecords = records.filter(r => Object.keys(r).length > 0);
-
-            if (validRecords.length === 0) {
-                alert('無有效資料可匯入');
-                return;
-            }
-
-            // 4. Perform Upsert (Batched to avoid payload limits)
-            const BATCH_SIZE = 1000;
-            let successCount = 0;
-            let errorCount = 0;
-            
-            // Show processing message
-            const originalTitle = document.title;
-            document.title = '匯入中...';
-
-            for (let i = 0; i < validRecords.length; i += BATCH_SIZE) {
-                const batch = validRecords.slice(i, i + BATCH_SIZE);
-                // upsert without onConflict works if Primary Key (id) is present
-                const { error } = await supabaseClient.from(table).upsert(batch); 
+                // const table is defined in outer scope
                 
-                if (error) {
-                    console.error('Import batch error:', error);
-                    errorCount += batch.length;
-                } else {
-                    successCount += batch.length;
+                // 1. Fetch existing data to handle duplicates manually
+                updateProgress(20, '檢查現有資料...');
+                
+                let existingRecords = [];
+                try {
+                    existingRecords = await fetchExistingKeys(table);
+                } catch (err) {
+                    console.error('Error fetching existing keys:', err);
+                    alert('匯入前檢查失敗: ' + err.message);
+                    hideProgress();
+                    return;
                 }
+                
+                // Map extension -> id (Normalize to string and trim)
+                const extensionMap = new Map();
+                existingRecords.forEach(r => {
+                    if (r.extension) extensionMap.set(String(r.extension).trim(), r.id);
+                });
+
+                updateProgress(40, '解析資料...');
+
+                // 2. Map Excel columns to DB columns
+                const records = jsonData.map(row => {
+                    const newRow = {};
+                    
+                    if (type === 'phones') {
+                        // Map Chinese headers to DB columns
+                        if (row['號碼'] !== undefined) newRow.extension = row['號碼'];
+                        if (row['數位'] !== undefined) newRow.type = row['數位'];
+                        if (row['LENS'] !== undefined) newRow.lens = row['LENS'];
+                        if (row['機房端子編號'] !== undefined) newRow.mdf_port = row['機房端子編號'];
+                        if (row['遠端機櫃 MC-ID (第幾對線)'] !== undefined) newRow.remote_mc_id = row['遠端機櫃 MC-ID (第幾對線)'];
+                        if (row['遠端機櫃UG-50編號'] !== undefined) newRow.UG50_port = row['遠端機櫃UG-50編號'];
+                        if (row['線組編號'] !== undefined) newRow.line_group_id = row['線組編號'];
+                        if (row['單位'] !== undefined) newRow.unit = row['單位'];
+                        if (row['裝機位置'] !== undefined) newRow.location = row['裝機位置'];
+                        if (row['通話等級'] !== undefined) newRow.call_class = row['通話等級'];
+                        if (row['副機數量'] !== undefined) newRow.sub_count = row['副機數量'];
+                        if (row['DID'] !== undefined) newRow.did_number = row['DID'];
+                        if (row['備註'] !== undefined) newRow.note = row['備註'];
+                        
+                        // Fallback for English headers if present (mixed usage)
+                        if (Object.keys(newRow).length === 0) return row;
+                    } else {
+                        if (row['分機號碼'] !== undefined) newRow.extension = row['分機號碼'];
+                        if (row['C端子位置'] !== undefined) newRow.c_terminal = row['C端子位置'];
+                        if (row['LENS'] !== undefined) newRow.lens = row['LENS'];
+                        if (row['線組編號(機房)'] !== undefined) newRow.line_group_room = row['線組編號(機房)'];
+                        if (row['線組編號(現場)'] !== undefined) newRow.line_group_site = row['線組編號(現場)'];
+                        if (row['使用單位'] !== undefined) newRow.unit = row['使用單位'];
+                        if (row['裝機位置'] !== undefined) newRow.location = row['裝機位置'];
+                        if (row['副機數量'] !== undefined) newRow.sub_count = row['副機數量'];
+                        if (row['連絡電話'] !== undefined) newRow.contact_tel = row['連絡電話'];
+                        
+                        if (Object.keys(newRow).length === 0) return row;
+                    }
+                    
+                    // 3. Check for existing ID to perform Update instead of Insert
+                    if (newRow.extension) {
+                        const extKey = String(newRow.extension).trim();
+                        if (extensionMap.has(extKey)) {
+                            newRow.id = extensionMap.get(extKey);
+                        }
+                    }
+                    
+                    return newRow;
+                });
+                
+                // Filter out empty rows
+                validRecords = records.filter(r => Object.keys(r).length > 0);
+
+                if (validRecords.length === 0) {
+                    alert('無有效資料可匯入');
+                    hideProgress();
+                    return;
+                }
+
+                // 4. Perform Upsert (Batched)
+                let { successCount, errorCount, lastError } = await runBatchUpsert(validRecords);
+                
+                // Check for errors and prompt for clear & retry if it's 'phones' table
+                if (errorCount > 0 && table === 'phones') {
+                     const confirmClear = confirm(`匯入完成但有 ${errorCount} 筆失敗。\n是否要「清空 phones 資料表」並重新匯入全部資料？\n(注意：這將刪除現有所有分機資料)`);
+                     if (confirmClear) {
+                         updateProgress(50, '正在清空資料表並重新匯入...');
+                         
+                         const { error: deleteError } = await supabaseClient
+                             .from(table)
+                             .delete()
+                             .not('id', 'is', null);
+
+                         if (deleteError) {
+                             console.error('Clear table error:', deleteError);
+                             alert('清空資料表失敗: ' + deleteError.message);
+                         } else {
+                             await logModification(table, 'DELETE_ALL', null, '匯入錯誤後清空資料表', null, null);
+                             
+                             const result = await runBatchUpsert(validRecords);
+                             successCount = result.successCount;
+                             errorCount = result.errorCount;
+                             lastError = result.lastError;
+                         }
+                     }
+                }
+                
+                updateProgress(100, '匯入完成');
+
+                const time = new Date().toLocaleString();
+                const label = type === 'phones' ? '分機' : '調度電話';
+                const msg = `<b>資料匯入通知</b>\n用戶: ${currentUser.username}\n時間: ${time}\n類型: ${label}\n成功筆數: ${successCount}\n失敗筆數: ${errorCount}`;
+                
+                // Log Import
+                await logModification(table, 'IMPORT', null, `匯入${label}資料: 成功 ${successCount} 筆, 失敗 ${errorCount} 筆`, null, null);
+
+                sendTelegramNotification(msg);
+
+                if (errorCount > 0) {
+                    alert(`匯入完成，但有 ${errorCount} 筆失敗 (成功: ${successCount} 筆)\n失敗原因可能是資料重複或格式錯誤。\n錯誤訊息: ${lastError ? lastError.message : '未知'}`);
+                } else {
+                    alert(`匯入成功 (共 ${successCount} 筆)`);
+                }
+                
+                // Reset input
+                input.value = '';
+
+                if (type === 'phones') searchPhones(); else searchDispatch();
+
+            } catch (e) {
+                console.error('Import error:', e);
+                alert('匯入發生錯誤: ' + e.message);
+            } finally {
+                setTimeout(hideProgress, 1000);
             }
-            
-            document.title = originalTitle;
-
-            const time = new Date().toLocaleString();
-            const label = type === 'phones' ? '分機' : '調度電話';
-            const msg = `<b>資料匯入通知</b>\n用戶: ${currentUser.username}\n時間: ${time}\n類型: ${label}\n成功筆數: ${successCount}\n失敗筆數: ${errorCount}`;
-            sendTelegramNotification(msg);
-
-            if (errorCount > 0) {
-                alert(`匯入完成，但有 ${errorCount} 筆失敗 (成功: ${successCount} 筆)`);
-            } else {
-                alert(`匯入成功 (共 ${successCount} 筆)`);
-            }
-            
-            // Reset input to allow re-uploading same file if needed
-            input.value = '';
-
-            if (type === 'phones') searchPhones(); else searchDispatch();
         };
         reader.readAsArrayBuffer(file);
     }
 
 </script>
+
+<!-- Progress Modal -->
+<div id="progressModal">
+    <div id="progressContent">
+        <h3 id="progressTitle" style="color:white; margin-top:0;">處理中...</h3>
+        <div id="progressBarContainer">
+            <div id="progressBar">0%</div>
+        </div>
+        <p id="progressMessage" style="color:#ddd; font-size: 0.9em;"></p>
+    </div>
+</div>
 
 </body>
 </html>
