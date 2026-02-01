@@ -2174,19 +2174,19 @@
 
         // Define columns
         const columns = [
-            { key: 'extension', label: '分機號碼', highlight: true },
-            { key: 'unit', label: '使用單位' },
-            { key: 'line_group_id', label: '線組編號' },
-            { key: 'UG50_port', label: 'UG50' },
-            { key: 'type', label: '分機種類' },
-            { key: 'sub_count', label: '副機數量' },
-            { key: 'did_number', label: 'DID號碼' },
-            { key: 'location', label: '裝機位置' },
-            { key: 'move_record', label: '拆遷紀錄' },
-            { key: 'note', label: '備註' },
+            { key: 'extension', label: '號碼', highlight: true },
+            { key: 'unit', label: '單位' },
             { key: 'lens', label: 'LENS' },
-            { key: 'mdf_port', label: 'MDF' },
-            { key: 'remote_mc_id', label: 'MC-ID' }
+            { key: 'mdf_port', label: '機房端子編號' },
+            { key: 'remote_mc_id', label: '遠端機櫃 MC-ID - (第幾對線)' },
+            { key: 'UG50_port', label: '遠端機櫃UG-50 - 編號' },
+            { key: 'line_group_id', label: '線組編號' },
+            { key: 'did_number', label: 'DID' },
+            { key: 'location', label: '裝機位置' },
+            { key: 'call_class', label: '通話等級' },
+            { key: 'sub_count', label: '副機數量' },
+            { key: 'type', label: '數位' },
+            { key: 'note', label: '備註' }
         ];
 
         const generateCards = (rows, startIndex = 0) => {
@@ -2209,7 +2209,7 @@
                     //   - If isEditable: Render but hidden, so enableEdit can show it.
                     
                     const strVal = String(val).trim();
-                    const isEmpty = !strVal || strVal === '-' || strVal === '無資料';
+                    const isEmpty = !strVal || strVal === '-' || strVal === '無資料' || strVal === 'undefined' || strVal === 'null';
                     
                     if (isEmpty && !isEditable) return; // Skip completely for viewers
                     
