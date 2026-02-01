@@ -471,6 +471,21 @@
             align-content: start; /* Prevent spacing out if few items */
         }
 
+        /* Modification Record Navigation */
+        .mod-nav {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .mod-nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            width: 100%;
+        }
+
         h1 { font-size: 1.5rem; margin-bottom: 15px; }
         h2 { font-size: 1.3rem; margin-bottom: 12px; }
         h3 { font-size: 1.1rem; margin-bottom: 10px; }
@@ -1355,19 +1370,19 @@
     </div>
 
     <div class="mod-nav">
-        <div style="display: inline-block; text-align: center; margin: 0 5px;">
+        <div class="mod-nav-item">
             <button class="mod-cat-btn btn-phones" data-table="phones" onclick="loadModRecords('phones')">分機修改紀錄</button>
             <div id="lastModTime-phones" style="color: #bbb; font-size: 0.75rem;">最新: 讀取中...</div>
         </div>
-        <div style="display: inline-block; text-align: center; margin: 0 5px;">
+        <div class="mod-nav-item">
             <button class="mod-cat-btn btn-dispatch" data-table="dispatch_phones" onclick="loadModRecords('dispatch_phones')">調度修改紀錄</button>
             <div id="lastModTime-dispatch_phones" style="color: #bbb; font-size: 0.75rem;">最新: 讀取中...</div>
         </div>
-        <div style="display: inline-block; text-align: center; margin: 0 5px;">
+        <div class="mod-nav-item">
             <button class="mod-cat-btn btn-images" data-table="images" onclick="loadModRecords('images')">PA天車修改紀錄</button>
             <div id="lastModTime-images" style="color: #bbb; font-size: 0.75rem;">最新: 讀取中...</div>
         </div>
-        <div id="searchLogContainer" class="hidden" style="display: inline-block; text-align: center; margin: 0 5px;">
+        <div id="searchLogContainer" class="mod-nav-item hidden">
             <button class="mod-cat-btn btn-search" data-table="search_logs" onclick="loadModRecords('search_logs')">使用者查詢紀錄</button>
             <div style="color: #bbb; font-size: 0.75rem;">(管理者專用)</div>
         </div>
@@ -3279,35 +3294,6 @@
                     if (insertRes.localLastError) lastError = insertRes.localLastError;
                 }
                 
-                // Check for errors and prompt for clear & retry if it's 'phones' table AND user is admin
-                if (errorCount > 0 && table === 'phones' && currentUser.role === 'admin') {
-                     hideProgress(); // Prevent freeze by hiding modal before confirm
-                     await new Promise(r => setTimeout(r, 100)); // Allow UI update
-
-                     const confirmClear = confirm(`匯入完成但有 ${errorCount} 筆失敗。\n是否要「清空 phones 資料表」並重新匯入全部資料？\n(注意：這將刪除現有所有分機資料)\n此功能僅限管理員使用。`);
-                      if (confirmClear) {
-                          showProgress('重試中...');
-                          updateProgress(0, '正在清空資料表並重新匯入...');
-                          
-                          const { error: deleteError } = await supabaseClient
-                             .from(table)
-                             .delete()
-                             .not('id', 'is', null);
-
-                         if (deleteError) {
-                             console.error('Clear table error:', deleteError);
-                             alert('清空資料表失敗: ' + deleteError.message);
-                         } else {
-                             await logModification(table, 'DELETE_ALL', null, '匯入錯誤後清空資料表', null, null);
-                             
-                             const result = await runBatchUpsert(validRecords);
-                             successCount = result.successCount;
-                             errorCount = result.errorCount;
-                             lastError = result.lastError;
-                         }
-                     }
-                }
-                
                 updateProgress(100, '匯入完成');
                 await new Promise(r => setTimeout(r, 500)); // Show completion briefly
                 hideProgress(); // Ensure hidden before final alert
@@ -3321,11 +3307,8 @@
 
                 sendTelegramNotification(msg);
 
-                if (errorCount > 0) {
-                    alert(`匯入完成，但有 ${errorCount} 筆失敗 (成功: ${successCount} 筆)\n新增: ${newCount} 筆\n更新(重複): ${duplicateCount} 筆\n失敗原因可能是資料重複或格式錯誤。\n錯誤訊息: ${lastError ? lastError.message : '未知'}`);
-                } else {
-                    alert(`匯入成功 (共 ${successCount} 筆)\n新增: ${newCount} 筆\n更新(重複): ${duplicateCount} 筆`);
-                }
+                // Simple alert regardless of errors (as requested, overwrite/update is handled)
+                alert(`匯入完成\n成功: ${successCount} 筆\n新增: ${newCount} 筆\n更新: ${duplicateCount} 筆` + (errorCount > 0 ? `\n失敗: ${errorCount} 筆` : ''));
                 
                 // Reset input
                 input.value = '';
