@@ -1042,6 +1042,54 @@
     </div>
 </div>
 
+<div id="addDispatchModal" class="login-overlay hidden">
+    <div class="login-box" style="max-width: 500px; text-align: left;">
+        <span class="close-btn" onclick="hideAddDispatchModal()">X</span>
+        <h2 style="text-align: center; margin-bottom: 20px;">新增調度電話</h2>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div>
+                <label style="font-size: 0.8rem; color: #aaa;">分機號碼 *</label>
+                <input type="text" id="add-dispatch-extension" placeholder="必填">
+            </div>
+            <div>
+                <label style="font-size: 0.8rem; color: #aaa;">C端子位置</label>
+                <input type="text" id="add-dispatch-c_terminal">
+            </div>
+            <div>
+                <label style="font-size: 0.8rem; color: #aaa;">LENS</label>
+                <input type="text" id="add-dispatch-lens">
+            </div>
+            <div>
+                <label style="font-size: 0.8rem; color: #aaa;">線組編號(機房)</label>
+                <input type="text" id="add-dispatch-line_group_room">
+            </div>
+            <div>
+                <label style="font-size: 0.8rem; color: #aaa;">線組編號(現場)</label>
+                <input type="text" id="add-dispatch-line_group_site">
+            </div>
+            <div>
+                <label style="font-size: 0.8rem; color: #aaa;">使用單位</label>
+                <input type="text" id="add-dispatch-unit">
+            </div>
+            <div>
+                <label style="font-size: 0.8rem; color: #aaa;">裝機位置</label>
+                <input type="text" id="add-dispatch-location">
+            </div>
+            <div>
+                <label style="font-size: 0.8rem; color: #aaa;">副機數量</label>
+                <input type="text" id="add-dispatch-sub_count">
+            </div>
+            <div>
+                <label style="font-size: 0.8rem; color: #aaa;">連絡電話</label>
+                <input type="text" id="add-dispatch-contact_tel">
+            </div>
+        </div>
+        <div style="text-align: center; margin-top: 20px;">
+            <button onclick="submitAddDispatch()" style="width: 100%; padding: 10px; font-size: 1.1rem;">確認新增</button>
+        </div>
+    </div>
+</div>
+
 <div class="container" id="mainApp">
     <div id="globalError" style="display:none; background: #ffebee; color: #c62828; padding: 10px; margin-bottom: 10px; border: 1px solid #ef9a9a; border-radius: 4px;"></div>
     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -1289,10 +1337,13 @@
         // Clear results based on input ID and restore initial message
         if (id === 'imgSearch') {
             document.getElementById('imageGrid').innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #888; padding: 20px;">請輸入關鍵字搜尋PA天車資料</div>';
+            document.getElementById('imgSearchCount').innerText = '';
         } else if (id === 'phoneSearch') {
             document.getElementById('phonesTableContainer').innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">請輸入關鍵字搜尋分機</div>';
+            document.getElementById('phoneSearchCount').innerText = '';
         } else if (id === 'dispatchSearch') {
             document.getElementById('dispatchTableContainer').innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">請輸入關鍵字搜尋調度電話</div>';
+            document.getElementById('dispatchSearchCount').innerText = '';
         }
     }
 
@@ -1372,6 +1423,17 @@
     function logout() {
         currentUser = null;
         updateUIState();
+        
+        // Security: Re-render views to hide sensitive actions immediately
+        if (document.getElementById('phoneSearch').value) searchPhones();
+        if (document.getElementById('dispatchSearch').value) searchDispatch();
+        // For images, we must re-render to remove edit buttons/pencil icons
+        if (document.getElementById('imgSearch').value) {
+            searchImages();
+        } else {
+            // If no search, ensure grid is clean or default state (though it should be fine)
+             document.getElementById('imageGrid').innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #888; padding: 20px;">請輸入關鍵字搜尋PA天車資料</div>';
+        }
     }
 
     // ================= ADD PHONE LOGIC =================
@@ -1450,6 +1512,79 @@
             
             // Refresh
             searchPhones();
+
+        } catch (e) {
+            console.error(e);
+            alert('新增失敗: ' + e.message);
+        }
+    }
+
+    function showAddDispatchModal() {
+        if (!currentUser) { alert('請先登入'); showLoginModal(); return; }
+        document.getElementById('addDispatchModal').classList.remove('hidden');
+        // Clear inputs
+        const inputs = document.querySelectorAll('#addDispatchModal input');
+        inputs.forEach(input => input.value = '');
+    }
+
+    function hideAddDispatchModal() {
+        document.getElementById('addDispatchModal').classList.add('hidden');
+    }
+
+    async function submitAddDispatch() {
+        if (!supabaseClient) return;
+        
+        const extension = document.getElementById('add-dispatch-extension').value.trim();
+        const c_terminal = document.getElementById('add-dispatch-c_terminal').value.trim();
+        const lens = document.getElementById('add-dispatch-lens').value.trim();
+        const line_group_room = document.getElementById('add-dispatch-line_group_room').value.trim();
+        const line_group_site = document.getElementById('add-dispatch-line_group_site').value.trim();
+        const unit = document.getElementById('add-dispatch-unit').value.trim();
+        const location = document.getElementById('add-dispatch-location').value.trim();
+        const sub_count = document.getElementById('add-dispatch-sub_count').value.trim();
+        const contact_tel = document.getElementById('add-dispatch-contact_tel').value.trim();
+
+        if (!extension) {
+            alert('分機號碼為必填欄位');
+            return;
+        }
+
+        // Check Duplicates
+        try {
+            const { data: existing, error: checkError } = await supabaseClient
+                .from('dispatch_phones')
+                .select('extension')
+                .eq('extension', extension);
+
+            if (checkError) throw checkError;
+
+            if (existing && existing.length > 0) {
+                alert(`無法新增：分機號碼 ${extension} 已存在`);
+                return;
+            }
+
+            // Insert
+            const newRecord = {
+                extension, c_terminal, lens, line_group_room, line_group_site,
+                unit, location, sub_count, contact_tel
+            };
+
+            const { data: inserted, error: insertError } = await supabaseClient
+                .from('dispatch_phones')
+                .insert(newRecord)
+                .select()
+                .single();
+
+            if (insertError) throw insertError;
+
+            alert('新增成功');
+            hideAddDispatchModal();
+            
+            // Log
+            await logModification('dispatch_phones', 'INSERT', inserted.id, `新增調度電話: ${extension}`, null, newRecord);
+            
+            // Refresh
+            searchDispatch();
 
         } catch (e) {
             console.error(e);
@@ -2465,6 +2600,7 @@
                     html += `
                     <div class="card-actions">
                         <button onclick="enableEdit(this, 'dispatch')">修改</button>
+                        <button onclick="showAddDispatchModal()" style="background: #009688;">新增</button>
                         ${deleteBtn}
                     </div>`;
                 }
