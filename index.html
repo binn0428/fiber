@@ -1382,17 +1382,32 @@
 
     // Initialize
     window.addEventListener('DOMContentLoaded', () => {
-        // Back to Top Logic
+        // Back to Top Logic (Updated for internal scrolling)
         const backToTopBtn = document.getElementById('backToTop');
-        window.addEventListener('scroll', () => {
-            if (window.scrollY > 300) {
+        const scrollContainers = [
+            document.getElementById('phonesTableContainer'),
+            document.getElementById('dispatchTableContainer'),
+            document.getElementById('imageGrid')
+        ];
+
+        function handleScroll(e) {
+            if (e.target.scrollTop > 300) {
                 backToTopBtn.style.display = 'flex';
             } else {
                 backToTopBtn.style.display = 'none';
             }
+        }
+
+        scrollContainers.forEach(container => {
+            if(container) container.addEventListener('scroll', handleScroll);
         });
+
         backToTopBtn.addEventListener('click', () => {
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            scrollContainers.forEach(container => {
+                if (container && container.offsetParent !== null) { // Check visibility
+                    container.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+            });
         });
         
         // Long Press Logic for Mod Record Category Buttons
@@ -1801,6 +1816,7 @@
 
 
     function switchTab(tabName, clickedElement) {
+        document.getElementById('backToTop').style.display = 'none'; // Hide back to top button on switch
         document.querySelectorAll('.section').forEach(el => el.classList.add('hidden'));
         document.getElementById(tabName + 'Section').classList.remove('hidden');
         document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
@@ -3135,12 +3151,12 @@
                 // 4. Perform Upsert (Batched)
                 let { successCount, errorCount, lastError } = await runBatchUpsert(validRecords);
                 
-                // Check for errors and prompt for clear & retry if it's 'phones' table
-                if (errorCount > 0 && table === 'phones') {
+                // Check for errors and prompt for clear & retry if it's 'phones' table AND user is admin
+                if (errorCount > 0 && table === 'phones' && currentUser.role === 'admin') {
                      hideProgress(); // Prevent freeze by hiding modal before confirm
                      await new Promise(r => setTimeout(r, 100)); // Allow UI update
 
-                     const confirmClear = confirm(`匯入完成但有 ${errorCount} 筆失敗。\n是否要「清空 phones 資料表」並重新匯入全部資料？\n(注意：這將刪除現有所有分機資料)`);
+                     const confirmClear = confirm(`匯入完成但有 ${errorCount} 筆失敗。\n是否要「清空 phones 資料表」並重新匯入全部資料？\n(注意：這將刪除現有所有分機資料)\n此功能僅限管理員使用。`);
                       if (confirmClear) {
                           showProgress('重試中...');
                           updateProgress(0, '正在清空資料表並重新匯入...');
