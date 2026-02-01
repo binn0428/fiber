@@ -3217,11 +3217,67 @@
                 }
 
                 // Calculate Duplicates (Updates) vs New (Inserts)
-                const duplicateCount = validRecords.filter(r => r.id).length;
-                const newCount = validRecords.length - duplicateCount;
+                const recordsToUpdate = validRecords.filter(r => r.id);
+                const recordsToInsert = validRecords.filter(r => !r.id);
+                
+                const duplicateCount = recordsToUpdate.length;
+                const newCount = recordsToInsert.length;
 
-                // 4. Perform Upsert (Batched)
-                let { successCount, errorCount, lastError } = await runBatchUpsert(validRecords);
+                // 4. Perform Upsert/Insert in Batches
+                let successCount = 0;
+                let errorCount = 0;
+                let lastError = null;
+
+                // Helper for executing batch operations
+                const executeBatch = async (items, isUpdate) => {
+                    const BATCH_SIZE = 100;
+                    let localSuccess = 0;
+                    let localError = 0;
+                    let localLastError = null;
+
+                    for (let i = 0; i < items.length; i += BATCH_SIZE) {
+                        const batch = items.slice(i, i + BATCH_SIZE);
+                        const progress = Math.round(((i + 1) / items.length) * 100);
+                        const actionText = isUpdate ? '更新中' : '新增中';
+                        updateProgress(progress, `${actionText}... (${i + 1}/${items.length})`);
+
+                        let result;
+                        if (isUpdate) {
+                            // For updates, we MUST include ID
+                            result = await supabaseClient.from(table).upsert(batch);
+                        } else {
+                            // For inserts, we MUST NOT include ID (let DB generate it)
+                            // Double check to remove undefined id keys if any exist
+                            const cleanBatch = batch.map(({id, ...rest}) => rest);
+                            result = await supabaseClient.from(table).insert(cleanBatch);
+                        }
+
+                        if (result.error) {
+                            console.error(`${actionText} batch error:`, result.error);
+                            localError += batch.length;
+                            localLastError = result.error;
+                        } else {
+                            localSuccess += batch.length;
+                        }
+                    }
+                    return { localSuccess, localError, localLastError };
+                };
+
+                // Run Updates
+                if (recordsToUpdate.length > 0) {
+                    const updateRes = await executeBatch(recordsToUpdate, true);
+                    successCount += updateRes.localSuccess;
+                    errorCount += updateRes.localError;
+                    if (updateRes.localLastError) lastError = updateRes.localLastError;
+                }
+
+                // Run Inserts
+                if (recordsToInsert.length > 0) {
+                    const insertRes = await executeBatch(recordsToInsert, false);
+                    successCount += insertRes.localSuccess;
+                    errorCount += insertRes.localError;
+                    if (insertRes.localLastError) lastError = insertRes.localLastError;
+                }
                 
                 // Check for errors and prompt for clear & retry if it's 'phones' table AND user is admin
                 if (errorCount > 0 && table === 'phones' && currentUser.role === 'admin') {
