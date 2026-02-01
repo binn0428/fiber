@@ -1119,9 +1119,10 @@
         <div class="toolbar">
             <div class="search-group" style="flex-wrap: wrap;">
                 <div id="phoneSearchCount" class="search-count" style="width: 100%;"></div>
-                <input type="text" id="phoneSearch" placeholder="搜尋分機..." style="width: 300px;">
+                <input type="text" id="phoneSearch" placeholder="搜尋分機..." style="width: 150px;">
                 <button onclick="searchPhones()">搜尋</button>
                 <button class="btn-clear" onclick="clearInput('phoneSearch')">清除</button>
+                <button id="btnAddPhone" onclick="showAddPhoneModal()" style="background: #009688;" class="hidden">新增</button>
             </div>
             
             <!-- Auth Only Controls -->
@@ -1140,9 +1141,10 @@
         <div class="toolbar">
             <div class="search-group" style="flex-wrap: wrap;">
                 <div id="dispatchSearchCount" class="search-count" style="width: 100%;"></div>
-                <input type="text" id="dispatchSearch" placeholder="搜尋調度電話..." style="width: 300px;">
+                <input type="text" id="dispatchSearch" placeholder="搜尋調度電話..." style="width: 150px;">
                 <button onclick="searchDispatch()">搜尋</button>
                 <button class="btn-clear" onclick="clearInput('dispatchSearch')">清除</button>
+                <button id="btnAddDispatch" onclick="showAddDispatchModal()" style="background: #009688;" class="hidden">新增</button>
             </div>
             
             <!-- Auth Only Controls -->
@@ -1510,6 +1512,10 @@
             // Log
             await logModification('phones', 'INSERT', inserted.id, `新增分機: ${extension}`, null, newRecord);
             
+            // Notification
+            const time = new Date().toLocaleString();
+            sendTelegramNotification(`<b>資料新增通知 (分機)</b>\n用戶: ${currentUser.username}\n時間: ${time}\n分機: ${extension}\nLENS: ${lens}`);
+
             // Refresh
             searchPhones();
 
@@ -1583,6 +1589,10 @@
             // Log
             await logModification('dispatch_phones', 'INSERT', inserted.id, `新增調度電話: ${extension}`, null, newRecord);
             
+            // Notification
+            const time = new Date().toLocaleString();
+            sendTelegramNotification(`<b>資料新增通知 (調度)</b>\n用戶: ${currentUser.username}\n時間: ${time}\n分機: ${extension}\nLENS: ${lens}`);
+
             // Refresh
             searchDispatch();
 
@@ -1621,6 +1631,16 @@
         authControls.forEach(id => {
             if (isLoggedIn) document.getElementById(id).classList.remove('hidden');
             else document.getElementById(id).classList.add('hidden');
+        });
+
+        // Add Buttons (Phone/Dispatch)
+        const addButtons = ['btnAddPhone', 'btnAddDispatch'];
+        addButtons.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                if (isLoggedIn) el.classList.remove('hidden');
+                else el.classList.add('hidden');
+            }
         });
 
 
@@ -2220,7 +2240,6 @@
                     html += `
                     <div class="card-actions">
                         <button onclick="enableEdit(this, 'phones')">修改</button>
-                        <button onclick="showAddPhoneModal()" style="background: #009688;">新增</button>
                         ${deleteBtn}
                     </div>`;
                 }
@@ -2273,7 +2292,17 @@
         // Make cells editable
         const values = card.querySelectorAll('.info-value[data-key]');
         values.forEach(div => {
+            const key = div.dataset.key;
+            // Prevent editing of 'extension' field
+            if (key === 'extension') {
+                div.style.backgroundColor = '#f5f5f5'; // Visual cue for read-only
+                div.style.color = '#888';
+                div.title = '分機號碼不可修改';
+                return; 
+            }
+
             div.contentEditable = true;
+            div.classList.add('editing-cell');
             if (div.innerText === '無資料') div.innerText = '';
         });
 
@@ -2600,7 +2629,6 @@
                     html += `
                     <div class="card-actions">
                         <button onclick="enableEdit(this, 'dispatch')">修改</button>
-                        <button onclick="showAddDispatchModal()" style="background: #009688;">新增</button>
                         ${deleteBtn}
                     </div>`;
                 }
