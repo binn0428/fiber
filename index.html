@@ -959,12 +959,86 @@
 <div id="loginOverlay" class="login-overlay hidden">
     <div class="login-box">
         <span class="close-btn" onclick="hideLoginModal()">X</span>
-        <h2>請登入</h2>
-        <input type="text" id="username" placeholder="帳號">
-        <input type="password" id="password" placeholder="密碼">
-        <br>
-        <button onclick="handleLogin()">登入</button>
-        <p id="loginError" style="color: red; display: none;">帳號或密碼錯誤</p>
+        <h2>請選擇身分登入</h2>
+        
+        <div id="identity-selection">
+            <button onclick="selectIdentity('colleague')" class="identity-btn" style="background: linear-gradient(135deg, #2196F3, #1976D2); width: 100%; margin: 10px 0; padding: 12px; font-size: 1.1rem;">
+                同仁登入
+            </button>
+            <button onclick="selectIdentity('admin')" class="identity-btn" style="background: linear-gradient(135deg, #FF9800, #F57C00); width: 100%; margin: 10px 0; padding: 12px; font-size: 1.1rem;">
+                管理登入
+            </button>
+        </div>
+
+        <div id="password-section" class="hidden">
+            <h3 id="selected-identity-title" style="margin: 10px 0; color: #aaa;"></h3>
+            <input type="password" id="password" placeholder="請輸入密碼" onkeypress="if(event.key === 'Enter') handleLogin()">
+            <br>
+            <div style="display: flex; gap: 10px; justify-content: center; margin-top: 10px;">
+                <button onclick="handleLogin()" style="flex: 1;">確認</button>
+                <button onclick="resetIdentity()" style="background: #757575; flex: 1;">返回</button>
+            </div>
+            <p id="loginError" style="color: red; display: none; margin-top: 10px;">密碼錯誤</p>
+        </div>
+    </div>
+</div>
+
+<!-- Add Phone Modal -->
+<div id="addPhoneModal" class="login-overlay hidden">
+    <div class="login-box" style="max-width: 500px; text-align: left;">
+        <span class="close-btn" onclick="hideAddPhoneModal()">X</span>
+        <h2 style="text-align: center; margin-bottom: 20px;">新增分機資料</h2>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div>
+                <label style="font-size: 0.8rem; color: #aaa;">分機號碼 *</label>
+                <input type="text" id="add-extension" placeholder="必填">
+            </div>
+            <div>
+                <label style="font-size: 0.8rem; color: #aaa;">LENS *</label>
+                <input type="text" id="add-lens" placeholder="必填">
+            </div>
+            <div>
+                <label style="font-size: 0.8rem; color: #aaa;">使用單位</label>
+                <input type="text" id="add-unit">
+            </div>
+            <div>
+                <label style="font-size: 0.8rem; color: #aaa;">線組編號</label>
+                <input type="text" id="add-line_group_id">
+            </div>
+            <div>
+                <label style="font-size: 0.8rem; color: #aaa;">UG50</label>
+                <input type="text" id="add-UG50_port">
+            </div>
+            <div>
+                <label style="font-size: 0.8rem; color: #aaa;">分機種類</label>
+                <input type="text" id="add-type">
+            </div>
+            <div>
+                <label style="font-size: 0.8rem; color: #aaa;">DID號碼</label>
+                <input type="text" id="add-did_number">
+            </div>
+             <div>
+                <label style="font-size: 0.8rem; color: #aaa;">裝機位置</label>
+                <input type="text" id="add-location">
+            </div>
+             <div>
+                <label style="font-size: 0.8rem; color: #aaa;">MDF</label>
+                <input type="text" id="add-mdf_port">
+            </div>
+             <div>
+                <label style="font-size: 0.8rem; color: #aaa;">MC-ID</label>
+                <input type="text" id="add-remote_mc_id">
+            </div>
+        </div>
+        <div style="margin-top: 10px;">
+            <label style="font-size: 0.8rem; color: #aaa;">備註</label>
+            <input type="text" id="add-note" style="width: 95%;">
+        </div>
+
+        <div style="text-align: center; margin-top: 20px;">
+            <button onclick="submitAddPhone()" style="width: 100%; padding: 10px; font-size: 1.1rem;">確認新增</button>
+        </div>
     </div>
 </div>
 
@@ -1223,39 +1297,74 @@
     }
 
     // Login Logic
+    let selectedRole = null;
+
+    function showLoginModal() {
+        document.getElementById('loginOverlay').classList.remove('hidden');
+        resetIdentity();
+    }
+
+    function hideLoginModal() {
+        document.getElementById('loginOverlay').classList.add('hidden');
+    }
+
+    function selectIdentity(role) {
+        selectedRole = role;
+        document.getElementById('identity-selection').classList.add('hidden');
+        document.getElementById('password-section').classList.remove('hidden');
+        
+        const title = role === 'admin' ? '管理者登入' : '同仁登入';
+        document.getElementById('selected-identity-title').innerText = title;
+        
+        document.getElementById('loginError').style.display = 'none';
+        document.getElementById('password').value = '';
+        setTimeout(() => document.getElementById('password').focus(), 100);
+    }
+
+    function resetIdentity() {
+        selectedRole = null;
+        document.getElementById('identity-selection').classList.remove('hidden');
+        document.getElementById('password-section').classList.add('hidden');
+        document.getElementById('password').value = '';
+        document.getElementById('loginError').style.display = 'none';
+    }
+
     async function handleLogin() {
         if (!supabaseClient) { alert('系統未連線，無法登入'); return; }
-        const user = document.getElementById('username').value;
+        
         const pass = document.getElementById('password').value;
         
-        // Hash password with SHA-256
-        const encoder = new TextEncoder();
-        const dataBuffer = encoder.encode(pass);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        // Hardcoded Password Check
+        let isValid = false;
+        let userData = null;
 
-        try {
-            const { data, error } = await supabaseClient
-                .from('users')
-                .select('*')
-                .eq('username', user)
-                .single();
-
-            if (error || !data) {
-                throw new Error('User not found');
+        if (selectedRole === 'colleague') {
+            if (pass === 'w513w513') {
+                isValid = true;
+                userData = {
+                    id: 'colleague_user',
+                    username: '同仁',
+                    role: 'user',
+                    group_id: 1
+                };
             }
-
-            if (data.password === hashHex) {
-                currentUser = data;
-                hideLoginModal();
-                updateUIState();
-
-            } else {
-                document.getElementById('loginError').style.display = 'block';
+        } else if (selectedRole === 'admin') {
+            if (pass === '122232') {
+                isValid = true;
+                userData = {
+                    id: 'admin_user',
+                    username: '管理者',
+                    role: 'admin',
+                    group_id: 1
+                };
             }
-        } catch (e) {
-            console.error(e);
+        }
+
+        if (isValid && userData) {
+            currentUser = userData;
+            hideLoginModal();
+            updateUIState();
+        } else {
             document.getElementById('loginError').style.display = 'block';
         }
     }
@@ -1263,6 +1372,89 @@
     function logout() {
         currentUser = null;
         updateUIState();
+    }
+
+    // ================= ADD PHONE LOGIC =================
+    function showAddPhoneModal() {
+        if (!currentUser) { alert('請先登入'); showLoginModal(); return; }
+        document.getElementById('addPhoneModal').classList.remove('hidden');
+        // Clear inputs
+        const inputs = document.querySelectorAll('#addPhoneModal input');
+        inputs.forEach(input => input.value = '');
+    }
+
+    function hideAddPhoneModal() {
+        document.getElementById('addPhoneModal').classList.add('hidden');
+    }
+
+    async function submitAddPhone() {
+        if (!supabaseClient) return;
+        
+        const extension = document.getElementById('add-extension').value.trim();
+        const lens = document.getElementById('add-lens').value.trim();
+        const unit = document.getElementById('add-unit').value.trim();
+        const line_group_id = document.getElementById('add-line_group_id').value.trim();
+        const UG50_port = document.getElementById('add-UG50_port').value.trim();
+        const type = document.getElementById('add-type').value.trim();
+        const did_number = document.getElementById('add-did_number').value.trim();
+        const location = document.getElementById('add-location').value.trim();
+        const mdf_port = document.getElementById('add-mdf_port').value.trim();
+        const remote_mc_id = document.getElementById('add-remote_mc_id').value.trim();
+        const note = document.getElementById('add-note').value.trim();
+
+        if (!extension || !lens) {
+            alert('分機號碼與 LENS 為必填欄位');
+            return;
+        }
+
+        // Check Duplicates
+        // Logic: Check if extension OR lens exists in DB
+        try {
+            const { data: existing, error: checkError } = await supabaseClient
+                .from('phones')
+                .select('extension, lens')
+                .or(`extension.eq.${extension},lens.eq.${lens}`);
+
+            if (checkError) throw checkError;
+
+            if (existing && existing.length > 0) {
+                const dupExt = existing.find(x => x.extension === extension);
+                const dupLens = existing.find(x => x.lens === lens);
+                
+                let msg = '無法新增：\n';
+                if (dupExt) msg += `- 分機號碼 ${extension} 已存在\n`;
+                if (dupLens) msg += `- LENS ${lens} 已存在\n`;
+                alert(msg);
+                return;
+            }
+
+            // Insert
+            const newRecord = {
+                extension, lens, unit, line_group_id, UG50_port, 
+                type, did_number, location, mdf_port, remote_mc_id, note
+            };
+
+            const { data: inserted, error: insertError } = await supabaseClient
+                .from('phones')
+                .insert(newRecord)
+                .select()
+                .single();
+
+            if (insertError) throw insertError;
+
+            alert('新增成功');
+            hideAddPhoneModal();
+            
+            // Log
+            await logModification('phones', 'INSERT', inserted.id, `新增分機: ${extension}`, null, newRecord);
+            
+            // Refresh
+            searchPhones();
+
+        } catch (e) {
+            console.error(e);
+            alert('新增失敗: ' + e.message);
+        }
     }
 
     function getRoleName(role) {
@@ -1893,6 +2085,7 @@
                     html += `
                     <div class="card-actions">
                         <button onclick="enableEdit(this, 'phones')">修改</button>
+                        <button onclick="showAddPhoneModal()" style="background: #009688;">新增</button>
                         ${deleteBtn}
                     </div>`;
                 }
