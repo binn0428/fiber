@@ -1023,6 +1023,44 @@
             color: #888;
         }
 
+        /* Mod Record Page Styles */
+        #modRecordPage {
+            display: flex;
+            flex-direction: column;
+            height: 100%; /* Ensure it takes full height of container */
+            overflow: hidden; /* Prevent outer scroll */
+        }
+        
+        .mod-nav {
+            flex-shrink: 0; /* Don't shrink */
+            padding-bottom: 10px;
+            border-bottom: 1px solid #333;
+        }
+
+        #modRecordList {
+            flex: 1;
+            overflow-y: auto;
+            padding-right: 5px; /* Space for scrollbar */
+        }
+
+        .mod-cat-btn {
+            padding: 4px 10px; /* Smaller padding */
+            font-size: 0.85rem; /* Smaller font */
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            color: #fff; /* Default text color */
+            transition: opacity 0.2s;
+            margin: 0 4px; /* Reduced spacing */
+        }
+        .mod-cat-btn:hover { opacity: 0.8; }
+        
+        /* Specific Colors for Mod Buttons */
+        .btn-phones { background-color: #FBC02D; color: #000; } /* Yellow */
+        .btn-dispatch { background-color: #2196F3; } /* Blue */
+        .btn-images { background-color: #4CAF50; } /* Green */
+        .btn-search { background-color: #FF9800; } /* Orange */
+
         /* Back to Top Button */
         #backToTop {
             position: fixed;
@@ -1303,32 +1341,32 @@
 
 <!-- Modification Record Page -->
 <div id="modRecordPage" class="container hidden">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-shrink: 0;">
         <h1>修改紀錄</h1>
         <button onclick="hideModRecordPage()" style="background: #757575;">返回查詢</button>
     </div>
 
-    <div class="mod-nav" style="display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; justify-content: center;">
-        <div style="text-align: center;">
-            <button class="mod-cat-btn" data-table="phones" onclick="loadModRecords('phones')" style="width: 200px; margin-bottom: 5px;">分機修改紀錄</button>
-            <div id="lastModTime-phones" style="color: #bbb; font-size: 0.9em;">最新修改: 讀取中...</div>
+    <div class="mod-nav">
+        <div style="display: inline-block; text-align: center; margin: 0 5px;">
+            <button class="mod-cat-btn btn-phones" data-table="phones" onclick="loadModRecords('phones')">分機修改紀錄</button>
+            <div id="lastModTime-phones" style="color: #bbb; font-size: 0.75rem;">最新: 讀取中...</div>
         </div>
-        <div style="text-align: center;">
-            <button class="mod-cat-btn" data-table="dispatch_phones" onclick="loadModRecords('dispatch_phones')" style="width: 200px; margin-bottom: 5px;">調度修改紀錄</button>
-            <div id="lastModTime-dispatch_phones" style="color: #bbb; font-size: 0.9em;">最新修改: 讀取中...</div>
+        <div style="display: inline-block; text-align: center; margin: 0 5px;">
+            <button class="mod-cat-btn btn-dispatch" data-table="dispatch_phones" onclick="loadModRecords('dispatch_phones')">調度修改紀錄</button>
+            <div id="lastModTime-dispatch_phones" style="color: #bbb; font-size: 0.75rem;">最新: 讀取中...</div>
         </div>
-        <div style="text-align: center;">
-            <button class="mod-cat-btn" data-table="images" onclick="loadModRecords('images')" style="width: 200px; margin-bottom: 5px;">PA天車修改紀錄</button>
-            <div id="lastModTime-images" style="color: #bbb; font-size: 0.9em;">最新修改: 讀取中...</div>
+        <div style="display: inline-block; text-align: center; margin: 0 5px;">
+            <button class="mod-cat-btn btn-images" data-table="images" onclick="loadModRecords('images')">PA天車修改紀錄</button>
+            <div id="lastModTime-images" style="color: #bbb; font-size: 0.75rem;">最新: 讀取中...</div>
         </div>
-        <div style="text-align: center;" id="searchLogContainer" class="hidden">
-            <button class="mod-cat-btn" data-table="search_logs" onclick="loadModRecords('search_logs')" style="width: 200px; margin-bottom: 5px; background: #FF9800;">使用者查詢紀錄</button>
-            <div style="color: #bbb; font-size: 0.9em;">(管理者專用)</div>
+        <div id="searchLogContainer" class="hidden" style="display: inline-block; text-align: center; margin: 0 5px;">
+            <button class="mod-cat-btn btn-search" data-table="search_logs" onclick="loadModRecords('search_logs')">使用者查詢紀錄</button>
+            <div style="color: #bbb; font-size: 0.75rem;">(管理者專用)</div>
         </div>
     </div>
 
-    <div id="modRecordList" style="margin-top: 20px;">
-        <p style="text-align: center; color: #888;">請選擇上方類別查看紀錄</p>
+    <div id="modRecordList">
+        <p style="text-align: center; color: #888; margin-top: 20px;">請選擇上方類別查看紀錄</p>
     </div>
 </div>
 
@@ -1387,7 +1425,8 @@
         const scrollContainers = [
             document.getElementById('phonesTableContainer'),
             document.getElementById('dispatchTableContainer'),
-            document.getElementById('imageGrid')
+            document.getElementById('imageGrid'),
+            document.getElementById('modRecordList')
         ];
 
         function handleScroll(e) {
@@ -3093,40 +3132,87 @@
                     const newRow = {};
                     
                     if (type === 'phones') {
-                        // Map Chinese headers to DB columns
+                        // Map Chinese headers or English headers to DB columns
                         if (row['號碼'] !== undefined) newRow.extension = row['號碼'];
+                        else if (row['分機'] !== undefined) newRow.extension = row['分機'];
+                        else if (row['extension'] !== undefined) newRow.extension = row['extension'];
+                        else if (row['Extension'] !== undefined) newRow.extension = row['Extension'];
+
                         if (row['數位'] !== undefined) newRow.type = row['數位'];
+                        else if (row['type'] !== undefined) newRow.type = row['type'];
+
                         if (row['LENS'] !== undefined) newRow.lens = row['LENS'];
+                        else if (row['lens'] !== undefined) newRow.lens = row['lens'];
+
                         if (row['機房端子編號'] !== undefined) newRow.mdf_port = row['機房端子編號'];
+                        else if (row['mdf_port'] !== undefined) newRow.mdf_port = row['mdf_port'];
+
                         if (row['遠端機櫃 MC-ID (第幾對線)'] !== undefined) newRow.remote_mc_id = row['遠端機櫃 MC-ID (第幾對線)'];
+                        else if (row['remote_mc_id'] !== undefined) newRow.remote_mc_id = row['remote_mc_id'];
+
                         if (row['遠端機櫃UG-50編號'] !== undefined) newRow.UG50_port = row['遠端機櫃UG-50編號'];
+                        else if (row['UG50_port'] !== undefined) newRow.UG50_port = row['UG50_port'];
+
                         if (row['線組編號'] !== undefined) newRow.line_group_id = row['線組編號'];
+                        else if (row['line_group_id'] !== undefined) newRow.line_group_id = row['line_group_id'];
+
                         if (row['單位'] !== undefined) newRow.unit = row['單位'];
+                        else if (row['unit'] !== undefined) newRow.unit = row['unit'];
+
                         if (row['裝機位置'] !== undefined) newRow.location = row['裝機位置'];
+                        else if (row['location'] !== undefined) newRow.location = row['location'];
+
                         if (row['通話等級'] !== undefined) newRow.call_class = row['通話等級'];
+                        else if (row['call_class'] !== undefined) newRow.call_class = row['call_class'];
+
                         if (row['副機數量'] !== undefined) newRow.sub_count = row['副機數量'];
+                        else if (row['sub_count'] !== undefined) newRow.sub_count = row['sub_count'];
+
                         if (row['DID'] !== undefined) newRow.did_number = row['DID'];
+                        else if (row['did_number'] !== undefined) newRow.did_number = row['did_number'];
+
                         if (row['備註'] !== undefined) newRow.note = row['備註'];
-                        
-                        // Fallback for English headers if present (mixed usage)
-                        if (Object.keys(newRow).length === 0) return row;
+                        else if (row['note'] !== undefined) newRow.note = row['note'];
+
                     } else {
+                        // Dispatch
                         if (row['分機號碼'] !== undefined) newRow.extension = row['分機號碼'];
+                        else if (row['extension'] !== undefined) newRow.extension = row['extension'];
+                        else if (row['Extension'] !== undefined) newRow.extension = row['Extension'];
+
                         if (row['C端子位置'] !== undefined) newRow.c_terminal = row['C端子位置'];
+                        else if (row['c_terminal'] !== undefined) newRow.c_terminal = row['c_terminal'];
+
                         if (row['LENS'] !== undefined) newRow.lens = row['LENS'];
+                        else if (row['lens'] !== undefined) newRow.lens = row['lens'];
+
                         if (row['線組編號(機房)'] !== undefined) newRow.line_group_room = row['線組編號(機房)'];
+                        else if (row['line_group_room'] !== undefined) newRow.line_group_room = row['line_group_room'];
+
                         if (row['線組編號(現場)'] !== undefined) newRow.line_group_site = row['線組編號(現場)'];
+                        else if (row['line_group_site'] !== undefined) newRow.line_group_site = row['line_group_site'];
+
                         if (row['使用單位'] !== undefined) newRow.unit = row['使用單位'];
+                        else if (row['unit'] !== undefined) newRow.unit = row['unit'];
+
                         if (row['裝機位置'] !== undefined) newRow.location = row['裝機位置'];
+                        else if (row['location'] !== undefined) newRow.location = row['location'];
+
                         if (row['副機數量'] !== undefined) newRow.sub_count = row['副機數量'];
+                        else if (row['sub_count'] !== undefined) newRow.sub_count = row['sub_count'];
+
                         if (row['連絡電話'] !== undefined) newRow.contact_tel = row['連絡電話'];
-                        
-                        if (Object.keys(newRow).length === 0) return row;
+                        else if (row['contact_tel'] !== undefined) newRow.contact_tel = row['contact_tel'];
                     }
                     
+                    // Force extension to string and trim
+                    if (newRow.extension !== undefined && newRow.extension !== null) {
+                        newRow.extension = String(newRow.extension).trim();
+                    }
+
                     // 3. Check for existing ID to perform Update instead of Insert
                     if (newRow.extension) {
-                        const extKey = String(newRow.extension).trim();
+                        const extKey = newRow.extension;
                         if (extensionMap.has(extKey)) {
                             newRow.id = extensionMap.get(extKey);
                         }
