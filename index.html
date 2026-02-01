@@ -3005,7 +3005,8 @@
                     const progress = 50 + Math.floor((i / records.length) * 40);
                     updateProgress(progress, `匯入中... (${i + 1}/${records.length})`);
 
-                    const { error } = await supabaseClient.from(table).upsert(batch); 
+                    // Use onConflict to handle duplicates by updating based on extension
+                    const { error } = await supabaseClient.from(table).upsert(batch, { onConflict: 'extension' }); 
                     
                     if (error) {
                         console.error('Import batch error:', error);
@@ -3107,11 +3108,15 @@
                 
                 // Check for errors and prompt for clear & retry if it's 'phones' table
                 if (errorCount > 0 && table === 'phones') {
+                     hideProgress(); // Prevent freeze by hiding modal before confirm
+                     await new Promise(r => setTimeout(r, 100)); // Allow UI update
+
                      const confirmClear = confirm(`匯入完成但有 ${errorCount} 筆失敗。\n是否要「清空 phones 資料表」並重新匯入全部資料？\n(注意：這將刪除現有所有分機資料)`);
-                     if (confirmClear) {
-                         updateProgress(50, '正在清空資料表並重新匯入...');
-                         
-                         const { error: deleteError } = await supabaseClient
+                      if (confirmClear) {
+                          showProgress('重試中...');
+                          updateProgress(0, '正在清空資料表並重新匯入...');
+                          
+                          const { error: deleteError } = await supabaseClient
                              .from(table)
                              .delete()
                              .not('id', 'is', null);
@@ -3131,6 +3136,8 @@
                 }
                 
                 updateProgress(100, '匯入完成');
+                await new Promise(r => setTimeout(r, 500)); // Show completion briefly
+                hideProgress(); // Ensure hidden before final alert
 
                 const time = new Date().toLocaleString();
                 const label = type === 'phones' ? '分機' : '調度電話';
