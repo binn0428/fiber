@@ -1,0 +1,124 @@
+
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系統診斷工具 (Debug Tool)</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; line-height: 1.6; }
+        .status { padding: 15px; margin-bottom: 20px; border-radius: 8px; color: white; }
+        .status.loading { background-color: #f39c12; }
+        .status.success { background-color: #27ae60; }
+        .status.error { background-color: #c0392b; }
+        .log-box { background: #f8f9fa; border: 1px solid #ddd; padding: 10px; height: 300px; overflow-y: auto; font-family: monospace; white-space: pre-wrap; }
+        button { padding: 10px 20px; cursor: pointer; font-size: 16px; background: #3498db; color: white; border: none; border-radius: 4px; }
+        button:hover { background: #2980b9; }
+    </style>
+    <!-- Supabase JS (UMD) from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <h1>系統診斷工具</h1>
+    <p>此工具用於檢測 Supabase 連線狀態與資料讀取功能，可直接開啟使用。</p>
+    
+    <div id="status-box" class="status loading">準備中...</div>
+    
+    <button onclick="runDiagnostics()">重新執行診斷</button>
+    
+    <h3>詳細日誌 (Logs)</h3>
+    <div id="log-box" class="log-box"></div>
+
+    <script>
+        // Configuration
+        const SUPABASE_URL = 'https://otdjrzpmtrojlcisoxeb.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_fxD_HVblMWtRiYK53tWgzw_8Pg0PqgS';
+        const TABLES = ['udc', 'station_1ph', 'station_2ph', 'dkb', 'station_5kb', 'ms2', 'ms3', 'ms4', 'o2', 'room'];
+
+        const logBox = document.getElementById('log-box');
+        const statusBox = document.getElementById('status-box');
+
+        function log(msg, type = 'info') {
+            const time = new Date().toLocaleTimeString();
+            const el = document.createElement('div');
+            el.textContent = `[${time}] ${msg}`;
+            if (type === 'error') el.style.color = 'red';
+            if (type === 'success') el.style.color = 'green';
+            logBox.appendChild(el);
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        async function runDiagnostics() {
+            logBox.innerHTML = '';
+            statusBox.className = 'status loading';
+            statusBox.textContent = '診斷中...';
+            log('開始診斷程序...');
+
+            // 1. Check Supabase Library
+            if (typeof supabase === 'undefined') {
+                log('錯誤: 無法載入 Supabase 函式庫 (可能是網路問題)', 'error');
+                statusBox.className = 'status error';
+                statusBox.textContent = '診斷失敗: 無法載入函式庫';
+                return;
+            }
+            log('Supabase 函式庫載入成功', 'success');
+
+            // 2. Initialize Client
+            let client;
+            try {
+                client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                log('Supabase Client 初始化成功');
+            } catch (e) {
+                log(`Client 初始化失敗: ${e.message}`, 'error');
+                statusBox.className = 'status error';
+                statusBox.textContent = '初始化失敗';
+                return;
+            }
+
+            // 3. Test Connection & Data Fetching
+            let successCount = 0;
+            let totalCount = 0;
+
+            for (const table of TABLES) {
+                log(`正在檢查資料表: ${table}...`);
+                try {
+                    const start = performance.now();
+                    const { count, error } = await client
+                        .from(table)
+                        .select('*', { count: 'exact', head: true });
+                    
+                    const duration = Math.round(performance.now() - start);
+
+                    if (error) {
+                        log(`[${table}] 讀取失敗: ${error.message}`, 'error');
+                    } else {
+                        log(`[${table}] 讀取成功! 筆數: ${count} (耗時: ${duration}ms)`, 'success');
+                        successCount++;
+                        totalCount += count || 0;
+                    }
+                } catch (e) {
+                    log(`[${table}] 發生例外錯誤: ${e.message}`, 'error');
+                }
+            }
+
+            // Summary
+            if (successCount === TABLES.length) {
+                statusBox.className = 'status success';
+                statusBox.textContent = `診斷完成: 全部 ${successCount} 個資料表讀取正常 (總筆數: ${totalCount})`;
+                log('所有測試通過！系統連線正常。', 'success');
+            } else if (successCount > 0) {
+                statusBox.className = 'status warning';
+                statusBox.textContent = `診斷完成: 部分成功 (${successCount}/${TABLES.length})`;
+                log('部分資料表讀取失敗，請檢查日誌。', 'error');
+            } else {
+                statusBox.className = 'status error';
+                statusBox.textContent = '診斷失敗: 無法讀取任何資料';
+                log('嚴重錯誤: 無法連線至資料庫。', 'error');
+            }
+        }
+
+        // Auto run on load
+        window.onload = runDiagnostics;
+    </script>
+</body>
+</html>
