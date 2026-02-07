@@ -156,8 +156,11 @@ h2 {
 
 .site-node {
     position: absolute;
-    width: 100px;
-    height: 60px;
+    width: auto;
+    min-width: 120px;
+    height: auto;
+    min-height: 60px;
+    padding: 10px;
     background-color: var(--card-bg);
     border: 2px solid var(--primary-color);
     border-radius: 8px;
@@ -167,7 +170,7 @@ h2 {
     flex-direction: column;
     text-align: center;
     font-weight: bold;
-    font-size: 0.9rem;
+    font-size: 1rem;
     cursor: pointer;
     transform: translate(-50%, -50%);
     z-index: 10;

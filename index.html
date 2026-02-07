@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>光纖管理系統</title>
+    <link rel="stylesheet" href="style.css?v=2">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         #app-status-log {
@@ -71,10 +72,7 @@
              window.logToScreen(`Unhandled Promise Rejection: ${event.reason}`, 'error');
         });
     </script>
-    <script type="module">
-        import './src/main.js';
-        window.logToScreen("Main module import started.");
-    </script>
+    <script type="module" src="./src/main.js?v=2"></script>
     <div class="app-container">
         <!-- Sidebar -->
         <aside class="sidebar">
