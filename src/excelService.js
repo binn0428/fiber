@@ -29,18 +29,68 @@ export async function parseExcel(file) {
                         port: headers.findIndex(h => h.toLowerCase().includes('port')),
                         usage: headers.findIndex(h => h.includes('用途') || h.toLowerCase().includes('usage')),
                         remarks: headers.findIndex(h => h.includes('備註') || h.toLowerCase().includes('remark')),
-                        core_count: headers.findIndex(h => h.includes('芯數') || h.toLowerCase().includes('core'))
+                        core_count: headers.findIndex(h => h.includes('芯數') || h.toLowerCase().includes('core')),
+                        destination: headers.findIndex(h => h.includes('目的') || h.toLowerCase().includes('dest')),
+                        source: headers.findIndex(h => h.includes('來源') || h.toLowerCase().includes('source'))
                     };
 
                     const rows = [];
+                    let lastFiberName = '';
+                    let lastCoreCount = '';
+
                     for (let i = 1; i < jsonData.length; i++) {
                         const row = jsonData[i];
                         if (!row || row.length === 0) continue;
 
-                        const line_name = map.line !== -1 ? row[map.line] : row[0];
+                        let line_name = map.line !== -1 ? row[map.line] : row[0];
                         const port = map.port !== -1 ? row[map.port] : row[1];
+                        let raw_core_count = map.core_count !== -1 ? row[map.core_count] : '';
+
+                        // Skip completely empty rows
+                        if (!line_name && !port) {
+                            // Reset context on empty row separation? 
+                            // Usually safer not to reset unless we are sure, but standard Excel behavior 
+                            // for data tables often implies continuity only if no gap.
+                            // However, let's keep it simple: if row is empty, just skip.
+                            // But if we encounter a new valid line_name later, it updates lastFiberName.
+                            continue; 
+                        }
+
+                        // 1. Fill down Line Name (Handle merged cells/empty fields for same cable)
+                        if (!line_name && port && lastFiberName) {
+                            line_name = lastFiberName;
+                        }
                         
-                        if (!line_name && !port) continue; // Skip empty rows
+                        if (line_name) {
+                            lastFiberName = line_name;
+                        }
+
+                        // 2. Parse Core Count from Line Name (User Rule: "48_xx" -> 48)
+                        let parsedCoreCount = '';
+                        if (line_name) {
+                            const strName = String(line_name);
+                            const match = strName.match(/^(\d+)_/);
+                            if (match) {
+                                parsedCoreCount = match[1];
+                            }
+                        }
+
+                        // 3. Determine Final Core Count
+                        // Priority: Explicit Excel Value > Parsed from Name > Inherited from Group
+                        let finalCoreCount = raw_core_count;
+                        
+                        if (!finalCoreCount && parsedCoreCount) {
+                            finalCoreCount = parsedCoreCount;
+                        }
+                        
+                        // Inherit from previous row if in same group (same Line Name)
+                        if (!finalCoreCount && line_name === lastFiberName && lastCoreCount) {
+                            finalCoreCount = lastCoreCount;
+                        }
+
+                        if (finalCoreCount) {
+                            lastCoreCount = finalCoreCount;
+                        }
 
                         rows.push({
                             station_name: sheetName,
@@ -48,7 +98,9 @@ export async function parseExcel(file) {
                             port: port || '',
                             usage: map.usage !== -1 ? row[map.usage] || '' : row[2] || '',
                             notes: map.remarks !== -1 ? row[map.remarks] || '' : row[3] || '',
-                            core_count: map.core_count !== -1 ? row[map.core_count] || '' : '',
+                            core_count: finalCoreCount || '',
+                            destination: map.destination !== -1 ? row[map.destination] || '' : '',
+                            source: map.source !== -1 ? row[map.source] || '' : '',
                             sequence: i // Preserve Excel row order
                         });
                     }

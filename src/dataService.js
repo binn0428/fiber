@@ -209,37 +209,71 @@ export function getSiteData(siteName) {
 
 export function getStats() {
     const sites = {};
+    const siteFibers = {};
     
     currentData.forEach(d => {
-        const name = d.station_name || 'Unknown';
-        if (!sites[name]) {
-            sites[name] = { name, total: 0, used: 0, free: 0 };
+        const sName = d.station_name || 'Unknown';
+        // Group by Fiber Name to determine cable capacity
+        const fName = d.fiber_name || 'Unclassified';
+        
+        if (!sites[sName]) {
+            sites[sName] = { name: sName, total: 0, used: 0, free: 0 };
+        }
+        if (!siteFibers[sName]) {
+            siteFibers[sName] = {};
+        }
+        if (!siteFibers[sName][fName]) {
+            siteFibers[sName][fName] = { 
+                explicitCapacity: 0, 
+                usedCount: 0, 
+                rowCount: 0 
+            };
         }
         
-        // Task 1: Calculate total based on core_count
-        // We parse core_count, defaulting to 1 if missing or 0 (assuming each row is at least 1 core/port)
-        // However, user specifically asked to use the field. 
-        // If the field is empty, does it mean 0?
-        // Let's assume if invalid/missing, it counts as 1 (one port = 1 core usually).
-        // BUT strict interpretation: "Based on core_count field".
-        // Let's try: use value if present, else 1.
-        let cores = parseInt(d.core_count);
-        if (isNaN(cores)) cores = 1; // Fallback to 1 per row if not specified
-        
-        sites[name].total += cores;
-        
-        // Safely check for usage
+        const group = siteFibers[sName][fName];
+        group.rowCount++;
+
+        // Determine Usage: Usage field OR Destination field has content
         const usage = d.usage ? String(d.usage).trim() : '';
-        const fiberName = d.fiber_name ? String(d.fiber_name).trim() : '';
-        
-        const isUsed = usage.length > 0 || fiberName.length > 0;
+        const destination = d.destination ? String(d.destination).trim() : '';
+        const isUsed = usage.length > 0 || destination.length > 0;
         
         if (isUsed) {
-            sites[name].used += cores;
-        } else {
-            sites[name].free += cores;
+            group.usedCount++;
+        }
+        
+        // Track Max Explicit Core Count seen for this cable
+        let cores = parseInt(d.core_count);
+        if (!isNaN(cores) && cores > 0) {
+            if (cores > group.explicitCapacity) {
+                group.explicitCapacity = cores;
+            }
         }
     });
+    
+    // Aggregate Stats per Site
+    for (const sName in siteFibers) {
+        const fibers = siteFibers[sName];
+        for (const fName in fibers) {
+            const group = fibers[fName];
+            
+            // Capacity Logic:
+            // 1. Use explicit 'core_count' if available (e.g., 48 from "48_xx")
+            // 2. Fallback to row count if explicit count is missing/0
+            let capacity = group.explicitCapacity;
+            if (capacity === 0) {
+                capacity = group.rowCount;
+            }
+            
+            const used = group.usedCount;
+            // Free is remaining capacity. Ensure non-negative.
+            const free = Math.max(0, capacity - used);
+            
+            sites[sName].total += capacity;
+            sites[sName].used += used;
+            sites[sName].free += free;
+        }
+    }
     
     return Object.values(sites);
 }
