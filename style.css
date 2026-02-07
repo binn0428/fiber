@@ -194,7 +194,7 @@ h2 {
     font-weight: bold;
     font-size: 0.9rem;
     cursor: grab;
-    /* transform: translate(-50%, -50%); REMOVED to fix dragging jitter */
+    transform: translate(-50%, -50%); /* Restored for centering */
     z-index: 10;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     transition: box-shadow 0.2s, background-color 0.2s;
@@ -461,8 +461,8 @@ tr:hover {
 
     .nav-btn {
         text-align: center;
-        padding: 1.5rem;
-        font-size: 1.2rem;
+        padding: 0.75rem; /* Reduced padding */
+        font-size: 1rem; /* Reduced font size */
         border-bottom: 1px solid rgba(255,255,255,0.1);
     }
 
