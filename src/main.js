@@ -2,7 +2,7 @@
 console.log("Main script starting...");
 
 import { initSupabase, checkConnection, getSupabase } from './supabase.js';
-import { loadData, addRecord, getData, getStats, getSiteData, searchLine, getFiberPath } from './dataService.js';
+import { loadData, addRecord, updateRecord, getData, getStats, getSiteData, searchLine, getFiberPath } from './dataService.js';
 import { parseExcel, exportToExcel } from './excelService.js';
 
 if (window.logToScreen) window.logToScreen("main.js loaded.");
@@ -46,6 +46,23 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (url && supabaseUrlInput) {
                 supabaseUrlInput.value = url;
             }
+            
+            // Hide config panel if already connected (User Request: No need to enter again)
+            const configPanel = supabaseUrlInput?.closest('.io-card');
+            if (configPanel) {
+                configPanel.style.display = 'none';
+                // Add a small button to show it if needed
+                const showConfigBtn = document.createElement('button');
+                showConfigBtn.textContent = '顯示連線設定';
+                showConfigBtn.className = 'btn-sm';
+                showConfigBtn.style.marginBottom = '1rem';
+                showConfigBtn.onclick = () => {
+                    configPanel.style.display = 'block';
+                    showConfigBtn.remove();
+                };
+                configPanel.parentNode.insertBefore(showConfigBtn, configPanel);
+            }
+
             if (window.logToScreen) window.logToScreen("Supabase initialized.");
             console.log("Supabase initialized successfully.");
         } else {
@@ -286,7 +303,12 @@ function renderMap() {
             el.style.top = `${yPct}%`;
             el.setAttribute('data-site', node.name);
             
-            el.addEventListener('click', () => {
+            // Make Draggable (User Request)
+            makeDraggable(el, node);
+
+            // Click to open details (prevent triggering when dragging)
+            el.addEventListener('click', (e) => {
+                if (el.getAttribute('data-dragging') === 'true') return;
                 openSiteDetails(node.name);
             });
             
@@ -309,6 +331,10 @@ function renderMap() {
              line.setAttribute("stroke-width", "2");
              line.setAttribute("marker-end", "url(#arrow)");
              
+             // Add identifiers for updating position
+             line.setAttribute("data-source", source.name);
+             line.setAttribute("data-target", target.name);
+
              // Add hover title
              const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
              title.textContent = `${source.name} -> ${target.name}`;
@@ -316,6 +342,106 @@ function renderMap() {
 
              svg.appendChild(line);
         }
+    });
+}
+
+// Draggable Logic
+function makeDraggable(el, nodeData) {
+    let isDragging = false;
+    let startX, startY;
+    
+    const onMouseDown = (e) => {
+        // Only left click
+        if (e.button !== 0) return;
+        isDragging = true;
+        el.setAttribute('data-dragging', 'false'); // Reset
+        
+        // Initial mouse position
+        startX = e.clientX;
+        startY = e.clientY;
+        
+        el.style.zIndex = 100;
+        el.style.cursor = 'grabbing';
+        
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+        e.preventDefault(); // Prevent text selection
+    };
+    
+    const onMouseMove = (e) => {
+        if (!isDragging) return;
+        el.setAttribute('data-dragging', 'true');
+        
+        const containerRect = mapContainer.getBoundingClientRect();
+        
+        // Calculate new percentage position
+        // Current Left % + (Delta X / Width * 100)
+        const currentLeft = parseFloat(el.style.left);
+        const currentTop = parseFloat(el.style.top);
+        
+        const deltaX = ((e.clientX - startX) / containerRect.width) * 100;
+        const deltaY = ((e.clientY - startY) / containerRect.height) * 100;
+        
+        const newLeft = Math.max(0, Math.min(100, currentLeft + deltaX));
+        const newTop = Math.max(0, Math.min(100, currentTop + deltaY));
+        
+        el.style.left = `${newLeft}%`;
+        el.style.top = `${newTop}%`;
+        
+        // Update node data for reference (optional but good)
+        nodeData.xPct = newLeft;
+        nodeData.yPct = newTop;
+        
+        // Update connected lines
+        updateConnectedLines(nodeData.name, newLeft, newTop);
+        
+        // Update start positions for next move
+        startX = e.clientX;
+        startY = e.clientY;
+    };
+    
+    const onMouseUp = () => {
+        isDragging = false;
+        el.style.zIndex = '';
+        el.style.cursor = 'grab';
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        
+        // Small timeout to clear dragging flag so click event doesn't fire immediately
+        setTimeout(() => {
+            el.setAttribute('data-dragging', 'false');
+        }, 100);
+    };
+    
+    el.addEventListener('mousedown', onMouseDown);
+    // Touch support for mobile
+    el.addEventListener('touchstart', (e) => {
+        const touch = e.touches[0];
+        const mouseEvent = new MouseEvent('mousedown', {
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+            button: 0
+        });
+        el.dispatchEvent(mouseEvent);
+    }, { passive: false });
+}
+
+function updateConnectedLines(nodeName, xPct, yPct) {
+    const svg = mapContainer.querySelector('svg.connections');
+    if (!svg) return;
+    
+    // Update lines where this node is source
+    const sourceLines = svg.querySelectorAll(`line[data-source="${nodeName}"]`);
+    sourceLines.forEach(line => {
+        line.setAttribute('x1', `${xPct}%`);
+        line.setAttribute('y1', `${yPct}%`);
+    });
+    
+    // Update lines where this node is target
+    const targetLines = svg.querySelectorAll(`line[data-target="${nodeName}"]`);
+    targetLines.forEach(line => {
+        line.setAttribute('x2', `${xPct}%`);
+        line.setAttribute('y2', `${yPct}%`);
     });
 }
 
@@ -359,20 +485,25 @@ function renderTableRows(tbody, data) {
     data.forEach(row => {
         const tr = document.createElement('tr');
         
+        // Helper to create editable cell
+        const createEditableCell = (field, value, id) => {
+            return `<td class="editable-cell" data-id="${id}" data-field="${field}" title="點擊編輯">${value || ''}</td>`;
+        };
+
         // Make fiber name clickable
         const fiberCell = row.fiber_name ? `<a href="#" class="fiber-link" data-fiber="${row.fiber_name}">${row.fiber_name}</a>` : '-';
         
         tr.innerHTML = `
             <td>${row.station_name || ''}</td>
             <td>${fiberCell}</td>
-            <td>${row.destination || ''}</td>
-            <td>${row.core_count || ''}</td>
-            <td>${row.source || ''}</td>
-            <td>${row.port || ''}</td>
-            <td>${row.usage || ''}</td>
-            <td>${row.notes || ''}</td>
+            ${createEditableCell('destination', row.destination, row.id)}
+            ${createEditableCell('core_count', row.core_count, row.id)}
+            ${createEditableCell('source', row.source, row.id)}
+            ${createEditableCell('port', row.port, row.id)}
+            ${createEditableCell('usage', row.usage, row.id)}
+            ${createEditableCell('notes', row.notes, row.id)}
             <td>
-                <button class="btn-sm edit-btn" data-id="${row.id}">編輯</button>
+                <!-- Removed Edit button as we have inline editing now, or keep as fallback -->
             </td>
         `;
         tbody.appendChild(tr);
@@ -384,6 +515,55 @@ function renderTableRows(tbody, data) {
             e.preventDefault();
             const fiberName = e.target.getAttribute('data-fiber');
             openPathDiagram(fiberName);
+        });
+    });
+
+    // Add event listeners for inline editing
+    tbody.querySelectorAll('.editable-cell').forEach(cell => {
+        cell.addEventListener('click', function() {
+            if (this.querySelector('input')) return; // Already editing
+
+            const originalValue = this.innerText;
+            const field = this.getAttribute('data-field');
+            const id = this.getAttribute('data-id');
+            
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = originalValue;
+            input.className = 'editable-input';
+            
+            // Save on blur or enter
+            const save = async () => {
+                const newValue = input.value.trim();
+                if (newValue !== originalValue) {
+                    try {
+                        this.innerHTML = '更新中...';
+                        await updateRecord(id, { [field]: newValue });
+                        this.innerText = newValue;
+                        // Refresh logic if needed, e.g. if updating usage affects stats
+                        if (field === 'usage' || field === 'fiber_name') {
+                            // Ideally reload data or update stats locally
+                            // renderDashboard(); // Optional: might be too heavy
+                        }
+                    } catch (e) {
+                        alert('更新失敗: ' + e.message);
+                        this.innerText = originalValue;
+                    }
+                } else {
+                    this.innerText = originalValue;
+                }
+            };
+
+            input.addEventListener('blur', save);
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    input.blur();
+                }
+            });
+
+            this.innerHTML = '';
+            this.appendChild(input);
+            input.focus();
         });
     });
 }
