@@ -149,6 +149,7 @@ window.addEventListener('click', (e) => {
 
 // Map Rendering
 function renderMap() {
+    const data = getData();
     const stats = getStats();
     if (!mapContainer) return;
     mapContainer.innerHTML = ''; // Clear
@@ -158,76 +159,162 @@ function renderMap() {
         return;
     }
 
-    // Simple Layout: Arrange in a circle
-    const centerX = 50;
-    const centerY = 50;
-    const radius = 35;
-    const angleStep = (2 * Math.PI) / stats.length;
+    // 1. Build Graph
+    const nodes = {}; 
+    // Init nodes
+    stats.forEach(s => {
+        nodes[s.name] = { name: s.name, level: 0, inputs: 0, outputs: 0 };
+    });
 
+    const links = [];
+    const createdLinks = new Set();
+
+    data.forEach(row => {
+        if (row.station_name && row.destination) {
+            const source = row.station_name;
+            const target = row.destination;
+            
+            // Fuzzy match target to a known site
+            let targetNodeName = null;
+            if (nodes[target]) {
+                targetNodeName = target;
+            } else {
+                 const found = stats.find(s => target.includes(s.name));
+                 if (found) targetNodeName = found.name;
+            }
+
+            if (targetNodeName && source !== targetNodeName) {
+                const linkKey = `${source}->${targetNodeName}`;
+                if (!createdLinks.has(linkKey)) {
+                    createdLinks.add(linkKey);
+                    links.push({ source, target: targetNodeName });
+                    if (nodes[source]) nodes[source].outputs++;
+                    if (nodes[targetNodeName]) nodes[targetNodeName].inputs++;
+                }
+            }
+        }
+    });
+
+    // 2. Calculate Levels (BFS)
+    // Find roots (0 inputs)
+    let queue = Object.values(nodes).filter(n => n.inputs === 0);
+    // Fallback if circular or no clear root (e.g., ring topology)
+    if (queue.length === 0 && stats.length > 0) {
+        // Prefer UDC or first available
+        const root = nodes['UDC'] || Object.values(nodes)[0];
+        if (root) queue.push(root);
+    }
+
+    const visited = new Set();
+    queue.forEach(n => {
+        n.level = 0;
+        visited.add(n.name);
+    });
+
+    // Add remaining nodes to queue if disconnected
+    let maxIterations = stats.length * 2;
+    while (queue.length > 0 && maxIterations > 0) {
+        maxIterations--;
+        const current = queue.shift();
+        
+        const currentLinks = links.filter(l => l.source === current.name);
+        currentLinks.forEach(l => {
+            const neighbor = nodes[l.target];
+            if (neighbor && !visited.has(neighbor.name)) {
+                neighbor.level = current.level + 1;
+                visited.add(neighbor.name);
+                queue.push(neighbor);
+            }
+        });
+    }
+
+    // Handle any unvisited nodes (islands)
+    Object.values(nodes).forEach(n => {
+        if (!visited.has(n.name)) n.level = 0;
+    });
+
+    // 3. Layout (Group by Level)
+    const levels = {};
+    let maxLevel = 0;
+    Object.values(nodes).forEach(n => {
+        if (!levels[n.level]) levels[n.level] = [];
+        levels[n.level].push(n);
+        if (n.level > maxLevel) maxLevel = n.level;
+    });
+
+    // SVG Container
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("class", "connections");
     svg.setAttribute("width", "100%");
     svg.setAttribute("height", "100%");
+    
+    // Arrow Marker
+    const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+    defs.innerHTML = `
+        <marker id="arrow" markerWidth="10" markerHeight="10" refX="55" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L0,6 L9,3 z" fill="#3b82f6" />
+        </marker>
+    `;
+    svg.appendChild(defs);
     mapContainer.appendChild(svg);
 
-    // Create Nodes
-    stats.forEach((site, index) => {
-        const angle = index * angleStep;
-        const x = centerX + radius * Math.cos(angle);
-        const y = centerY + radius * Math.sin(angle);
+    // 4. Render
+    // Calculate coordinates (Percentages)
+    const levelCount = maxLevel + 1;
+    
+    Object.keys(levels).forEach(lvlStr => {
+        const lvl = parseInt(lvlStr);
+        const levelNodes = levels[lvl];
         
-        const node = document.createElement('div');
-        node.className = 'site-node';
-        node.textContent = site.name;
-        node.style.left = `${x}%`;
-        node.style.top = `${y}%`;
-        node.setAttribute('data-site', site.name);
-        
-        // Add stats tooltip or small text
-        const info = document.createElement('small');
-        info.innerHTML = `<br>(${site.used}/${site.total})`;
-        node.appendChild(info);
+        levelNodes.forEach((node, idx) => {
+            // X: Distribute evenly based on level
+            // Y: Distribute evenly within level
+            const xPct = ((lvl + 0.5) / levelCount) * 100; 
+            const yPct = ((idx + 1) / (levelNodes.length + 1)) * 100;
+            
+            node.xPct = xPct;
+            node.yPct = yPct;
 
-        node.addEventListener('click', () => {
-            openSiteDetails(site.name);
+            // Create Node Element
+            const el = document.createElement('div');
+            el.className = 'site-node';
+            el.innerHTML = `
+                <div>${node.name}</div>
+                <div style="font-size: 0.7em; font-weight: normal; opacity: 0.8">L${lvl}</div>
+            `;
+            el.style.left = `${xPct}%`;
+            el.style.top = `${yPct}%`;
+            el.setAttribute('data-site', node.name);
+            
+            el.addEventListener('click', () => {
+                openSiteDetails(node.name);
+            });
+            
+            mapContainer.appendChild(el);
         });
-
-        mapContainer.appendChild(node);
-        
-        // Save coordinates for lines (simplified)
-        site.x = x;
-        site.y = y;
     });
 
-    // Draw Lines (Connections)
-    const data = getData();
-    const connections = new Set();
-    
-    data.forEach(row => {
-        if (row.station_name && row.destination) {
-            // Check if destination exists as a station
-            const targetSite = stats.find(s => s.name === row.destination || (row.destination && row.destination.includes(s.name)));
-            if (targetSite) {
-                const sourceSite = stats.find(s => s.name === row.station_name);
-                if (sourceSite) {
-                    // Create a unique key for the link (sorted to avoid duplicates A-B vs B-A)
-                    const key = [sourceSite.name, targetSite.name].sort().join('-');
-                    if (!connections.has(key)) {
-                        connections.add(key);
-                        
-                        // Draw line
-                        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-                        line.setAttribute("x1", `${sourceSite.x}%`);
-                        line.setAttribute("y1", `${sourceSite.y}%`);
-                        line.setAttribute("x2", `${targetSite.x}%`);
-                        line.setAttribute("y2", `${targetSite.y}%`);
-                        line.setAttribute("stroke", "#3498db");
-                        line.setAttribute("stroke-width", "2");
-                        line.setAttribute("stroke-opacity", "0.6");
-                        svg.appendChild(line);
-                    }
-                }
-            }
+    // Draw Lines
+    links.forEach(l => {
+        const source = nodes[l.source];
+        const target = nodes[l.target];
+        
+        if (source && target && source.xPct !== undefined && target.xPct !== undefined) {
+             const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+             line.setAttribute("x1", `${source.xPct}%`);
+             line.setAttribute("y1", `${source.yPct}%`);
+             line.setAttribute("x2", `${target.xPct}%`);
+             line.setAttribute("y2", `${target.yPct}%`);
+             line.setAttribute("stroke", "#3b82f6");
+             line.setAttribute("stroke-width", "2");
+             line.setAttribute("marker-end", "url(#arrow)");
+             
+             // Add hover title
+             const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+             title.textContent = `${source.name} -> ${target.name}`;
+             line.appendChild(title);
+
+             svg.appendChild(line);
         }
     });
 }
