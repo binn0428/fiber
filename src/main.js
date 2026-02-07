@@ -2,7 +2,7 @@
 console.log("Main script starting...");
 
 import { initSupabase, checkConnection, getSupabase } from './supabase.js';
-import { loadData, addRecord, updateRecord, getData, getStats, getSiteData, searchLine, getFiberPath, syncData } from './dataService.js';
+import { loadData, addRecord, updateRecord, getData, getStats, getSiteData, searchLine, getFiberPath, syncData, deleteStation } from './dataService.js';
 import { parseExcel, exportToExcel } from './excelService.js';
 import './mobile.js';
 
@@ -891,7 +891,54 @@ function renderDashboard() {
                 <span>${usageRate}%</span>
             </div>
         `;
-        card.addEventListener('click', () => openSiteDetails(site.name));
+        
+        // Long press to delete
+        let pressTimer;
+        let isLongPress = false;
+
+        const startPress = () => {
+            isLongPress = false;
+            pressTimer = setTimeout(async () => {
+                isLongPress = true;
+                if (confirm(`確定要刪除站點 "${site.name}" 嗎？\n此操作將永久刪除該站點的所有光纖資料！`)) {
+                    try {
+                        await deleteStation(site.name);
+                        alert(`已刪除站點 ${site.name}`);
+                        // Dashboard re-renders automatically via notify() -> renderDashboard() if listener set up, 
+                        // but main.js manually calls renderDashboard on load. 
+                        // dataService.js notify() calls listeners. We haven't subscribed main.js's renderDashboard to dataService yet.
+                        // So we should manually refresh or set up subscription.
+                        // For now, let's just re-render here or rely on the reload that usually happens.
+                        // But wait, dataService updates local state.
+                        renderDashboard();
+                        renderMap();
+                    } catch (e) {
+                        alert('刪除失敗: ' + e.message);
+                    }
+                }
+            }, 800); // 800ms for long press
+        };
+
+        const cancelPress = () => {
+            clearTimeout(pressTimer);
+        };
+
+        card.addEventListener('mousedown', startPress);
+        card.addEventListener('touchstart', startPress, { passive: true });
+        
+        card.addEventListener('mouseup', cancelPress);
+        card.addEventListener('mouseleave', cancelPress);
+        card.addEventListener('touchend', cancelPress);
+
+        card.addEventListener('click', (e) => {
+            if (isLongPress) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            openSiteDetails(site.name);
+        });
+
         container.appendChild(card);
     });
 }

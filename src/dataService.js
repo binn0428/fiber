@@ -344,3 +344,30 @@ export function searchLine(query) {
 export function getFiberPath(fiberName) {
     return currentData.filter(d => d.fiber_name === fiberName);
 }
+
+export async function deleteStation(stationName) {
+    const sb = getSupabase();
+    if (!sb) throw new Error("Supabase not configured");
+
+    // Identify tables involved
+    const records = currentData.filter(d => d.station_name === stationName);
+    const tables = [...new Set(records.map(r => r._table).filter(Boolean))];
+    
+    if (tables.length === 0) {
+        // Fallback to heuristic if no records found (e.g. maybe only stats existed?)
+        const defaultTable = getTableForStation(stationName);
+        tables.push(defaultTable);
+    }
+
+    for (const table of tables) {
+        const { error } = await sb.from(table).delete().eq('station_name', stationName);
+        if (error) {
+             console.error(`Error deleting station ${stationName} from ${table}:`, error);
+             throw error;
+        }
+    }
+
+    // Update local state
+    currentData = currentData.filter(d => d.station_name !== stationName);
+    notify();
+}
