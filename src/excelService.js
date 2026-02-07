@@ -14,7 +14,7 @@ export async function parseExcel(file) {
                 const data = new Uint8Array(e.target.result);
                 const workbook = XLSX_LIB.read(data, { type: 'array' });
                 
-                let allData = [];
+                const sheets = [];
 
                 workbook.SheetNames.forEach(sheetName => {
                     const worksheet = workbook.Sheets[sheetName];
@@ -31,10 +31,7 @@ export async function parseExcel(file) {
                         remarks: headers.findIndex(h => h.includes('備註') || h.toLowerCase().includes('remark'))
                     };
 
-                    // If critical headers missing, maybe skip or assume order? 
-                    // Let's assume order if headers not found: Line, Port, Usage, Remarks
-                    // But for robustness, we try to map.
-                    
+                    const rows = [];
                     for (let i = 1; i < jsonData.length; i++) {
                         const row = jsonData[i];
                         if (!row || row.length === 0) continue;
@@ -44,7 +41,7 @@ export async function parseExcel(file) {
                         
                         if (!line_name && !port) continue; // Skip empty rows
 
-                        allData.push({
+                        rows.push({
                             station_name: sheetName,
                             fiber_name: line_name || '',
                             port: port || '',
@@ -52,9 +49,13 @@ export async function parseExcel(file) {
                             notes: map.remarks !== -1 ? row[map.remarks] || '' : row[3] || ''
                         });
                     }
+                    
+                    if (rows.length > 0) {
+                        sheets.push({ name: sheetName, rows: rows });
+                    }
                 });
 
-                resolve(allData);
+                resolve(sheets);
             } catch (err) {
                 reject(err);
             }

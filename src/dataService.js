@@ -60,24 +60,26 @@ export async function loadData() {
     return currentData;
 }
 
+function getTableForStation(stationName) {
+    const station = (stationName || '').toLowerCase();
+    if (station.includes('udc')) return 'udc';
+    if (station.includes('1ph')) return 'station_1ph';
+    if (station.includes('2ph')) return 'station_2ph';
+    if (station.includes('dkb')) return 'dkb';
+    if (station.includes('5kb')) return 'station_5kb';
+    if (station.includes('ms2')) return 'ms2';
+    if (station.includes('ms3')) return 'ms3';
+    if (station.includes('ms4')) return 'ms4';
+    if (station.includes('o2')) return 'o2';
+    if (station.includes('room') || station.includes('機房')) return 'room';
+    return 'udc'; // Default
+}
+
 export async function addRecord(record) {
     const sb = getSupabase();
     if (!sb) throw new Error("Supabase not configured");
 
-    // Determine table from station name
-    let tableName = 'udc'; // Default
-    const station = (record.station_name || '').toLowerCase();
-    
-    if (station.includes('udc')) tableName = 'udc';
-    else if (station.includes('1ph')) tableName = 'station_1ph';
-    else if (station.includes('2ph')) tableName = 'station_2ph';
-    else if (station.includes('dkb')) tableName = 'dkb';
-    else if (station.includes('5kb')) tableName = 'station_5kb';
-    else if (station.includes('ms2')) tableName = 'ms2';
-    else if (station.includes('ms3')) tableName = 'ms3';
-    else if (station.includes('ms4')) tableName = 'ms4';
-    else if (station.includes('o2')) tableName = 'o2';
-    else if (station.includes('room') || station.includes('機房')) tableName = 'room';
+    const tableName = getTableForStation(record.station_name);
 
     const { data, error } = await sb.from(tableName).insert([record]).select();
     if (error) {
@@ -112,6 +114,82 @@ export async function updateRecord(id, updates) {
             }
         }
     }
+}
+
+// Smart Upload: Update if changed, Insert if new
+export async function syncData(rows, progressCallback) {
+    const sb = getSupabase();
+    if (!sb) throw new Error("Supabase not configured");
+    
+    let processed = 0;
+    const total = rows.length;
+
+    // Group rows by station to minimize table switching and allow fetching existing
+    const rowsByStation = {};
+    rows.forEach(r => {
+        const s = r.station_name || 'Unknown';
+        if (!rowsByStation[s]) rowsByStation[s] = [];
+        rowsByStation[s].push(r);
+    });
+
+    for (const station in rowsByStation) {
+        const stationRows = rowsByStation[station];
+        const tableName = getTableForStation(station);
+        
+        // Fetch existing data for this station/table to compare
+        // We fetch ALL records for this table to ensure we match correctly
+        // Optimization: In a real large DB, we might want to filter, but here datasets are small
+        const { data: existingData, error } = await sb.from(tableName).select('*');
+        if (error) {
+            console.error(`Error fetching existing data for ${station}:`, error);
+            continue;
+        }
+
+        // Build map for quick lookup: Key = Fiber + Port
+        const existingMap = new Map();
+        existingData.forEach(d => {
+            // Composite key: fiber_name + port. 
+            // Normalize to string and trim
+            const key = `${String(d.fiber_name||'').trim()}_${String(d.port||'').trim()}`;
+            existingMap.set(key, d);
+        });
+
+        for (const row of stationRows) {
+            const key = `${String(row.fiber_name||'').trim()}_${String(row.port||'').trim()}`;
+            const existing = existingMap.get(key);
+
+            if (existing) {
+                // Check for changes
+                const updates = {};
+                if ((row.usage||'') !== (existing.usage||'')) updates.usage = row.usage;
+                if ((row.notes||'') !== (existing.notes||'')) updates.notes = row.notes;
+                if ((row.destination||'') !== (existing.destination||'')) updates.destination = row.destination;
+                if ((row.core_count||'') !== (existing.core_count||'')) updates.core_count = row.core_count;
+                if ((row.source||'') !== (existing.source||'')) updates.source = row.source;
+                
+                // If any changes, update
+                if (Object.keys(updates).length > 0) {
+                    await sb.from(tableName).update(updates).eq('id', existing.id);
+                    // Update local cache
+                    const localIdx = currentData.findIndex(d => d.id === existing.id);
+                    if (localIdx !== -1) {
+                        currentData[localIdx] = { ...currentData[localIdx], ...updates };
+                    }
+                }
+            } else {
+                // Insert new
+                const { data: newRec } = await sb.from(tableName).insert([row]).select();
+                if (newRec) {
+                    currentData.push({ ...newRec[0], _table: tableName });
+                }
+            }
+            
+            processed++;
+            if (progressCallback) progressCallback(processed, total);
+        }
+    }
+    
+    notify();
 }
 
 export function getData() {
@@ -152,10 +230,16 @@ export function getStats() {
 export function searchLine(query) {
     if (!query) return [];
     const lowerQ = query.toLowerCase();
+    
+    // Fuzzy search: includes is simplest. 
+    // User asked for "context". We return the full row.
+    // Also search source and destination for better matches.
     return currentData.filter(d => 
         (d.fiber_name && String(d.fiber_name).toLowerCase().includes(lowerQ)) ||
         (d.usage && String(d.usage).toLowerCase().includes(lowerQ)) ||
-        (d.notes && String(d.notes).toLowerCase().includes(lowerQ))
+        (d.notes && String(d.notes).toLowerCase().includes(lowerQ)) ||
+        (d.station_name && String(d.station_name).toLowerCase().includes(lowerQ)) || // Source
+        (d.destination && String(d.destination).toLowerCase().includes(lowerQ))      // Destination
     );
 }
 

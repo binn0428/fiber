@@ -2,8 +2,9 @@
 console.log("Main script starting...");
 
 import { initSupabase, checkConnection, getSupabase } from './supabase.js';
-import { loadData, addRecord, updateRecord, getData, getStats, getSiteData, searchLine, getFiberPath } from './dataService.js';
+import { loadData, addRecord, updateRecord, getData, getStats, getSiteData, searchLine, getFiberPath, syncData } from './dataService.js';
 import { parseExcel, exportToExcel } from './excelService.js';
+import './mobile.js';
 
 if (window.logToScreen) window.logToScreen("main.js loaded.");
 console.log("main.js loaded");
@@ -51,16 +52,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const configPanel = supabaseUrlInput?.closest('.io-card');
             if (configPanel) {
                 configPanel.style.display = 'none';
-                // Add a small button to show it if needed
-                const showConfigBtn = document.createElement('button');
-                showConfigBtn.textContent = '顯示連線設定';
-                showConfigBtn.className = 'btn-sm';
-                showConfigBtn.style.marginBottom = '1rem';
-                showConfigBtn.onclick = () => {
-                    configPanel.style.display = 'block';
-                    showConfigBtn.remove();
-                };
-                configPanel.parentNode.insertBefore(showConfigBtn, configPanel);
+                // User Request: Remove the show button completely
             }
 
             if (window.logToScreen) window.logToScreen("Supabase initialized.");
@@ -139,6 +131,38 @@ if (navBtns.length > 0) {
     });
 } else {
     console.error("No navigation buttons found!");
+}
+
+// Search Handler
+if (searchBtn && globalSearchInput) {
+    const performSearch = () => {
+        const query = globalSearchInput.value.trim();
+        if (!query) return;
+
+        console.log("Searching for:", query);
+        const results = searchLine(query);
+        
+        // Switch to Data Management view
+        navBtns.forEach(b => b.classList.remove('active'));
+        viewSections.forEach(s => s.classList.remove('active'));
+        
+        const dataBtn = document.querySelector('[data-target="data-mgmt"]');
+        const dataSection = document.getElementById('data-mgmt');
+        
+        if (dataBtn) dataBtn.classList.add('active');
+        if (dataSection) dataSection.classList.add('active');
+        
+        // Render results
+        renderTableRows(dataTableBody, results);
+        
+        // Reset site selector
+        if (siteSelector) siteSelector.value = "";
+    };
+
+    searchBtn.addEventListener('click', performSearch);
+    globalSearchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') performSearch();
+    });
 }
 
 // Modals
@@ -718,38 +742,91 @@ if (processUploadBtn && excelUploadInput) {
             processUploadBtn.disabled = true;
             processUploadBtn.textContent = '解析中...';
             
-            const parsedData = await parseExcel(file);
-            console.log("Parsed data:", parsedData.length, "records");
+            // parsedData is now [{name: 'Sheet1', rows: [...]}, ...]
+            const parsedSheets = await parseExcel(file);
+            console.log("Parsed sheets:", parsedSheets);
             
-            if (confirm(`解析成功，共 ${parsedData.length} 筆資料。是否開始上傳至 Supabase？(這可能需要一點時間)`)) {
-                processUploadBtn.textContent = '上傳中...';
-                let successCount = 0;
-                let failCount = 0;
-                
-                for (const record of parsedData) {
-                    try {
-                        await addRecord(record);
-                        successCount++;
-                    } catch (e) {
-                        console.error("Upload failed for record:", record, e);
-                        failCount++;
-                    }
-                    // Update UI every 10 records or so
-                    if ((successCount + failCount) % 10 === 0) {
-                        processUploadBtn.textContent = `上傳中 (${successCount + failCount}/${parsedData.length})...`;
-                    }
-                }
-                
-                alert(`上傳完成！成功: ${successCount}, 失敗: ${failCount}`);
-                await loadData();
-                renderDashboard();
-                renderMap();
-                renderDataTable();
+            if (parsedSheets.length === 0) {
+                alert("找不到有效的資料");
+                processUploadBtn.disabled = false;
+                processUploadBtn.textContent = '解析並上傳';
+                return;
             }
+
+            // Create Modal for Selection
+            const modalId = 'upload-select-modal';
+            let modal = document.getElementById(modalId);
+            if (modal) modal.remove();
+
+            modal = document.createElement('div');
+            modal.id = modalId;
+            modal.className = 'modal';
+            
+            const content = document.createElement('div');
+            content.className = 'modal-content sm';
+            content.innerHTML = `
+                <span class="close-modal" onclick="this.closest('.modal').remove()">&times;</span>
+                <h3>選擇要上傳的站點 (分頁)</h3>
+                <div id="sheet-list" style="max-height: 300px; overflow-y: auto; margin: 1rem 0; border: 1px solid #4b5563; padding: 0.5rem;">
+                    ${parsedSheets.map((sheet, idx) => `
+                        <div style="padding: 0.5rem; border-bottom: 1px solid #4b5563;">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" checked value="${idx}" style="margin-right: 10px; width: auto;">
+                                ${sheet.name} (${sheet.rows.length} 筆)
+                            </label>
+                        </div>
+                    `).join('')}
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 1rem;">
+                    <button class="btn-sm" onclick="document.getElementById('${modalId}').remove()">取消</button>
+                    <button class="btn-primary" id="confirm-upload-btn">開始上傳</button>
+                </div>
+            `;
+            
+            modal.appendChild(content);
+            document.body.appendChild(modal);
+
+            // Handle Confirmation
+            document.getElementById('confirm-upload-btn').onclick = async () => {
+                const checkboxes = content.querySelectorAll('input[type="checkbox"]:checked');
+                const selectedIndices = Array.from(checkboxes).map(cb => parseInt(cb.value));
+                
+                if (selectedIndices.length === 0) {
+                    alert("請至少選擇一個站點");
+                    return;
+                }
+
+                modal.remove();
+                processUploadBtn.textContent = '上傳中...';
+
+                // Flatten selected data
+                const flatRows = [];
+                selectedIndices.forEach(idx => {
+                    flatRows.push(...parsedSheets[idx].rows);
+                });
+
+                try {
+                    await syncData(flatRows, (processed, total) => {
+                         processUploadBtn.textContent = `上傳中 (${processed}/${total})...`;
+                    });
+                    
+                    alert(`上傳完成！共處理 ${flatRows.length} 筆資料。`);
+                    await loadData();
+                    renderDashboard();
+                    renderMap();
+                    renderDataTable();
+                } catch (e) {
+                    console.error("Sync error:", e);
+                    alert('上傳失敗: ' + e.message);
+                } finally {
+                    processUploadBtn.disabled = false;
+                    processUploadBtn.textContent = '解析並上傳';
+                }
+            };
+
         } catch (e) {
             console.error("Upload error:", e);
             alert('處理失敗: ' + e.message);
-        } finally {
             processUploadBtn.disabled = false;
             processUploadBtn.textContent = '解析並上傳';
         }
