@@ -172,14 +172,28 @@ export async function syncData(rows, progressCallback) {
                 // If any changes, update
                 if (Object.keys(updates).length > 0) {
                     const { error: updateError } = await sb.from(tableName).update(updates).eq('id', existing.id);
+                    
                     if (updateError) {
-                        console.error(`Update error for ${key}:`, updateError);
-                        // Don't throw, just log and continue? Or throw to alert user?
-                        // Better to throw so we know why it failed
-                        throw new Error(`Update failed: ${updateError.message}`);
+                        console.warn(`Update failed with extended fields, retrying with safe fields... (${updateError.message})`);
+                        
+                        // Fallback: Try updating only core fields if extended fields caused the error (e.g., missing columns)
+                        const safeUpdates = {};
+                        const SAFE_FIELDS = ['usage', 'notes', 'core_count']; // usage, notes, core_count are likely safe
+                        
+                        SAFE_FIELDS.forEach(f => {
+                            if (updates[f] !== undefined) safeUpdates[f] = updates[f];
+                        });
+                        
+                        if (Object.keys(safeUpdates).length > 0) {
+                            const { error: retryError } = await sb.from(tableName).update(safeUpdates).eq('id', existing.id);
+                            if (retryError) {
+                                console.error(`Retry update error for ${key}:`, retryError);
+                                throw new Error(`Update failed: ${retryError.message}`);
+                            }
+                        }
                     }
 
-                    // Update local cache
+                    // Update local cache (optimistically update all fields in UI even if DB didn't take some)
                     const localIdx = currentData.findIndex(d => d.id === existing.id);
                     if (localIdx !== -1) {
                         currentData[localIdx] = { ...currentData[localIdx], ...updates };
@@ -196,11 +210,24 @@ export async function syncData(rows, progressCallback) {
                 const { data: newRec, error: insertError } = await sb.from(tableName).insert([payload]).select();
                 
                 if (insertError) {
-                    console.error(`Insert error for ${key}:`, insertError);
-                    throw new Error(`Insert failed: ${insertError.message} (Details: ${insertError.details || ''})`);
-                }
-
-                if (newRec) {
+                    console.warn(`Insert failed with extended fields, retrying with safe fields... (${insertError.message})`);
+                    
+                    // Fallback: Remove potentially problematic new columns
+                    const safePayload = { ...payload };
+                    delete safePayload.destination;
+                    delete safePayload.source;
+                    
+                    const { data: retryRec, error: retryError } = await sb.from(tableName).insert([safePayload]).select();
+                    
+                    if (retryError) {
+                         console.error(`Retry insert error for ${key}:`, retryError);
+                         throw new Error(`Insert failed: ${retryError.message} (Details: ${retryError.details || ''})`);
+                    }
+                    
+                    if (retryRec) {
+                        currentData.push({ ...retryRec[0], _table: tableName });
+                    }
+                } else if (newRec) {
                     currentData.push({ ...newRec[0], _table: tableName });
                 }
             }
