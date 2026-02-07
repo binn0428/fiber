@@ -7,21 +7,6 @@
     <link rel="stylesheet" href="style.css?v=2">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
-        #app-status-log {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            max-height: 150px;
-            overflow-y: auto;
-            background: rgba(0,0,0,0.8);
-            color: #0f0;
-            font-family: monospace;
-            padding: 10px;
-            z-index: 9999;
-            font-size: 12px;
-            display: none; /* Hidden by default, shown on error or init */
-        }
         #protocol-warning {
             display: none;
             position: fixed;
@@ -43,34 +28,11 @@
         <p>由於安全性限制，本系統必須透過網頁伺服器開啟。</p>
         <p>請使用終端機執行 <code>npm run dev</code> 並點擊顯示的連結。</p>
     </div>
-    <div id="app-status-log">系統初始化中...</div>
     <script>
         // Protocol Check
         if (window.location.protocol === 'file:') {
             document.getElementById('protocol-warning').style.display = 'flex';
-        } else {
-            document.getElementById('app-status-log').style.display = 'block';
         }
-
-        // Global Logger
-        window.logToScreen = function(msg, type='info') {
-            const el = document.getElementById('app-status-log');
-            if (el) {
-                const line = document.createElement('div');
-                line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-                if (type === 'error') line.style.color = '#ff6b6b';
-                el.appendChild(line);
-                el.scrollTop = el.scrollHeight;
-            }
-            console.log(msg);
-        };
-        window.onerror = function(msg, url, line) {
-            window.logToScreen(`Global Error: ${msg} (${url}:${line})`, 'error');
-        };
-        
-        window.addEventListener('unhandledrejection', function(event) {
-             window.logToScreen(`Unhandled Promise Rejection: ${event.reason}`, 'error');
-        });
     </script>
     <script type="module" src="./src/main.js?v=2"></script>
     <div class="app-container">
