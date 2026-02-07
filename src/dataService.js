@@ -11,9 +11,10 @@ function notify() {
     listeners.forEach(cb => cb(currentData));
 }
 
-const TABLES = ['udc', 'station_1ph', 'station_2ph', 'dkb', 'station_5kb', 'ms2', 'ms3', 'ms4', 'o2'];
+const TABLES = ['udc', 'station_1ph', 'station_2ph', 'dkb', 'station_5kb', 'ms2', 'ms3', 'ms4', 'o2', 'room'];
 
 export async function loadData() {
+    console.log("dataService: loadData called");
     const sb = getSupabase();
     if (!sb) {
         console.warn("Supabase not configured");
@@ -23,17 +24,33 @@ export async function loadData() {
     let allData = [];
     
     try {
+        console.log("dataService: Starting to fetch tables...");
         const promises = TABLES.map(async (table) => {
-            const { data, error } = await sb.from(table).select('*');
-            if (error) {
-                console.warn(`Error loading from ${table} (table might not exist yet):`, error.message);
+            try {
+                // Add a timeout to prevent hanging indefinitely
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error(`Timeout loading ${table}`)), 10000)
+                );
+                
+                const fetchPromise = sb.from(table).select('*');
+                
+                const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
+                
+                if (error) {
+                    console.warn(`Error loading from ${table}:`, error.message);
+                    return [];
+                }
+                if (!data) return [];
+                return data.map(d => ({ ...d, _table: table }));
+            } catch (e) {
+                console.error(`Exception loading table ${table}:`, e);
                 return [];
             }
-            return data.map(d => ({ ...d, _table: table }));
         });
 
         const results = await Promise.all(promises);
         allData = results.flat();
+        console.log(`dataService: Fetched ${allData.length} total records.`);
     } catch (err) {
         console.error("Critical error loading data:", err);
     }
@@ -45,7 +62,7 @@ export async function loadData() {
 
 export async function addRecord(record) {
     const sb = getSupabase();
-    if (!sb) return null;
+    if (!sb) throw new Error("Supabase not configured");
 
     // Determine table from station name
     let tableName = 'udc'; // Default
@@ -60,6 +77,7 @@ export async function addRecord(record) {
     else if (station.includes('ms3')) tableName = 'ms3';
     else if (station.includes('ms4')) tableName = 'ms4';
     else if (station.includes('o2')) tableName = 'o2';
+    else if (station.includes('room') || station.includes('機房')) tableName = 'room';
 
     const { data, error } = await sb.from(tableName).insert([record]).select();
     if (error) {
@@ -114,9 +132,12 @@ export function getStats() {
         }
         
         sites[name].total++;
-        // Define 'used' as having a value in 'usage' or 'net_start'/'net_end'
-        // Or simply if 'usage' is not empty.
-        const isUsed = (d.usage && d.usage.trim().length > 0) || (d.fiber_name && d.fiber_name.trim().length > 0);
+        
+        // Safely check for usage
+        const usage = d.usage ? String(d.usage).trim() : '';
+        const fiberName = d.fiber_name ? String(d.fiber_name).trim() : '';
+        
+        const isUsed = usage.length > 0 || fiberName.length > 0;
         
         if (isUsed) {
             sites[name].used++;
@@ -132,14 +153,12 @@ export function searchLine(query) {
     if (!query) return [];
     const lowerQ = query.toLowerCase();
     return currentData.filter(d => 
-        (d.fiber_name && d.fiber_name.toLowerCase().includes(lowerQ)) ||
-        (d.usage && d.usage.toLowerCase().includes(lowerQ)) ||
-        (d.notes && d.notes.toLowerCase().includes(lowerQ))
+        (d.fiber_name && String(d.fiber_name).toLowerCase().includes(lowerQ)) ||
+        (d.usage && String(d.usage).toLowerCase().includes(lowerQ)) ||
+        (d.notes && String(d.notes).toLowerCase().includes(lowerQ))
     );
 }
 
-// Function to find path for a fiber
-// Logic: Find all records with this fiber_name across different stations
 export function getFiberPath(fiberName) {
     return currentData.filter(d => d.fiber_name === fiberName);
 }

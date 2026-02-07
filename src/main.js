@@ -1,7 +1,12 @@
 
-import { initSupabase, checkConnection } from './supabase.js';
+console.log("Main script starting...");
+
+import { initSupabase, checkConnection, getSupabase } from './supabase.js';
 import { loadData, addRecord, getData, getStats, getSiteData, searchLine, getFiberPath } from './dataService.js';
-// import { parseExcel, exportToExcel } from './excelService.js'; // Keep existing if needed
+import { parseExcel, exportToExcel } from './excelService.js';
+
+if (window.logToScreen) window.logToScreen("main.js loaded.");
+console.log("main.js loaded");
 
 // DOM Elements
 const navBtns = document.querySelectorAll('.nav-btn');
@@ -26,21 +31,53 @@ const supabaseKeyInput = document.getElementById('supabase-key');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
-    // Check Supabase config
-    const url = localStorage.getItem('https://otdjrzpmtrojlcisoxeb.supabasce.o');
-    const key = localStorage.getItem('sb_publishable_fxD_HVblMWtRiYK53tWgzw_8Pg0PqgS');
-    
-    if (url && key) {
-        initSupabase(url, key);
-        supabaseUrlInput.value = url;
-        // Don't show key
-    }
+    if (window.logToScreen) window.logToScreen("DOM Ready. Starting initialization...");
+    console.log("DOMContentLoaded event fired");
+    try {
+        // Check Supabase config
+        const sb = getSupabase();
+        
+        if (sb) {
+            // Try to pre-fill URL for user convenience
+            const url = localStorage.getItem('supabase_url') || 
+                       (import.meta.env && import.meta.env.VITE_SUPABASE_URL) || 
+                       'https://otdjrzpmtrojlcisoxeb.supabase.co'; // Default
+            
+            if (url && supabaseUrlInput) {
+                supabaseUrlInput.value = url;
+            }
+            if (window.logToScreen) window.logToScreen("Supabase initialized.");
+            console.log("Supabase initialized successfully.");
+        } else {
+            if (window.logToScreen) window.logToScreen("Supabase init failed!", "error");
+            console.warn("Supabase not initialized. Please configure.");
+        }
 
-    await loadData();
-    renderDashboard();
-    renderMap();
-    renderDataTable();
-    populateSiteSelector();
+        if (window.logToScreen) window.logToScreen("Loading data from Supabase...");
+        const data = await loadData();
+        if (window.logToScreen) window.logToScreen(`Loaded ${data.length} records.`);
+        console.log(`Loaded ${data.length} records.`);
+        
+        renderDashboard();
+        renderMap();
+        renderDataTable();
+        populateSiteSelector();
+        
+    } catch (e) {
+        if (window.logToScreen) window.logToScreen(`Init Error: ${e.message}`, "error");
+        console.error("Error in initialization:", e);
+        if (mapContainer) {
+            mapContainer.innerHTML = `<div class="error-message">
+                <h3>載入失敗</h3>
+                <p>${e.message}</p>
+                <p>請檢查 Supabase 連線設定或網路狀態。</p>
+            </div>`;
+        }
+        const statsContainer = document.getElementById('stats-container');
+        if (statsContainer) {
+            statsContainer.innerHTML = `<div class="error-message">載入失敗: ${e.message}</div>`;
+        }
+    }
 });
 
 // Config Handler
@@ -67,35 +104,42 @@ if (saveConfigBtn) {
 }
 
 // Navigation
-navBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-        navBtns.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        const targetId = btn.getAttribute('data-target');
-        viewSections.forEach(section => {
-            section.classList.remove('active');
-            if (section.id === targetId) section.classList.add('active');
+if (navBtns.length > 0) {
+    navBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            console.log("Nav clicked:", btn.getAttribute('data-target'));
+            navBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const targetId = btn.getAttribute('data-target');
+            viewSections.forEach(section => {
+                section.classList.remove('active');
+                if (section.id === targetId) section.classList.add('active');
+            });
+            if (targetId === 'dashboard') renderDashboard();
+            if (targetId === 'map-view') renderMap();
+            if (targetId === 'data-mgmt') renderDataTable();
         });
-        if (targetId === 'dashboard') renderDashboard();
-        if (targetId === 'map-view') renderMap();
-        if (targetId === 'data-mgmt') renderDataTable();
     });
-});
+} else {
+    console.error("No navigation buttons found!");
+}
 
 // Modals
 function openModal(modal) {
-    modal.classList.remove('hidden');
+    if (modal) modal.classList.remove('hidden');
 }
 
 function closeModal(modal) {
-    modal.classList.add('hidden');
+    if (modal) modal.classList.add('hidden');
 }
 
-closeModals.forEach(btn => {
-    btn.addEventListener('click', (e) => {
-        closeModal(e.target.closest('.modal'));
+if (closeModals) {
+    closeModals.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            closeModal(e.target.closest('.modal'));
+        });
     });
-});
+}
 
 window.addEventListener('click', (e) => {
     if (e.target.classList.contains('modal')) {
@@ -106,6 +150,7 @@ window.addEventListener('click', (e) => {
 // Map Rendering
 function renderMap() {
     const stats = getStats();
+    if (!mapContainer) return;
     mapContainer.innerHTML = ''; // Clear
     
     if (stats.length === 0) {
@@ -155,15 +200,13 @@ function renderMap() {
     });
 
     // Draw Lines (Connections)
-    // We need to know who connects to whom.
-    // Iterate all data to find unique connections (Station -> Destination)
     const data = getData();
     const connections = new Set();
     
     data.forEach(row => {
         if (row.station_name && row.destination) {
             // Check if destination exists as a station
-            const targetSite = stats.find(s => s.name === row.destination || row.destination.includes(s.name));
+            const targetSite = stats.find(s => s.name === row.destination || (row.destination && row.destination.includes(s.name)));
             if (targetSite) {
                 const sourceSite = stats.find(s => s.name === row.station_name);
                 if (sourceSite) {
@@ -191,32 +234,35 @@ function renderMap() {
 
 // Site Details
 function openSiteDetails(siteName) {
-    modalSiteTitle.textContent = `站點詳情: ${siteName}`;
+    if (modalSiteTitle) modalSiteTitle.textContent = `站點詳情: ${siteName}`;
     const data = getSiteData(siteName);
     const stats = getStats().find(s => s.name === siteName) || { total: 0, used: 0, free: 0 };
     
     const usageRate = stats.total > 0 ? Math.round((stats.used / stats.total) * 100) : 0;
 
-    modalSiteStats.innerHTML = `
-        <div style="display: flex; gap: 1rem; margin-bottom: 1rem; align-items: center;">
-            <div class="stat-box">總數: <b>${stats.total}</b></div>
-            <div class="stat-box used">已用: <b>${stats.used}</b></div>
-            <div class="stat-box free">剩餘: <b>${stats.free}</b></div>
-            <div class="stat-box">使用率: <b>${usageRate}%</b></div>
-        </div>
-    `;
+    if (modalSiteStats) {
+        modalSiteStats.innerHTML = `
+            <div style="display: flex; gap: 1rem; margin-bottom: 1rem; align-items: center;">
+                <div class="stat-box">總數: <b>${stats.total}</b></div>
+                <div class="stat-box used">已用: <b>${stats.used}</b></div>
+                <div class="stat-box free">剩餘: <b>${stats.free}</b></div>
+                <div class="stat-box">使用率: <b>${usageRate}%</b></div>
+            </div>
+        `;
+    }
 
-    renderTableRows(modalTableBody, data);
-    openModal(siteModal);
+    if (modalTableBody) renderTableRows(modalTableBody, data);
+    if (siteModal) openModal(siteModal);
 }
 
 // Render Table
 function renderDataTable() {
     const data = getData();
-    renderTableRows(dataTableBody, data);
+    if (dataTableBody) renderTableRows(dataTableBody, data);
 }
 
 function renderTableRows(tbody, data) {
+    if (!tbody) return;
     tbody.innerHTML = '';
     if (data.length === 0) {
         tbody.innerHTML = '<tr><td colspan="9" style="text-align:center">無資料</td></tr>';
@@ -259,16 +305,17 @@ function renderTableRows(tbody, data) {
 function openPathDiagram(fiberName) {
     const records = getFiberPath(fiberName);
     const container = document.getElementById('path-container');
-    document.getElementById('modal-path-title').textContent = `光纖路徑: ${fiberName}`;
+    if (!container) return;
+
+    if (document.getElementById('modal-path-title')) {
+        document.getElementById('modal-path-title').textContent = `光纖路徑: ${fiberName}`;
+    }
     
     container.innerHTML = '';
     
     if (records.length === 0) {
         container.innerHTML = '無路徑資料';
     } else {
-        // Group by station to see where this fiber exists
-        // Visualize as a chain or a list of nodes
-        
         const pathDiv = document.createElement('div');
         pathDiv.style.display = 'flex';
         pathDiv.style.alignItems = 'center';
@@ -303,30 +350,33 @@ function openPathDiagram(fiberName) {
         container.appendChild(pathDiv);
     }
     
-    openModal(pathModal);
+    if (pathModal) openModal(pathModal);
 }
 
 // Manual Add Form
-addForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const formData = new FormData(addForm);
-    const record = Object.fromEntries(formData.entries());
-    
-    try {
-        await addRecord(record);
-        alert('新增成功！');
-        addForm.reset();
-        await loadData(); // Refresh
-        renderDataTable(); // Refresh view
-    } catch (err) {
-        alert('新增失敗: ' + err.message);
-    }
-});
+if (addForm) {
+    addForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(addForm);
+        const record = Object.fromEntries(formData.entries());
+        
+        try {
+            await addRecord(record);
+            alert('新增成功！');
+            addForm.reset();
+            await loadData(); // Refresh
+            renderDataTable(); // Refresh view
+        } catch (err) {
+            alert('新增失敗: ' + err.message);
+        }
+    });
+}
 
 // Dashboard Stats
 function renderDashboard() {
     const stats = getStats();
     const container = document.getElementById('stats-container');
+    if (!container) return;
     container.innerHTML = '';
     
     if (stats.length === 0) {
@@ -364,6 +414,7 @@ function renderDashboard() {
 
 function populateSiteSelector() {
     const stats = getStats();
+    if (!siteSelector) return;
     siteSelector.innerHTML = '<option value="">選擇站點...</option>';
     stats.forEach(s => {
         const opt = document.createElement('option');
@@ -379,6 +430,77 @@ function populateSiteSelector() {
              renderTableRows(dataTableBody, data);
         } else {
              renderDataTable();
+        }
+    });
+}
+
+// IO Panel Handlers
+const processUploadBtn = document.getElementById('process-upload-btn');
+const exportBtn = document.getElementById('export-btn');
+const excelUploadInput = document.getElementById('excel-upload');
+
+if (processUploadBtn && excelUploadInput) {
+    processUploadBtn.addEventListener('click', async () => {
+        const file = excelUploadInput.files[0];
+        if (!file) {
+            alert('請先選擇 Excel 檔案');
+            return;
+        }
+        
+        try {
+            processUploadBtn.disabled = true;
+            processUploadBtn.textContent = '解析中...';
+            
+            const parsedData = await parseExcel(file);
+            console.log("Parsed data:", parsedData.length, "records");
+            
+            if (confirm(`解析成功，共 ${parsedData.length} 筆資料。是否開始上傳至 Supabase？(這可能需要一點時間)`)) {
+                processUploadBtn.textContent = '上傳中...';
+                let successCount = 0;
+                let failCount = 0;
+                
+                for (const record of parsedData) {
+                    try {
+                        await addRecord(record);
+                        successCount++;
+                    } catch (e) {
+                        console.error("Upload failed for record:", record, e);
+                        failCount++;
+                    }
+                    // Update UI every 10 records or so
+                    if ((successCount + failCount) % 10 === 0) {
+                        processUploadBtn.textContent = `上傳中 (${successCount + failCount}/${parsedData.length})...`;
+                    }
+                }
+                
+                alert(`上傳完成！成功: ${successCount}, 失敗: ${failCount}`);
+                await loadData();
+                renderDashboard();
+                renderMap();
+                renderDataTable();
+            }
+        } catch (e) {
+            console.error("Upload error:", e);
+            alert('處理失敗: ' + e.message);
+        } finally {
+            processUploadBtn.disabled = false;
+            processUploadBtn.textContent = '解析並上傳';
+        }
+    });
+}
+
+if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+        try {
+            const data = getData();
+            if (data.length === 0) {
+                alert('無資料可匯出');
+                return;
+            }
+            exportToExcel(data);
+        } catch (e) {
+            console.error("Export error:", e);
+            alert('匯出失敗: ' + e.message);
         }
     });
 }

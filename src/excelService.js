@@ -1,19 +1,24 @@
 
-import * as XLSX from 'xlsx';
+// Use global XLSX if available (from CDN), otherwise try import from CDN
+// This handles both build (where import works if configured) and CDN usage
+const XLSX_LIB = (typeof XLSX !== 'undefined') ? XLSX : (await import('https://cdn.sheetjs.com/xlsx-latest/package/xlsx.mjs').catch(() => ({})));
 
 export async function parseExcel(file) {
+    if (!XLSX_LIB.read) {
+        throw new Error("XLSX library not loaded");
+    }
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (e) => {
             try {
                 const data = new Uint8Array(e.target.result);
-                const workbook = XLSX.read(data, { type: 'array' });
+                const workbook = XLSX_LIB.read(data, { type: 'array' });
                 
                 let allData = [];
 
                 workbook.SheetNames.forEach(sheetName => {
                     const worksheet = workbook.Sheets[sheetName];
-                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                    const jsonData = XLSX_LIB.utils.sheet_to_json(worksheet, { header: 1 });
                     
                     if (jsonData.length === 0) return;
 
@@ -40,11 +45,11 @@ export async function parseExcel(file) {
                         if (!line_name && !port) continue; // Skip empty rows
 
                         allData.push({
-                            site_name: sheetName,
-                            line_name: line_name || '',
-                            port_number: port || '',
+                            station_name: sheetName,
+                            fiber_name: line_name || '',
+                            port: port || '',
                             usage: map.usage !== -1 ? row[map.usage] || '' : row[2] || '',
-                            remarks: map.remarks !== -1 ? row[map.remarks] || '' : row[3] || ''
+                            notes: map.remarks !== -1 ? row[map.remarks] || '' : row[3] || ''
                         });
                     }
                 });
@@ -60,24 +65,28 @@ export async function parseExcel(file) {
 }
 
 export function exportToExcel(data) {
+    if (!XLSX_LIB.utils) {
+        throw new Error("XLSX library not loaded");
+    }
     // Group by site
     const sites = {};
     data.forEach(item => {
-        if (!sites[item.site_name]) sites[item.site_name] = [];
-        sites[item.site_name].push({
-            "線路名稱": item.line_name,
-            "Port": item.port_number,
+        const site = item.station_name || 'Unknown';
+        if (!sites[site]) sites[site] = [];
+        sites[site].push({
+            "線路名稱": item.fiber_name,
+            "Port": item.port,
             "用途": item.usage,
-            "備註": item.remarks
+            "備註": item.notes
         });
     });
 
-    const wb = XLSX.utils.book_new();
+    const wb = XLSX_LIB.utils.book_new();
     
     for (const siteName in sites) {
-        const ws = XLSX.utils.json_to_sheet(sites[siteName]);
-        XLSX.utils.book_append_sheet(wb, ws, siteName);
+        const ws = XLSX_LIB.utils.json_to_sheet(sites[siteName]);
+        XLSX_LIB.utils.book_append_sheet(wb, ws, siteName);
     }
 
-    XLSX.writeFile(wb, "fiber_management_export.xlsx");
+    XLSX_LIB.writeFile(wb, "fiber_management_export.xlsx");
 }
