@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>光纖管理系統</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script type="module" crossorigin src="./assets/index-D9LbQY_p.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-CARG_oSz.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">光纖管理系統</div>
+            <nav>
+                <button class="nav-btn active" data-target="dashboard">儀表板 (Dashboard)</button>
+                <button class="nav-btn" data-target="map-view">光纖架構圖 (Map)</button>
+                <button class="nav-btn" data-target="data-mgmt">資料管理 (Data)</button>
+                <button class="nav-btn" data-target="manual-add">手動新增 (Add)</button>
+                <button class="nav-btn" data-target="io-panel">上傳/匯出 (IO)</button>
+            </nav>
+            <div class="search-box">
+                <input type="text" id="global-search" placeholder="搜尋線路編號...">
+                <button id="search-btn">🔍</button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Dashboard Section -->
+            <section id="dashboard" class="view-section active">
+                <h2>系統儀表板</h2>
+                <div id="stats-container" class="stats-grid">
+                    <!-- Statistics will be injected here -->
+                    <div class="stat-card">載入中...</div>
+                </div>
+            </section>
+
+            <!-- Map Section -->
+            <section id="map-view" class="view-section">
+                <h2>光纖架構圖</h2>
+                <div class="map-container">
+                    <!-- Placeholder for Map. Ideally an SVG or Canvas -->
+                    <div id="fiber-map">
+                        <div class="map-placeholder">
+                            <p>光纖架構圖區域</p>
+                            <p>點擊下方模擬站點查看詳情</p>
+                            <div class="site-node" data-site="SiteA" style="top: 20%; left: 20%;">站點 A</div>
+                            <div class="site-node" data-site="SiteB" style="top: 20%; left: 60%;">站點 B</div>
+                            <div class="site-node" data-site="SiteC" style="top: 60%; left: 40%;">站點 C</div>
+                            <!-- Connection Lines -->
+                            <svg class="connections">
+                                <line x1="20%" y1="20%" x2="60%" y2="20%" stroke="blue" stroke-width="2" />
+                                <line x1="60%" y1="20%" x2="40%" y2="60%" stroke="blue" stroke-width="2" />
+                                <line x1="40%" y1="60%" x2="20%" y2="20%" stroke="blue" stroke-width="2" />
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Data Management Section -->
+            <section id="data-mgmt" class="view-section">
+                <h2>資料管理</h2>
+                <div class="data-controls">
+                    <select id="site-selector">
+                        <option value="">選擇站點...</option>
+                    </select>
+                </div>
+                <div class="table-container">
+                    <table id="data-table">
+                        <thead>
+                            <tr>
+                                <th>站點</th>
+                                <th>線路名稱</th>
+                                <th>目的</th>
+                                <th>芯數</th>
+                                <th>來源</th>
+                                <th>Port</th>
+                                <th>用途</th>
+                                <th>備註</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Data rows -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Manual Add Section (New) -->
+            <section id="manual-add" class="view-section">
+                <h2>手動新增資料</h2>
+                <form id="add-form" class="data-form">
+                    <div class="form-group">
+                        <label>站點名稱</label>
+                        <input type="text" name="station_name" required>
+                    </div>
+                    <div class="form-group">
+                        <label>線路名稱</label>
+                        <input type="text" name="fiber_name" required>
+                    </div>
+                    <div class="form-group">
+                        <label>芯數</label>
+                        <input type="text" name="core_count">
+                    </div>
+                     <div class="form-group">
+                        <label>線路目的</label>
+                        <input type="text" name="destination">
+                    </div>
+                     <div class="form-group">
+                        <label>線路來源</label>
+                        <input type="text" name="source">
+                    </div>
+                     <div class="form-group">
+                        <label>Port</label>
+                        <input type="text" name="port">
+                    </div>
+                    <div class="form-group">
+                        <label>用途</label>
+                        <input type="text" name="usage">
+                    </div>
+                    <div class="form-group">
+                        <label>備註</label>
+                        <input type="text" name="notes">
+                    </div>
+                    <button type="submit" class="btn-primary">新增</button>
+                </form>
+            </section>
+
+            <!-- IO Section -->
+            <section id="io-panel" class="view-section">
+                <h2>上傳 / 匯出</h2>
+                <div class="io-card">
+                    <h3>匯入 Excel</h3>
+                    <p>請上傳包含多個分頁（站點）的 .xlsx 檔案</p>
+                    <input type="file" id="excel-upload" accept=".xlsx, .xls">
+                    <button id="process-upload-btn">解析並上傳</button>
+                </div>
+                <div class="io-card">
+                    <h3>匯出 Excel</h3>
+                    <p>將當前系統資料匯出為 .xlsx</p>
+                    <button id="export-btn">下載 Excel</button>
+                </div>
+                <div class="io-card">
+                    <h3>Supabase 設定</h3>
+                    <input type="text" id="supabase-url" placeholder="Supabase URL">
+                    <input type="password" id="supabase-key" placeholder="Supabase Key">
+                    <button id="save-config-btn">儲存設定</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <!-- Path Modal -->
+    <div id="path-modal" class="modal hidden">
+        <div class="modal-content large-modal">
+            <span class="close-modal">&times;</span>
+            <h2 id="modal-path-title">光纖路徑圖</h2>
+            <div id="path-container" class="path-diagram">
+                <!-- Path visualization will be here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Site Details Modal -->
+    <div id="site-modal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h3 id="modal-site-title">站點詳情</h3>
+            <div id="modal-site-stats"></div>
+            <div class="modal-table-wrapper">
+                <table id="modal-table">
+                    <thead>
+                        <tr>
+                            <th>站點</th>
+                            <th>線路名稱</th>
+                            <th>目的</th>
+                            <th>芯數</th>
+                            <th>來源</th>
+                            <th>Port</th>
+                            <th>用途</th>
+                            <th>備註</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="edit-modal" class="modal hidden">
+        <div class="modal-content sm">
+            <span class="close-modal">&times;</span>
+            <h3>編輯 Port 資訊</h3>
+            <form id="edit-form">
+                <input type="hidden" id="edit-id">
+                <div class="form-group">
+                    <label>用途</label>
+                    <input type="text" id="edit-usage">
+                </div>
+                <div class="form-group">
+                    <label>備註</label>
+                    <input type="text" id="edit-remarks">
+                </div>
+                <button type="submit">儲存</button>
+            </form>
+        </div>
+    </div>
+
+</body>
+</html>
