@@ -66,6 +66,14 @@
         window.onerror = function(msg, url, line) {
             window.logToScreen(`Global Error: ${msg} (${url}:${line})`, 'error');
         };
+        
+        window.addEventListener('unhandledrejection', function(event) {
+             window.logToScreen(`Unhandled Promise Rejection: ${event.reason}`, 'error');
+        });
+    </script>
+    <script type="module">
+        import './src/main.js';
+        window.logToScreen("Main module import started.");
     </script>
     <div class="app-container">
         <!-- Sidebar -->
@@ -269,7 +277,5 @@
             </form>
         </div>
     </div>
-
-    <script type="module" src="/src/main.js"></script>
 </body>
 </html>
