@@ -28,7 +28,8 @@ export async function parseExcel(file) {
                         line: headers.findIndex(h => h.includes('線路') || h.toLowerCase().includes('line')),
                         port: headers.findIndex(h => h.toLowerCase().includes('port')),
                         usage: headers.findIndex(h => h.includes('用途') || h.toLowerCase().includes('usage')),
-                        remarks: headers.findIndex(h => h.includes('備註') || h.toLowerCase().includes('remark'))
+                        remarks: headers.findIndex(h => h.includes('備註') || h.toLowerCase().includes('remark')),
+                        core_count: headers.findIndex(h => h.includes('芯數') || h.toLowerCase().includes('core'))
                     };
 
                     const rows = [];
@@ -46,7 +47,8 @@ export async function parseExcel(file) {
                             fiber_name: line_name || '',
                             port: port || '',
                             usage: map.usage !== -1 ? row[map.usage] || '' : row[2] || '',
-                            notes: map.remarks !== -1 ? row[map.remarks] || '' : row[3] || ''
+                            notes: map.remarks !== -1 ? row[map.remarks] || '' : row[3] || '',
+                            core_count: map.core_count !== -1 ? row[map.core_count] || '' : ''
                         });
                     }
                     

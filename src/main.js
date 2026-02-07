@@ -303,70 +303,147 @@ function renderMap() {
     // Calculate coordinates (Percentages)
     const levelCount = maxLevel + 1;
     
+    // Backbone Sequence (User Request)
+    const backboneSequence = ['ROOM', 'UDC', '1PH', '2PH', 'DKB', 'MS2', 'MS3', 'MS4', '2O2'];
+    const radius = 35; // %
+    const centerX = 50; // %
+    const centerY = 50; // %
+    const angleStep = (2 * Math.PI) / backboneSequence.length;
+
+    // Identify and Position Backbone Nodes
+    backboneSequence.forEach((key, idx) => {
+        // Find matching node (loose match)
+        const nodeName = Object.keys(nodes).find(n => {
+            const normN = n.toUpperCase().replace('#', '');
+            const normK = key.toUpperCase().replace('#', '');
+            return normN.includes(normK) || normK.includes(normN);
+        });
+
+        if (nodeName && nodes[nodeName]) {
+            const node = nodes[nodeName];
+            // Start from -90deg (Top) and go clockwise
+            const angle = idx * angleStep - (Math.PI / 2);
+            node.xPct = centerX + radius * Math.cos(angle);
+            node.yPct = centerY + radius * Math.sin(angle);
+            node.isBackbone = true;
+            // Override level to avoid layout overwrite
+            node.level = -1; 
+        }
+    });
+
     Object.keys(levels).forEach(lvlStr => {
         const lvl = parseInt(lvlStr);
         const levelNodes = levels[lvl];
         
-        levelNodes.forEach((node, idx) => {
+        // Filter out nodes already positioned (Backbone)
+        const nodesToPosition = levelNodes.filter(n => !n.isBackbone);
+        
+        nodesToPosition.forEach((node, idx) => {
             // X: Distribute evenly based on level
             // Y: Distribute evenly within level
             const xPct = ((lvl + 0.5) / levelCount) * 100; 
-            const yPct = ((idx + 1) / (levelNodes.length + 1)) * 100;
+            const yPct = ((idx + 1) / (nodesToPosition.length + 1)) * 100;
             
             node.xPct = xPct;
             node.yPct = yPct;
-
-            // Create Node Element
-            const el = document.createElement('div');
-            el.className = 'site-node';
-            el.innerHTML = `
-                <div>${node.name}</div>
-                <div style="font-size: 0.7em; font-weight: normal; opacity: 0.8">L${lvl}</div>
-            `;
-            el.style.left = `${xPct}%`;
-            el.style.top = `${yPct}%`;
-            el.setAttribute('data-site', node.name);
-            
-            // Make Draggable (User Request)
-            makeDraggable(el, node);
-
-            // Click to open details (prevent triggering when dragging)
-            el.addEventListener('click', (e) => {
-                if (el.getAttribute('data-dragging') === 'true') return;
-                openSiteDetails(node.name);
-            });
-            
-            mapContainer.appendChild(el);
         });
     });
 
-    // Draw Lines
-    links.forEach(l => {
-        const source = nodes[l.source];
-        const target = nodes[l.target];
+    // Create Elements (All nodes)
+    Object.values(nodes).forEach(node => {
+        // Create Node Element
+        const el = document.createElement('div');
+        el.className = 'site-node';
+        el.innerHTML = `
+            <div>${node.name}</div>
+            ${node.isBackbone ? '' : `<div style="font-size: 0.7em; opacity: 0.8">L${node.level}</div>`}
+        `;
+        el.style.left = `${node.xPct}%`;
+        el.style.top = `${node.yPct}%`;
+        el.setAttribute('data-site', node.name);
         
-        if (source && target && source.xPct !== undefined && target.xPct !== undefined) {
-             const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-             line.setAttribute("x1", `${source.xPct}%`);
-             line.setAttribute("y1", `${source.yPct}%`);
-             line.setAttribute("x2", `${target.xPct}%`);
-             line.setAttribute("y2", `${target.yPct}%`);
-             line.setAttribute("stroke", "#3b82f6");
-             line.setAttribute("stroke-width", "2");
-             line.setAttribute("marker-end", "url(#arrow)");
-             
-             // Add identifiers for updating position
-             line.setAttribute("data-source", source.name);
-             line.setAttribute("data-target", target.name);
+        // Make Draggable (User Request)
+        makeDraggable(el, node);
 
-             // Add hover title
-             const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
-             title.textContent = `${source.name} -> ${target.name}`;
-             line.appendChild(title);
+        // Click to open details
+        el.addEventListener('click', (e) => {
+            if (el.getAttribute('data-dragging') === 'true') return;
+            openSiteDetails(node.name);
+        });
+        
+        mapContainer.appendChild(el);
+    });
 
-             svg.appendChild(line);
+    // Draw Lines
+    
+    // 1. Explicit Backbone Connections
+    const backboneLinks = [];
+    for (let i = 0; i < backboneSequence.length; i++) {
+        const currentKey = backboneSequence[i];
+        const nextKey = backboneSequence[(i + 1) % backboneSequence.length]; // Loop back to start
+        
+        const sourceName = Object.keys(nodes).find(n => n.toUpperCase().replace('#','').includes(currentKey.replace('#','')));
+        const targetName = Object.keys(nodes).find(n => n.toUpperCase().replace('#','').includes(nextKey.replace('#','')));
+        
+        if (sourceName && targetName && nodes[sourceName] && nodes[targetName]) {
+             backboneLinks.push({ 
+                 source: sourceName, 
+                 target: targetName, 
+                 type: 'backbone' 
+             });
+        }
+    }
+
+    // 2. Data-driven links (exclude if already in backbone)
+    links.forEach(l => {
+        // Check if this link is already covered by backbone (bidirectional check?)
+        // Or just draw everything. Backbone lines might be styled differently.
+        // Let's draw everything but prioritize backbone style if matching.
+        const isBackbone = backboneLinks.some(bl => 
+            (bl.source === l.source && bl.target === l.target) || 
+            (bl.source === l.target && bl.target === l.source)
+        );
+        
+        if (!isBackbone) {
+            drawLink(nodes[l.source], nodes[l.target], svg, 'normal');
         }
     });
+
+    // Draw Backbone Links (on top or distinct)
+    backboneLinks.forEach(l => {
+        drawLink(nodes[l.source], nodes[l.target], svg, 'backbone');
+    });
+
+    // Helper to draw link
+    function drawLink(source, target, svgContainer, type) {
+        if (!source || !target || source.xPct === undefined || target.xPct === undefined) return;
+        
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", `${source.xPct}%`);
+        line.setAttribute("y1", `${source.yPct}%`);
+        line.setAttribute("x2", `${target.xPct}%`);
+        line.setAttribute("y2", `${target.yPct}%`);
+        
+        if (type === 'backbone') {
+            line.setAttribute("stroke", "#ef4444"); // Red for backbone
+            line.setAttribute("stroke-width", "3");
+        } else {
+            line.setAttribute("stroke", "#3b82f6");
+            line.setAttribute("stroke-width", "2");
+        }
+        
+        line.setAttribute("marker-end", "url(#arrow)");
+        
+        // Add identifiers
+        line.setAttribute("data-source", source.name);
+        line.setAttribute("data-target", target.name);
+
+        const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+        title.textContent = `${source.name} -> ${target.name}`;
+        line.appendChild(title);
+
+        svgContainer.appendChild(line);
+    }
 }
 
 // Draggable Logic
