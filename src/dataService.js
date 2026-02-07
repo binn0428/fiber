@@ -166,6 +166,7 @@ export async function syncData(rows, progressCallback) {
                 if ((row.destination||'') !== (existing.destination||'')) updates.destination = row.destination;
                 if ((row.core_count||'') !== (existing.core_count||'')) updates.core_count = row.core_count;
                 if ((row.source||'') !== (existing.source||'')) updates.source = row.source;
+                if ((row.sequence||0) !== (existing.sequence||0)) updates.sequence = row.sequence; // Sync sequence
                 
                 // If any changes, update
                 if (Object.keys(updates).length > 0) {
@@ -197,7 +198,13 @@ export function getData() {
 }
 
 export function getSiteData(siteName) {
-    return currentData.filter(d => d.station_name === siteName);
+    const data = currentData.filter(d => d.station_name === siteName);
+    // Sort by sequence if available
+    return data.sort((a, b) => {
+        const seqA = parseInt(a.sequence) || 999999;
+        const seqB = parseInt(b.sequence) || 999999;
+        return seqA - seqB;
+    });
 }
 
 export function getStats() {

@@ -48,7 +48,8 @@ export async function parseExcel(file) {
                             port: port || '',
                             usage: map.usage !== -1 ? row[map.usage] || '' : row[2] || '',
                             notes: map.remarks !== -1 ? row[map.remarks] || '' : row[3] || '',
-                            core_count: map.core_count !== -1 ? row[map.core_count] || '' : ''
+                            core_count: map.core_count !== -1 ? row[map.core_count] || '' : '',
+                            sequence: i // Preserve Excel row order
                         });
                     }
                     

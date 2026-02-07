@@ -561,8 +561,174 @@ function openSiteDetails(siteName) {
         `;
     }
 
-    if (modalTableBody) renderTableRows(modalTableBody, data);
+    // Render Accordion
+    const accordionContainer = document.getElementById('site-accordion-container');
+    if (accordionContainer) {
+        accordionContainer.innerHTML = '';
+        
+        // Group data by fiber_name
+        const groups = {};
+        data.forEach(row => {
+            const key = row.fiber_name || '未分類';
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(row);
+        });
+        
+        // Sort keys? Maybe alphabetical or original order?
+        // Let's use the order they appear (which is already sorted by sequence from getSiteData)
+        // To preserve "original order", we iterate the sorted data and build keys
+        const sortedKeys = [];
+        const seenKeys = new Set();
+        data.forEach(row => {
+            const key = row.fiber_name || '未分類';
+            if (!seenKeys.has(key)) {
+                seenKeys.add(key);
+                sortedKeys.push(key);
+            }
+        });
+        
+        if (sortedKeys.length === 0 && data.length === 0) {
+            accordionContainer.innerHTML = '<div style="text-align:center; padding: 2rem;">無資料</div>';
+        } else {
+            sortedKeys.forEach(key => {
+                const groupRows = groups[key];
+                
+                // Create Accordion Item
+                const item = document.createElement('div');
+                item.className = 'accordion-item';
+                item.style.marginBottom = '0.5rem';
+                item.style.border = '1px solid #4b5563';
+                item.style.borderRadius = '4px';
+                
+                // Header
+                const header = document.createElement('div');
+                header.className = 'accordion-header';
+                header.style.padding = '1rem';
+                header.style.background = 'var(--bg-secondary)';
+                header.style.cursor = 'pointer';
+                header.style.display = 'flex';
+                header.style.justifyContent = 'space-between';
+                header.style.alignItems = 'center';
+                
+                header.innerHTML = `
+                    <strong>${key}</strong>
+                    <span style="font-size: 0.9em; opacity: 0.8">(${groupRows.length} 筆)</span>
+                `;
+                
+                // Content (Hidden by default)
+                const content = document.createElement('div');
+                content.className = 'accordion-content hidden';
+                content.style.padding = '0.5rem';
+                
+                // Mini Table inside
+                const table = document.createElement('table');
+                table.style.width = '100%';
+                table.style.borderCollapse = 'collapse';
+                
+                // Full Headers (as requested: "完整顯示")
+                table.innerHTML = `
+                    <thead>
+                        <tr style="background: rgba(255,255,255,0.05);">
+                            <th style="padding:8px; text-align:left;">Port</th>
+                            <th style="padding:8px; text-align:left;">芯數</th>
+                            <th style="padding:8px; text-align:left;">目的</th>
+                            <th style="padding:8px; text-align:left;">來源</th>
+                            <th style="padding:8px; text-align:left;">用途</th>
+                            <th style="padding:8px; text-align:left;">備註</th>
+                            <th style="padding:8px; text-align:left;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                `;
+                
+                const tbody = table.querySelector('tbody');
+                
+                // Render Rows using existing helper logic (slightly adapted)
+                groupRows.forEach(row => {
+                     const tr = document.createElement('tr');
+                     tr.style.borderBottom = '1px solid rgba(255,255,255,0.1)';
+                     
+                     // Helper
+                     const createEditableCell = (field, value, id) => {
+                        return `<td class="editable-cell" data-id="${id}" data-field="${field}" title="點擊編輯" style="padding:8px;">${value || ''}</td>`;
+                     };
+                     
+                     tr.innerHTML = `
+                        ${createEditableCell('port', row.port, row.id)}
+                        ${createEditableCell('core_count', row.core_count, row.id)}
+                        ${createEditableCell('destination', row.destination, row.id)}
+                        ${createEditableCell('source', row.source, row.id)}
+                        ${createEditableCell('usage', row.usage, row.id)}
+                        ${createEditableCell('notes', row.notes, row.id)}
+                        <td style="padding:8px;"></td>
+                     `;
+                     tbody.appendChild(tr);
+                });
+                
+                // Re-attach listeners for inline editing
+                attachInlineEditing(tbody);
+                
+                content.appendChild(table);
+                item.appendChild(header);
+                item.appendChild(content);
+                accordionContainer.appendChild(item);
+                
+                // Toggle Logic
+                header.addEventListener('click', () => {
+                    content.classList.toggle('hidden');
+                });
+            });
+        }
+    }
+
     if (siteModal) openModal(siteModal);
+}
+
+// Extract Inline Editing Logic to reuse
+function attachInlineEditing(container) {
+    container.querySelectorAll('.editable-cell').forEach(cell => {
+        cell.addEventListener('click', function() {
+            if (this.querySelector('input')) return; // Already editing
+
+            const originalValue = this.innerText;
+            const field = this.getAttribute('data-field');
+            const id = this.getAttribute('data-id');
+            
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = originalValue;
+            input.className = 'editable-input';
+            
+            // Save on blur or enter
+            const save = async () => {
+                const newValue = input.value.trim();
+                if (newValue !== originalValue) {
+                    try {
+                        this.innerHTML = '更新中...';
+                        await updateRecord(id, { [field]: newValue });
+                        this.innerText = newValue;
+                        // Refresh logic if needed
+                    } catch (e) {
+                        alert('更新失敗: ' + e.message);
+                        this.innerText = originalValue;
+                    }
+                } else {
+                    this.innerText = originalValue;
+                }
+            };
+
+            input.addEventListener('blur', save);
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    input.blur();
+                }
+            });
+
+            this.innerHTML = '';
+            this.appendChild(input);
+            input.focus();
+        });
+    });
 }
 
 // Render Table
@@ -616,53 +782,7 @@ function renderTableRows(tbody, data) {
     });
 
     // Add event listeners for inline editing
-    tbody.querySelectorAll('.editable-cell').forEach(cell => {
-        cell.addEventListener('click', function() {
-            if (this.querySelector('input')) return; // Already editing
-
-            const originalValue = this.innerText;
-            const field = this.getAttribute('data-field');
-            const id = this.getAttribute('data-id');
-            
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.value = originalValue;
-            input.className = 'editable-input';
-            
-            // Save on blur or enter
-            const save = async () => {
-                const newValue = input.value.trim();
-                if (newValue !== originalValue) {
-                    try {
-                        this.innerHTML = '更新中...';
-                        await updateRecord(id, { [field]: newValue });
-                        this.innerText = newValue;
-                        // Refresh logic if needed, e.g. if updating usage affects stats
-                        if (field === 'usage' || field === 'fiber_name') {
-                            // Ideally reload data or update stats locally
-                            // renderDashboard(); // Optional: might be too heavy
-                        }
-                    } catch (e) {
-                        alert('更新失敗: ' + e.message);
-                        this.innerText = originalValue;
-                    }
-                } else {
-                    this.innerText = originalValue;
-                }
-            };
-
-            input.addEventListener('blur', save);
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    input.blur();
-                }
-            });
-
-            this.innerHTML = '';
-            this.appendChild(input);
-            input.focus();
-        });
-    });
+    attachInlineEditing(tbody);
 }
 
 // Path Diagram
