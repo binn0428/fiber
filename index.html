@@ -4,10 +4,69 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>光纖管理系統</title>
-    <link rel="stylesheet" href="./style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        #app-status-log {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            max-height: 150px;
+            overflow-y: auto;
+            background: rgba(0,0,0,0.8);
+            color: #0f0;
+            font-family: monospace;
+            padding: 10px;
+            z-index: 9999;
+            font-size: 12px;
+            display: none; /* Hidden by default, shown on error or init */
+        }
+        #protocol-warning {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            color: white;
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            text-align: center;
+        }
+    </style>
 </head>
 <body>
+    <div id="protocol-warning">
+        <h1>⚠️ 錯誤的開啟方式</h1>
+        <p>檢測到您正在使用檔案協定 (file://) 開啟此網頁。</p>
+        <p>由於安全性限制，本系統必須透過網頁伺服器開啟。</p>
+        <p>請使用終端機執行 <code>npm run dev</code> 並點擊顯示的連結。</p>
+    </div>
+    <div id="app-status-log">系統初始化中...</div>
+    <script>
+        // Protocol Check
+        if (window.location.protocol === 'file:') {
+            document.getElementById('protocol-warning').style.display = 'flex';
+        } else {
+            document.getElementById('app-status-log').style.display = 'block';
+        }
+
+        // Global Logger
+        window.logToScreen = function(msg, type='info') {
+            const el = document.getElementById('app-status-log');
+            if (el) {
+                const line = document.createElement('div');
+                line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+                if (type === 'error') line.style.color = '#ff6b6b';
+                el.appendChild(line);
+                el.scrollTop = el.scrollHeight;
+            }
+            console.log(msg);
+        };
+        window.onerror = function(msg, url, line) {
+            window.logToScreen(`Global Error: ${msg} (${url}:${line})`, 'error');
+        };
+    </script>
     <div class="app-container">
         <!-- Sidebar -->
         <aside class="sidebar">
