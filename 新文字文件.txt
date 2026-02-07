@@ -1,0 +1,4 @@
+$env:SUPABASE_URL="https://otdjrzpmtrojlcisoxeb.supabase.co"
+$env:SUPABASE_KEY="sb_publishable_fxD_HVblMWtRiYK53tWgzw_8Pg0PqgS"
+npm install
+node scripts/import_data.js
