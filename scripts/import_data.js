@@ -42,9 +42,8 @@ async function clearTables() {
     const tables = [...new Set(Object.values(FILE_MAPPING))];
     console.log('Clearing existing data from tables...');
     for (const table of tables) {
-        // Delete all records where id is not null (effectively all records)
-        // Using a condition that is always true
-        const { error } = await supabase.from(table).delete().neq('station_name', '_____');
+        // Delete all records using a condition that matches all UUIDs
+        const { error } = await supabase.from(table).delete().neq('id', '00000000-0000-0000-0000-000000000000');
         
         if (error) {
             console.error(`Error clearing table ${table}:`, error.message);
