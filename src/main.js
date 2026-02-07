@@ -1004,6 +1004,10 @@ if (processUploadBtn && excelUploadInput) {
                     });
                     
                     alert(`上傳完成！共處理 ${flatRows.length} 筆資料。`);
+                    
+                    const modal = document.getElementById('upload-select-modal');
+                    if (modal) modal.remove();
+                    
                     await loadData();
                     renderDashboard();
                     renderMap();

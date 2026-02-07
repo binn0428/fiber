@@ -164,13 +164,21 @@ export async function syncData(rows, progressCallback) {
                 if ((row.usage||'') !== (existing.usage||'')) updates.usage = row.usage;
                 if ((row.notes||'') !== (existing.notes||'')) updates.notes = row.notes;
                 if ((row.destination||'') !== (existing.destination||'')) updates.destination = row.destination;
-                if ((row.core_count||'') !== (existing.core_count||'')) updates.core_count = row.core_count;
+                if ((row.core_count||'') !== (existing.core_count||'')) updates.core_count = row.core_count === '' ? null : row.core_count;
                 if ((row.source||'') !== (existing.source||'')) updates.source = row.source;
-                if ((row.sequence||0) !== (existing.sequence||0)) updates.sequence = row.sequence; // Sync sequence
+                // Sequence is likely not in DB schema, skipping update for now to prevent errors
+                // if ((row.sequence||0) !== (existing.sequence||0)) updates.sequence = row.sequence; 
                 
                 // If any changes, update
                 if (Object.keys(updates).length > 0) {
-                    await sb.from(tableName).update(updates).eq('id', existing.id);
+                    const { error: updateError } = await sb.from(tableName).update(updates).eq('id', existing.id);
+                    if (updateError) {
+                        console.error(`Update error for ${key}:`, updateError);
+                        // Don't throw, just log and continue? Or throw to alert user?
+                        // Better to throw so we know why it failed
+                        throw new Error(`Update failed: ${updateError.message}`);
+                    }
+
                     // Update local cache
                     const localIdx = currentData.findIndex(d => d.id === existing.id);
                     if (localIdx !== -1) {
@@ -179,7 +187,19 @@ export async function syncData(rows, progressCallback) {
                 }
             } else {
                 // Insert new
-                const { data: newRec } = await sb.from(tableName).insert([row]).select();
+                // Prepare payload: remove internal fields like 'sequence' if DB doesn't have it
+                // and handle empty strings for numeric fields
+                const payload = { ...row };
+                delete payload.sequence; 
+                if (payload.core_count === '') payload.core_count = null;
+
+                const { data: newRec, error: insertError } = await sb.from(tableName).insert([payload]).select();
+                
+                if (insertError) {
+                    console.error(`Insert error for ${key}:`, insertError);
+                    throw new Error(`Insert failed: ${insertError.message} (Details: ${insertError.details || ''})`);
+                }
+
                 if (newRec) {
                     currentData.push({ ...newRec[0], _table: tableName });
                 }
