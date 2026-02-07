@@ -38,7 +38,25 @@ const FILE_MAPPING = {
     '機房.xlsx': 'room'
 };
 
+async function clearTables() {
+    const tables = [...new Set(Object.values(FILE_MAPPING))];
+    console.log('Clearing existing data from tables...');
+    for (const table of tables) {
+        // Delete all records where id is not null (effectively all records)
+        // Using a condition that is always true
+        const { error } = await supabase.from(table).delete().neq('station_name', '_____');
+        
+        if (error) {
+            console.error(`Error clearing table ${table}:`, error.message);
+        } else {
+            console.log(`Cleared table ${table}`);
+        }
+    }
+}
+
 async function importData() {
+    await clearTables();
+
     const files = fs.readdirSync(DATA_DIR).filter(file => file.endsWith('.xlsx'));
     
     for (const file of files) {
