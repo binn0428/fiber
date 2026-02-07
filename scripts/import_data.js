@@ -1,8 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
-import * as XLSX from 'xlsx';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import 'dotenv/config';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const XLSX = require('xlsx');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,7 +33,9 @@ const FILE_MAPPING = {
     'ms2.xlsx': 'ms2',
     'ms3.xlsx': 'ms3',
     'ms4.xlsx': 'ms4',
-    'o2.xlsx': 'o2'
+    'o2.xlsx': 'o2',
+    'room.xlsx': 'room',
+    '機房.xlsx': 'room'
 };
 
 async function importData() {
