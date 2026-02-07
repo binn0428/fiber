@@ -373,6 +373,7 @@ function renderMap() {
 function makeDraggable(el, nodeData) {
     let isDragging = false;
     let startX, startY;
+    let initialLeft, initialTop; // Store initial % positions
     
     const onMouseDown = (e) => {
         // Only left click
@@ -380,9 +381,11 @@ function makeDraggable(el, nodeData) {
         isDragging = true;
         el.setAttribute('data-dragging', 'false'); // Reset
         
-        // Initial mouse position
+        // Capture initial state
         startX = e.clientX;
         startY = e.clientY;
+        initialLeft = parseFloat(el.style.left);
+        initialTop = parseFloat(el.style.top);
         
         el.style.zIndex = 100;
         el.style.cursor = 'grabbing';
@@ -398,30 +401,23 @@ function makeDraggable(el, nodeData) {
         
         const containerRect = mapContainer.getBoundingClientRect();
         
-        // Calculate new percentage position
-        // Current Left % + (Delta X / Width * 100)
-        const currentLeft = parseFloat(el.style.left);
-        const currentTop = parseFloat(el.style.top);
-        
+        // Calculate Delta in Percentage relative to container size
         const deltaX = ((e.clientX - startX) / containerRect.width) * 100;
         const deltaY = ((e.clientY - startY) / containerRect.height) * 100;
         
-        const newLeft = Math.max(0, Math.min(100, currentLeft + deltaX));
-        const newTop = Math.max(0, Math.min(100, currentTop + deltaY));
+        // Apply to Initial Position (Absolute Delta method avoids accumulation errors/jitter)
+        const newLeft = Math.max(0, Math.min(100, initialLeft + deltaX));
+        const newTop = Math.max(0, Math.min(100, initialTop + deltaY));
         
         el.style.left = `${newLeft}%`;
         el.style.top = `${newTop}%`;
         
-        // Update node data for reference (optional but good)
+        // Update node data for reference
         nodeData.xPct = newLeft;
         nodeData.yPct = newTop;
         
         // Update connected lines
         updateConnectedLines(nodeData.name, newLeft, newTop);
-        
-        // Update start positions for next move
-        startX = e.clientX;
-        startY = e.clientY;
     };
     
     const onMouseUp = () => {
@@ -683,9 +679,9 @@ function renderDashboard() {
         card.innerHTML = `
             <h3>${site.name}</h3>
             <div class="stat-row">
-                <span>總 Port 數:</span>
-                <strong>${site.total}</strong>
-            </div>
+                    <span>總芯數:</span>
+                    <strong>${site.total}</strong>
+                </div>
             <div class="stat-row">
                 <span>已使用:</span>
                 <strong class="text-danger">${site.used}</strong>

@@ -209,7 +209,17 @@ export function getStats() {
             sites[name] = { name, total: 0, used: 0, free: 0 };
         }
         
-        sites[name].total++;
+        // Task 1: Calculate total based on core_count
+        // We parse core_count, defaulting to 1 if missing or 0 (assuming each row is at least 1 core/port)
+        // However, user specifically asked to use the field. 
+        // If the field is empty, does it mean 0?
+        // Let's assume if invalid/missing, it counts as 1 (one port = 1 core usually).
+        // BUT strict interpretation: "Based on core_count field".
+        // Let's try: use value if present, else 1.
+        let cores = parseInt(d.core_count);
+        if (isNaN(cores)) cores = 1; // Fallback to 1 per row if not specified
+        
+        sites[name].total += cores;
         
         // Safely check for usage
         const usage = d.usage ? String(d.usage).trim() : '';
@@ -218,9 +228,9 @@ export function getStats() {
         const isUsed = usage.length > 0 || fiberName.length > 0;
         
         if (isUsed) {
-            sites[name].used++;
+            sites[name].used += cores;
         } else {
-            sites[name].free++;
+            sites[name].free += cores;
         }
     });
     
