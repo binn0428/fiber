@@ -24,14 +24,16 @@ export async function parseExcel(file) {
 
                     // Simple header detection (assuming row 0 is header)
                     const headers = jsonData[0].map(h => h ? h.toString().trim() : '');
+                    const findIndexSafe = (keyword) => headers.findIndex(h => h && h.toLowerCase().includes(keyword));
+                    
                     const map = {
-                        line: headers.findIndex(h => h.includes('線路') || h.toLowerCase().includes('line')),
-                        port: headers.findIndex(h => h.toLowerCase().includes('port')),
-                        usage: headers.findIndex(h => h.includes('用途') || h.toLowerCase().includes('usage')),
-                        remarks: headers.findIndex(h => h.includes('備註') || h.toLowerCase().includes('remark')),
-                        core_count: headers.findIndex(h => h.includes('芯數') || h.toLowerCase().includes('core')),
-                        destination: headers.findIndex(h => h.includes('目的') || h.toLowerCase().includes('dest')),
-                        source: headers.findIndex(h => h.includes('來源') || h.toLowerCase().includes('source'))
+                        line: findIndexSafe('線路') !== -1 ? findIndexSafe('線路') : findIndexSafe('line'),
+                        port: findIndexSafe('port'),
+                        usage: findIndexSafe('用途') !== -1 ? findIndexSafe('用途') : findIndexSafe('usage'),
+                        remarks: findIndexSafe('備註') !== -1 ? findIndexSafe('備註') : findIndexSafe('remark'),
+                        core_count: findIndexSafe('芯數') !== -1 ? findIndexSafe('芯數') : findIndexSafe('core'),
+                        destination: findIndexSafe('目的') !== -1 ? findIndexSafe('目的') : findIndexSafe('dest'),
+                        source: findIndexSafe('來源') !== -1 ? findIndexSafe('來源') : findIndexSafe('source')
                     };
 
                     const rows = [];
