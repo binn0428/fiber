@@ -200,7 +200,13 @@
             <h3 id="modal-site-title">站點詳情</h3>
             <div id="modal-site-stats"></div>
             <div class="modal-table-wrapper">
-                <table id="modal-table">
+                <!-- Accordion Container -->
+                <div id="site-accordion-container">
+                    <!-- Dynamic Accordion Items will be injected here -->
+                </div>
+                
+                <!-- Fallback or Hidden Table for reference/export if needed -->
+                <table id="modal-table" style="display: none;">
                     <thead>
                         <tr>
                             <th>站點</th>
