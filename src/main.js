@@ -1,29 +1,70 @@
 
 import { initSupabase, checkConnection } from './supabase.js';
-import { loadData, syncData, updatePort, getData, getStats, getSiteData, searchLine, subscribe } from './dataService.js';
-import { parseExcel, exportToExcel } from './excelService.js';
+import { loadData, addRecord, getData, getStats, getSiteData, searchLine, getFiberPath } from './dataService.js';
+// import { parseExcel, exportToExcel } from './excelService.js'; // Keep existing if needed
 
 // DOM Elements
 const navBtns = document.querySelectorAll('.nav-btn');
 const viewSections = document.querySelectorAll('.view-section');
 const globalSearchInput = document.getElementById('global-search');
 const searchBtn = document.getElementById('search-btn');
-const siteNodes = document.querySelectorAll('.site-node');
 const siteModal = document.getElementById('site-modal');
-const editModal = document.getElementById('edit-modal');
+const pathModal = document.getElementById('path-modal');
 const closeModals = document.querySelectorAll('.close-modal');
 const modalSiteTitle = document.getElementById('modal-site-title');
 const modalSiteStats = document.getElementById('modal-site-stats');
 const modalTableBody = document.querySelector('#modal-table tbody');
 const dataTableBody = document.querySelector('#data-table tbody');
 const siteSelector = document.getElementById('site-selector');
-const editForm = document.getElementById('edit-form');
-const processUploadBtn = document.getElementById('process-upload-btn');
-const excelUpload = document.getElementById('excel-upload');
-const exportBtn = document.getElementById('export-btn');
+const addForm = document.getElementById('add-form');
+const mapContainer = document.getElementById('fiber-map');
+
+// Config Elements
 const saveConfigBtn = document.getElementById('save-config-btn');
 const supabaseUrlInput = document.getElementById('supabase-url');
 const supabaseKeyInput = document.getElementById('supabase-key');
+
+// Initialize
+document.addEventListener('DOMContentLoaded', async () => {
+    // Check Supabase config
+    const url = localStorage.getItem('https://otdjrzpmtrojlcisoxeb.supabasce.o');
+    const key = localStorage.getItem('sb_publishable_fxD_HVblMWtRiYK53tWgzw_8Pg0PqgS');
+    
+    if (url && key) {
+        initSupabase(url, key);
+        supabaseUrlInput.value = url;
+        // Don't show key
+    }
+
+    await loadData();
+    renderDashboard();
+    renderMap();
+    renderDataTable();
+    populateSiteSelector();
+});
+
+// Config Handler
+if (saveConfigBtn) {
+    saveConfigBtn.addEventListener('click', async () => {
+        const url = supabaseUrlInput.value.trim();
+        const key = supabaseKeyInput.value.trim();
+        
+        if (url && key) {
+            const success = initSupabase(url, key);
+            if (success) {
+                const connected = await checkConnection();
+                if (connected) {
+                    alert('連線成功！');
+                    location.reload(); // Reload to refresh data
+                } else {
+                    alert('連線失敗，請檢查 URL 和 Key 是否正確，或檢查網路。');
+                }
+            }
+        } else {
+            alert('請輸入 URL 和 Key');
+        }
+    });
+}
 
 // Navigation
 navBtns.forEach(btn => {
@@ -36,6 +77,7 @@ navBtns.forEach(btn => {
             if (section.id === targetId) section.classList.add('active');
         });
         if (targetId === 'dashboard') renderDashboard();
+        if (targetId === 'map-view') renderMap();
         if (targetId === 'data-mgmt') renderDataTable();
     });
 });
@@ -61,277 +103,282 @@ window.addEventListener('click', (e) => {
     }
 });
 
-// Map Interaction
-siteNodes.forEach(node => {
-    node.addEventListener('click', () => {
-        const siteName = node.getAttribute('data-site');
-        openSiteDetails(siteName);
-    });
-});
+// Map Rendering
+function renderMap() {
+    const stats = getStats();
+    mapContainer.innerHTML = ''; // Clear
+    
+    if (stats.length === 0) {
+        mapContainer.innerHTML = '<div class="map-placeholder">暫無資料</div>';
+        return;
+    }
 
+    // Simple Layout: Arrange in a circle
+    const centerX = 50;
+    const centerY = 50;
+    const radius = 35;
+    const angleStep = (2 * Math.PI) / stats.length;
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "connections");
+    svg.setAttribute("width", "100%");
+    svg.setAttribute("height", "100%");
+    mapContainer.appendChild(svg);
+
+    // Create Nodes
+    stats.forEach((site, index) => {
+        const angle = index * angleStep;
+        const x = centerX + radius * Math.cos(angle);
+        const y = centerY + radius * Math.sin(angle);
+        
+        const node = document.createElement('div');
+        node.className = 'site-node';
+        node.textContent = site.name;
+        node.style.left = `${x}%`;
+        node.style.top = `${y}%`;
+        node.setAttribute('data-site', site.name);
+        
+        // Add stats tooltip or small text
+        const info = document.createElement('small');
+        info.innerHTML = `<br>(${site.used}/${site.total})`;
+        node.appendChild(info);
+
+        node.addEventListener('click', () => {
+            openSiteDetails(site.name);
+        });
+
+        mapContainer.appendChild(node);
+        
+        // Save coordinates for lines (simplified)
+        site.x = x;
+        site.y = y;
+    });
+
+    // Draw Lines (Connections)
+    // We need to know who connects to whom.
+    // Iterate all data to find unique connections (Station -> Destination)
+    const data = getData();
+    const connections = new Set();
+    
+    data.forEach(row => {
+        if (row.station_name && row.destination) {
+            // Check if destination exists as a station
+            const targetSite = stats.find(s => s.name === row.destination || row.destination.includes(s.name));
+            if (targetSite) {
+                const sourceSite = stats.find(s => s.name === row.station_name);
+                if (sourceSite) {
+                    // Create a unique key for the link (sorted to avoid duplicates A-B vs B-A)
+                    const key = [sourceSite.name, targetSite.name].sort().join('-');
+                    if (!connections.has(key)) {
+                        connections.add(key);
+                        
+                        // Draw line
+                        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                        line.setAttribute("x1", `${sourceSite.x}%`);
+                        line.setAttribute("y1", `${sourceSite.y}%`);
+                        line.setAttribute("x2", `${targetSite.x}%`);
+                        line.setAttribute("y2", `${targetSite.y}%`);
+                        line.setAttribute("stroke", "#3498db");
+                        line.setAttribute("stroke-width", "2");
+                        line.setAttribute("stroke-opacity", "0.6");
+                        svg.appendChild(line);
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Site Details
 function openSiteDetails(siteName) {
     modalSiteTitle.textContent = `站點詳情: ${siteName}`;
     const data = getSiteData(siteName);
     const stats = getStats().find(s => s.name === siteName) || { total: 0, used: 0, free: 0 };
     
+    const usageRate = stats.total > 0 ? Math.round((stats.used / stats.total) * 100) : 0;
+
     modalSiteStats.innerHTML = `
-        <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
-            <span>總數: <b>${stats.total}</b></span>
-            <span style="color: var(--danger-color)">已用: <b>${stats.used}</b></span>
-            <span style="color: var(--success-color)">剩餘: <b>${stats.free}</b></span>
+        <div style="display: flex; gap: 1rem; margin-bottom: 1rem; align-items: center;">
+            <div class="stat-box">總數: <b>${stats.total}</b></div>
+            <div class="stat-box used">已用: <b>${stats.used}</b></div>
+            <div class="stat-box free">剩餘: <b>${stats.free}</b></div>
+            <div class="stat-box">使用率: <b>${usageRate}%</b></div>
         </div>
     `;
 
-    renderTableRows(modalTableBody, data, true);
+    renderTableRows(modalTableBody, data);
     openModal(siteModal);
 }
 
-// Data Rendering
-function renderTableRows(tbody, data, simplified = false) {
+// Render Table
+function renderDataTable() {
+    const data = getData();
+    renderTableRows(dataTableBody, data);
+}
+
+function renderTableRows(tbody, data) {
     tbody.innerHTML = '';
     if (data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center">無資料</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center">無資料</td></tr>';
         return;
     }
 
     data.forEach(row => {
         const tr = document.createElement('tr');
-        const isUsed = row.usage && row.usage.trim();
-        const statusClass = isUsed ? 'status-used' : 'status-free';
-        const statusText = isUsed ? '已使用' : '閒置';
         
-        // Handle undefined safely
-        const line = row.line_name || '-';
-        const port = row.port_number || '-';
-        const usage = row.usage || '';
-        const remarks = row.remarks || '';
-
-        let html = '';
-        if (!simplified) {
-            html += `<td>${line}</td>`;
-        }
+        // Make fiber name clickable
+        const fiberCell = row.fiber_name ? `<a href="#" class="fiber-link" data-fiber="${row.fiber_name}">${row.fiber_name}</a>` : '-';
         
-        html += `
-            <td>${port}</td>
-            <td>${usage}</td>
-            <td>${remarks}</td>
-            <td class="${statusClass}">${statusText}</td>
+        tr.innerHTML = `
+            <td>${row.station_name || ''}</td>
+            <td>${fiberCell}</td>
+            <td>${row.destination || ''}</td>
+            <td>${row.core_count || ''}</td>
+            <td>${row.source || ''}</td>
+            <td>${row.port || ''}</td>
+            <td>${row.usage || ''}</td>
+            <td>${row.notes || ''}</td>
             <td>
-                <button class="edit-btn" data-id="${row.id}">編輯</button>
+                <button class="btn-sm edit-btn" data-id="${row.id}">編輯</button>
             </td>
         `;
-        tr.innerHTML = html;
         tbody.appendChild(tr);
     });
 
-    // Add Edit Listeners
-    tbody.querySelectorAll('.edit-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation(); // Prevent row click if any
-            const id = btn.getAttribute('data-id');
-            const rowData = getData().find(d => d.id == id); // Use == for loose match (string/number)
-            if (rowData) openEditModal(rowData);
+    // Add event listeners for fiber links
+    tbody.querySelectorAll('.fiber-link').forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const fiberName = e.target.getAttribute('data-fiber');
+            openPathDiagram(fiberName);
         });
     });
 }
 
-function openEditModal(data) {
-    document.getElementById('edit-id').value = data.id;
-    document.getElementById('edit-usage').value = data.usage || '';
-    document.getElementById('edit-remarks').value = data.remarks || '';
-    openModal(editModal);
+// Path Diagram
+function openPathDiagram(fiberName) {
+    const records = getFiberPath(fiberName);
+    const container = document.getElementById('path-container');
+    document.getElementById('modal-path-title').textContent = `光纖路徑: ${fiberName}`;
+    
+    container.innerHTML = '';
+    
+    if (records.length === 0) {
+        container.innerHTML = '無路徑資料';
+    } else {
+        // Group by station to see where this fiber exists
+        // Visualize as a chain or a list of nodes
+        
+        const pathDiv = document.createElement('div');
+        pathDiv.style.display = 'flex';
+        pathDiv.style.alignItems = 'center';
+        pathDiv.style.gap = '20px';
+        pathDiv.style.flexWrap = 'wrap';
+        pathDiv.style.padding = '20px';
+
+        records.forEach((rec, index) => {
+            const node = document.createElement('div');
+            node.className = 'path-node';
+            node.innerHTML = `
+                <strong>${rec.station_name}</strong><br>
+                <small>Port: ${rec.port || '-'}</small><br>
+                <small>To: ${rec.destination || '-'}</small>
+            `;
+            node.style.border = '2px solid #3498db';
+            node.style.padding = '10px';
+            node.style.borderRadius = '8px';
+            node.style.background = '#f8f9fa';
+
+            pathDiv.appendChild(node);
+
+            if (index < records.length - 1) {
+                const arrow = document.createElement('div');
+                arrow.innerHTML = '➜';
+                arrow.style.fontSize = '24px';
+                arrow.style.color = '#555';
+                pathDiv.appendChild(arrow);
+            }
+        });
+        
+        container.appendChild(pathDiv);
+    }
+    
+    openModal(pathModal);
 }
 
-// Edit Form Submit
-editForm.addEventListener('submit', async (e) => {
+// Manual Add Form
+addForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const id = document.getElementById('edit-id').value;
-    const usage = document.getElementById('edit-usage').value;
-    const remarks = document.getElementById('edit-remarks').value;
+    const formData = new FormData(addForm);
+    const record = Object.fromEntries(formData.entries());
     
     try {
-        await updatePort(id, { usage, remarks });
-        closeModal(editModal);
-        // Refresh current view
-        renderDashboard(); // Update stats
-        // If site modal is open, refresh it
-        if (!siteModal.classList.contains('hidden')) {
-             // We need to know which site was open. 
-             // Ideally we re-call openSiteDetails with current site name.
-             // For simplicity, we just rely on data binding if we had a reactive framework.
-             // Here we manually refresh the table in the modal if it's visible.
-             const siteName = modalSiteTitle.textContent.replace('站點詳情: ', '');
-             openSiteDetails(siteName);
-        }
-        renderDataTable();
+        await addRecord(record);
+        alert('新增成功！');
+        addForm.reset();
+        await loadData(); // Refresh
+        renderDataTable(); // Refresh view
     } catch (err) {
-        alert('更新失敗: ' + err.message);
+        alert('新增失敗: ' + err.message);
     }
 });
 
-// Dashboard Rendering
+// Dashboard Stats
 function renderDashboard() {
     const stats = getStats();
     const container = document.getElementById('stats-container');
     container.innerHTML = '';
     
     if (stats.length === 0) {
-        container.innerHTML = '<div class="stat-card">尚無資料，請先匯入 Excel</div>';
+        container.innerHTML = '暫無統計資料';
         return;
     }
 
-    // Global Stats
-    const globalTotal = stats.reduce((acc, s) => acc + s.total, 0);
-    const globalUsed = stats.reduce((acc, s) => acc + s.used, 0);
-    const globalFree = stats.reduce((acc, s) => acc + s.free, 0);
-
-    const globalCard = document.createElement('div');
-    globalCard.className = 'stat-card';
-    globalCard.style.borderLeft = '4px solid var(--primary-color)';
-    globalCard.innerHTML = `
-        <h3>全網統計</h3>
-        <div class="value">${globalTotal}</div>
-        <div>已用: ${globalUsed} | 剩餘: ${globalFree}</div>
-    `;
-    container.appendChild(globalCard);
-
-    stats.forEach(s => {
+    stats.forEach(site => {
         const card = document.createElement('div');
         card.className = 'stat-card';
+        const usageRate = site.total > 0 ? Math.round((site.used / site.total) * 100) : 0;
+        
         card.innerHTML = `
-            <h3>${s.name}</h3>
-            <div class="value">${s.total}</div>
-            <div>
-                <span style="color: var(--danger-color)">${s.used}</span> / 
-                <span style="color: var(--success-color)">${s.free}</span>
+            <h3>${site.name}</h3>
+            <div class="stat-row">
+                <span>總 Port 數:</span>
+                <strong>${site.total}</strong>
+            </div>
+            <div class="stat-row">
+                <span>已使用:</span>
+                <strong class="text-danger">${site.used}</strong>
+            </div>
+            <div class="stat-row">
+                <span>使用率:</span>
+                <div class="progress-bar">
+                    <div class="progress" style="width: ${usageRate}%"></div>
+                </div>
+                <span>${usageRate}%</span>
             </div>
         `;
+        card.addEventListener('click', () => openSiteDetails(site.name));
         container.appendChild(card);
     });
 }
 
-// Data Management View
-function renderDataTable() {
-    const data = getData();
-    // Populate selector
-    const sites = [...new Set(data.map(d => d.site_name))];
-    const currentVal = siteSelector.value;
-    siteSelector.innerHTML = '<option value="">全部站點</option>';
-    sites.forEach(s => {
+function populateSiteSelector() {
+    const stats = getStats();
+    siteSelector.innerHTML = '<option value="">選擇站點...</option>';
+    stats.forEach(s => {
         const opt = document.createElement('option');
-        opt.value = s;
-        opt.textContent = s;
+        opt.value = s.name;
+        opt.textContent = s.name;
         siteSelector.appendChild(opt);
     });
-    siteSelector.value = currentVal;
-
-    const filtered = currentVal ? data.filter(d => d.site_name === currentVal) : data;
-    renderTableRows(dataTableBody, filtered);
-}
-
-siteSelector.addEventListener('change', renderDataTable);
-
-// Search
-searchBtn.addEventListener('click', performSearch);
-globalSearchInput.addEventListener('keyup', (e) => {
-    if (e.key === 'Enter') performSearch();
-});
-
-function performSearch() {
-    const query = globalSearchInput.value.trim();
-    if (!query) return;
     
-    // Switch to Data Management tab to show results
-    navBtns[2].click(); // Index 2 is Data Management
-    
-    const results = searchLine(query);
-    // Force "All Sites"
-    siteSelector.value = "";
-    renderTableRows(dataTableBody, results);
-    
-    // Highlight or show message
-    const h2 = document.querySelector('#data-mgmt h2');
-    h2.textContent = `搜尋結果: "${query}" (${results.length} 筆)`;
-}
-
-// IO & Config
-saveConfigBtn.addEventListener('click', async () => {
-    const url = supabaseUrlInput.value.trim();
-    const key = supabaseKeyInput.value.trim();
-    if (initSupabase(url, key)) {
-        const connected = await checkConnection();
-        if (connected) {
-            alert('連線成功！正在載入資料...');
-            await loadData();
-            renderDashboard();
+    siteSelector.addEventListener('change', (e) => {
+        const val = e.target.value;
+        if (val) {
+             const data = getSiteData(val);
+             renderTableRows(dataTableBody, data);
         } else {
-            alert('連線失敗，請檢查 URL 和 Key，或確認 Table "ports" 是否存在。');
+             renderDataTable();
         }
-    } else {
-        alert('請輸入完整的 URL 和 Key');
-    }
-});
-
-// Load config on start
-const savedUrl = localStorage.getItem('supabase_url');
-const savedKey = localStorage.getItem('supabase_key');
-if (savedUrl) supabaseUrlInput.value = savedUrl;
-if (savedKey) supabaseKeyInput.value = savedKey;
-
-if (savedUrl && savedKey) {
-    initSupabase(savedUrl, savedKey);
-    loadData().then(() => {
-        renderDashboard();
-        renderDataTable();
-    }).catch(e => console.error(e));
+    });
 }
-
-// Excel Import
-processUploadBtn.addEventListener('click', async () => {
-    const file = excelUpload.files[0];
-    if (!file) {
-        alert('請選擇檔案');
-        return;
-    }
-    
-    try {
-        processUploadBtn.textContent = '處理中...';
-        processUploadBtn.disabled = true;
-        
-        const data = await parseExcel(file);
-        if (data.length === 0) {
-            alert('解析失敗或檔案為空');
-            return;
-        }
-        
-        if (confirm(`解析成功，共 ${data.length} 筆資料。確定要匯入並覆寫現有資料嗎？`)) {
-            await syncData(data);
-            alert('匯入成功！');
-            renderDashboard();
-            renderDataTable();
-        }
-    } catch (e) {
-        console.error(e);
-        alert('發生錯誤: ' + e.message);
-    } finally {
-        processUploadBtn.textContent = '解析並上傳';
-        processUploadBtn.disabled = false;
-    }
-});
-
-// Excel Export
-exportBtn.addEventListener('click', () => {
-    const data = getData();
-    if (data.length === 0) {
-        alert('無資料可匯出');
-        return;
-    }
-    exportToExcel(data);
-});
-
-// Subscription to updates
-subscribe((newData) => {
-    // Optional: Auto refresh views if they are active
-    if (document.getElementById('dashboard').classList.contains('active')) renderDashboard();
-    if (document.getElementById('data-mgmt').classList.contains('active')) renderDataTable();
-});
