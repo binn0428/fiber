@@ -15,6 +15,7 @@
                 <button class="nav-btn active" data-target="dashboard">儀表板 (Dashboard)</button>
                 <button class="nav-btn" data-target="map-view">光纖架構圖 (Map)</button>
                 <button class="nav-btn" data-target="data-mgmt">資料管理 (Data)</button>
+                <button class="nav-btn" data-target="manual-add">手動新增 (Add)</button>
                 <button class="nav-btn" data-target="io-panel">上傳/匯出 (IO)</button>
             </nav>
             <div class="search-box">
@@ -69,11 +70,14 @@
                     <table id="data-table">
                         <thead>
                             <tr>
+                                <th>站點</th>
                                 <th>線路名稱</th>
+                                <th>目的</th>
+                                <th>芯數</th>
+                                <th>來源</th>
                                 <th>Port</th>
                                 <th>用途</th>
                                 <th>備註</th>
-                                <th>狀態</th>
                                 <th>操作</th>
                             </tr>
                         </thead>
@@ -82,6 +86,46 @@
                         </tbody>
                     </table>
                 </div>
+            </section>
+
+            <!-- Manual Add Section (New) -->
+            <section id="manual-add" class="view-section">
+                <h2>手動新增資料</h2>
+                <form id="add-form" class="data-form">
+                    <div class="form-group">
+                        <label>站點名稱</label>
+                        <input type="text" name="station_name" required>
+                    </div>
+                    <div class="form-group">
+                        <label>線路名稱</label>
+                        <input type="text" name="fiber_name" required>
+                    </div>
+                    <div class="form-group">
+                        <label>芯數</label>
+                        <input type="text" name="core_count">
+                    </div>
+                     <div class="form-group">
+                        <label>線路目的</label>
+                        <input type="text" name="destination">
+                    </div>
+                     <div class="form-group">
+                        <label>線路來源</label>
+                        <input type="text" name="source">
+                    </div>
+                     <div class="form-group">
+                        <label>Port</label>
+                        <input type="text" name="port">
+                    </div>
+                    <div class="form-group">
+                        <label>用途</label>
+                        <input type="text" name="usage">
+                    </div>
+                    <div class="form-group">
+                        <label>備註</label>
+                        <input type="text" name="notes">
+                    </div>
+                    <button type="submit" class="btn-primary">新增</button>
+                </form>
             </section>
 
             <!-- IO Section -->
@@ -109,6 +153,18 @@
     </div>
 
     <!-- Modals -->
+    <!-- Path Modal -->
+    <div id="path-modal" class="modal hidden">
+        <div class="modal-content large-modal">
+            <span class="close-modal">&times;</span>
+            <h2 id="modal-path-title">光纖路徑圖</h2>
+            <div id="path-container" class="path-diagram">
+                <!-- Path visualization will be here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Site Details Modal -->
     <div id="site-modal" class="modal hidden">
         <div class="modal-content">
             <span class="close-modal">&times;</span>
@@ -118,10 +174,14 @@
                 <table id="modal-table">
                     <thead>
                         <tr>
+                            <th>站點</th>
+                            <th>線路名稱</th>
+                            <th>目的</th>
+                            <th>芯數</th>
+                            <th>來源</th>
                             <th>Port</th>
                             <th>用途</th>
                             <th>備註</th>
-                            <th>狀態</th>
                             <th>操作</th>
                         </tr>
                     </thead>
