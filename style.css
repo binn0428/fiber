@@ -590,6 +590,36 @@ tr:hover {
         white-space: nowrap;
         padding: 0.5rem;
     }
+
+    /* Mobile Search Stats Optimization */
+    #search-stats-container {
+        display: grid !important;
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 0.25rem !important;
+        margin-bottom: 0.5rem;
+    }
+
+    .stat-group {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        width: 100% !important;
+    }
+
+    .stat-group label {
+        font-size: 0.7rem !important;
+        margin-bottom: 1px !important;
+        margin-right: 0 !important;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .stat-select {
+        font-size: 0.75rem !important;
+        padding: 2px 4px !important;
+        height: 28px !important;
+        width: 100% !important;
+    }
 }
 
 /* Search Statistics Panel */
