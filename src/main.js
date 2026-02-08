@@ -122,6 +122,26 @@ let mapState = {
     scale: 1
 };
 
+// Load saved map state
+try {
+    const saved = localStorage.getItem('fiber_map_state');
+    if (saved) {
+        const parsed = JSON.parse(saved);
+        mapState.tx = parsed.tx || 0;
+        mapState.ty = parsed.ty || 0;
+        mapState.scale = parsed.scale || 1;
+    }
+} catch (e) { console.error("Failed to load map state", e); }
+
+// Node Positions Memory
+let nodePositions = {};
+try {
+    const savedNodes = localStorage.getItem('fiber_node_positions');
+    if (savedNodes) {
+        nodePositions = JSON.parse(savedNodes);
+    }
+} catch (e) { console.error("Failed to load node positions", e); }
+
 let currentPage = 1;
 const ITEMS_PER_PAGE = 20;
 
@@ -186,6 +206,13 @@ function initMapPanning() {
             document.removeEventListener('mouseup', onMouseUp);
             document.removeEventListener('touchmove', onMouseMove);
             document.removeEventListener('touchend', onMouseUp);
+            
+            // Save state
+            localStorage.setItem('fiber_map_state', JSON.stringify({
+                tx: mapState.tx,
+                ty: mapState.ty,
+                scale: mapState.scale
+            }));
         }
     };
 
@@ -212,6 +239,12 @@ function initMapPanning() {
         mapState.scale = newScale;
         
         updateTransform();
+        
+        localStorage.setItem('fiber_map_state', JSON.stringify({
+            tx: mapState.tx,
+            ty: mapState.ty,
+            scale: mapState.scale
+        }));
     }, { passive: false });
 
     // --- Zooming (Pinch) ---
@@ -248,6 +281,12 @@ function initMapPanning() {
     mapWrapper.addEventListener('touchend', (e) => {
         if (e.touches.length < 2) {
             initialPinchDistance = null;
+            
+            localStorage.setItem('fiber_map_state', JSON.stringify({
+                tx: mapState.tx,
+                ty: mapState.ty,
+                scale: mapState.scale
+            }));
         }
     });
 }
@@ -492,6 +531,14 @@ function renderMap() {
         });
     });
 
+    // Override with memory positions
+    Object.values(nodes).forEach(node => {
+        if (nodePositions[node.name]) {
+            node.xPct = nodePositions[node.name].x;
+            node.yPct = nodePositions[node.name].y;
+        }
+    });
+
     // Create Elements (All nodes)
     Object.values(nodes).forEach(node => {
         // Create Node Element
@@ -678,6 +725,10 @@ function makeDraggable(el, nodeData) {
         setTimeout(() => {
             el.setAttribute('data-dragging', 'false');
         }, 100);
+
+        // Save position to memory
+        nodePositions[nodeData.name] = { x: nodeData.xPct, y: nodeData.yPct };
+        localStorage.setItem('fiber_node_positions', JSON.stringify(nodePositions));
     };
     
     el.addEventListener('mousedown', onStart);
@@ -773,7 +824,6 @@ function openSiteDetails(siteName) {
                 
                 header.innerHTML = `
                     <strong>${key}</strong>
-                    <span style="font-size: 0.9em; opacity: 0.8">(${groupRows.length} 筆)</span>
                 `;
                 
                 // Content (Hidden by default)
