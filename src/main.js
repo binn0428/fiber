@@ -407,6 +407,8 @@ function calculateAndRenderStats(results) {
     container.appendChild(createDropdown('線路名稱', 'fiber_name'));
     container.appendChild(createDropdown('芯數', 'core_count'));
     container.appendChild(createDropdown('站點', 'station_name'));
+    container.appendChild(createDropdown('用途', 'usage'));
+    container.appendChild(createDropdown('使用單位', 'department'));
 }
 
 // Search Handler
