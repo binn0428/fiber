@@ -186,6 +186,8 @@ h2 {
     min-width: 800px;
     min-height: 800px;
     transform-origin: 0 0;
+}
+
 .site-node {
     position: absolute;
     width: auto;
@@ -209,28 +211,6 @@ h2 {
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     transition: box-shadow 0.2s, background-color 0.2s;
     color: var(--text-color);
-}
-
-/* Toast Notification */
-.toast-message {
-    position: fixed;
-    bottom: 30px;
-    left: 50%;
-    transform: translateX(-50%);
-    background-color: rgba(0, 0, 0, 0.8);
-    color: white;
-    padding: 10px 20px;
-    border-radius: 20px;
-    z-index: 9999;
-    font-size: 0.9rem;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.3s;
-    white-space: nowrap;
-}
-
-.toast-message.show {
-    opacity: 1;
 }
 
 .site-node:active {
