@@ -123,41 +123,19 @@ function initMapPanning() {
     let isPanning = false;
     let startX, startY;
     let initialTx = 0, initialTy = 0;
-    let currentScale = 1;
     
     // Helper to get current translate values
     const getTranslate = () => {
         const style = window.getComputedStyle(mapInner);
+        // Handle transform matrix
         if (style.transform === 'none') return { x: 0, y: 0 };
         const matrix = new WebKitCSSMatrix(style.transform);
         return { x: matrix.m41, y: matrix.m42 };
     };
 
-    // Update Scale for Mobile
-    const updateScale = () => {
-        const wrapperRect = mapWrapper.getBoundingClientRect();
-        // Map min-width is 800px. If wrapper is smaller, we scale down.
-        if (wrapperRect.width < 800) {
-            currentScale = wrapperRect.width / 800;
-        } else {
-            currentScale = 1;
-        }
-        
-        // Apply scale while preserving current translation
-        const t = getTranslate();
-        // Check if current scale in matrix matches our desired scale. 
-        // If we just resized, we might need to adjust.
-        // But simply reapplying transform with new scale is enough.
-        mapInner.style.transform = `translate(${t.x}px, ${t.y}px) scale(${currentScale})`;
-    };
-
-    // Listen for resize
-    window.addEventListener('resize', updateScale);
-    // Initial call
-    updateScale();
-
     const onMouseDown = (e) => {
         // Only trigger if clicking on background, not on a node or link title
+        // Note: SVG lines might capture clicks, so we check target.
         if (e.target.closest('.site-node')) return;
         
         isPanning = true;
@@ -190,8 +168,7 @@ function initMapPanning() {
         // Prevent scrolling on touch devices when panning
         if (e.cancelable) e.preventDefault();
         
-        // Apply translate AND scale
-        mapInner.style.transform = `translate(${initialTx + dx}px, ${initialTy + dy}px) scale(${currentScale})`;
+        mapInner.style.transform = `translate(${initialTx + dx}px, ${initialTy + dy}px)`;
     };
 
     const onMouseUp = () => {
@@ -552,52 +529,35 @@ function makeDraggable(el, nodeData) {
     let startX, startY;
     let initialLeft, initialTop; // Store initial % positions
     
-    const onStart = (e) => {
-        // Only left click for mouse
-        if (e.type === 'mousedown' && e.button !== 0) return;
-        
+    const onMouseDown = (e) => {
+        // Only left click
+        if (e.button !== 0) return;
         isDragging = true;
         el.setAttribute('data-dragging', 'false'); // Reset
         
         // Capture initial state
-        const clientX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
-        const clientY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
-        
-        startX = clientX;
-        startY = clientY;
+        startX = e.clientX;
+        startY = e.clientY;
         initialLeft = parseFloat(el.style.left);
         initialTop = parseFloat(el.style.top);
         
         el.style.zIndex = 100;
         el.style.cursor = 'grabbing';
         
-        if (e.type === 'mousedown') {
-            document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', onEnd);
-        } else {
-            document.addEventListener('touchmove', onMove, { passive: false });
-            document.addEventListener('touchend', onEnd);
-        }
-        
-        // Prevent text selection / scrolling
-        if (e.cancelable) e.preventDefault();
-        e.stopPropagation(); // Prevent map panning
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+        e.preventDefault(); // Prevent text selection
     };
     
-    const onMove = (e) => {
+    const onMouseMove = (e) => {
         if (!isDragging) return;
         el.setAttribute('data-dragging', 'true');
-        
-        const clientX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
-        const clientY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
         
         const containerRect = mapContainer.getBoundingClientRect();
         
         // Calculate Delta in Percentage relative to container size
-        // Note: If container is scaled, containerRect.width is the scaled width.
-        // Screen pixel movement / Scaled width gives the correct % of the element.
-        const deltaX = ((clientX - startX) / containerRect.width) * 100;
-        const deltaY = ((clientY - startY) / containerRect.height) * 100;
+        const deltaX = ((e.clientX - startX) / containerRect.width) * 100;
+        const deltaY = ((e.clientY - startY) / containerRect.height) * 100;
         
         // Apply to Initial Position (Absolute Delta method avoids accumulation errors/jitter)
         const newLeft = Math.max(0, Math.min(100, initialLeft + deltaX));
@@ -612,19 +572,14 @@ function makeDraggable(el, nodeData) {
         
         // Update connected lines
         updateConnectedLines(nodeData.name, newLeft, newTop);
-        
-        if (e.cancelable) e.preventDefault();
     };
     
-    const onEnd = (e) => {
+    const onMouseUp = () => {
         isDragging = false;
         el.style.zIndex = '';
         el.style.cursor = 'grab';
-        
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onEnd);
-        document.removeEventListener('touchmove', onMove);
-        document.removeEventListener('touchend', onEnd);
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
         
         // Small timeout to clear dragging flag so click event doesn't fire immediately
         setTimeout(() => {
@@ -632,8 +587,17 @@ function makeDraggable(el, nodeData) {
         }, 100);
     };
     
-    el.addEventListener('mousedown', onStart);
-    el.addEventListener('touchstart', onStart, { passive: false });
+    el.addEventListener('mousedown', onMouseDown);
+    // Touch support for mobile
+    el.addEventListener('touchstart', (e) => {
+        const touch = e.touches[0];
+        const mouseEvent = new MouseEvent('mousedown', {
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+            button: 0
+        });
+        el.dispatchEvent(mouseEvent);
+    }, { passive: false });
 }
 
 function updateConnectedLines(nodeName, xPct, yPct) {
