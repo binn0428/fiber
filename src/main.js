@@ -990,9 +990,9 @@ const excelUploadInput = document.getElementById('excel-upload');
 
 if (processUploadBtn && excelUploadInput) {
     processUploadBtn.addEventListener('click', async () => {
-        const file = excelUploadInput.files[0];
-        if (!file) {
-            alert('請先選擇 Excel 檔案');
+        const files = excelUploadInput.files;
+        if (!files || files.length === 0) {
+            alert('請先選擇至少一個 Excel 檔案');
             return;
         }
         
@@ -1000,11 +1000,29 @@ if (processUploadBtn && excelUploadInput) {
             processUploadBtn.disabled = true;
             processUploadBtn.textContent = '解析中...';
             
-            // parsedData is now [{name: 'Sheet1', rows: [...]}, ...]
-            const parsedSheets = await parseExcel(file);
-            console.log("Parsed sheets:", parsedSheets);
+            let allParsedSheets = [];
             
-            if (parsedSheets.length === 0) {
+            // Process all selected files
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                processUploadBtn.textContent = `解析中 (${i+1}/${files.length}): ${file.name}...`;
+                try {
+                    const sheets = await parseExcel(file);
+                    // Append file name to sheet name to avoid confusion if same sheet names exist
+                    sheets.forEach(sheet => {
+                        sheet.displayName = `[${file.name}] ${sheet.name}`;
+                        // We still keep original sheet name if needed, but display name is better for UI
+                    });
+                    allParsedSheets.push(...sheets);
+                } catch (err) {
+                    console.error(`Error parsing file ${file.name}:`, err);
+                    alert(`解析檔案 ${file.name} 失敗: ${err.message}`);
+                }
+            }
+            
+            console.log("All parsed sheets:", allParsedSheets);
+            
+            if (allParsedSheets.length === 0) {
                 alert("找不到有效的資料");
                 processUploadBtn.disabled = false;
                 processUploadBtn.textContent = '解析並上傳';
@@ -1026,11 +1044,11 @@ if (processUploadBtn && excelUploadInput) {
                 <span class="close-modal" onclick="this.closest('.modal').remove()">&times;</span>
                 <h3>選擇要上傳的站點 (分頁)</h3>
                 <div id="sheet-list" style="max-height: 300px; overflow-y: auto; margin: 1rem 0; border: 1px solid #4b5563; padding: 0.5rem;">
-                    ${parsedSheets.map((sheet, idx) => `
+                    ${allParsedSheets.map((sheet, idx) => `
                         <div style="padding: 0.5rem; border-bottom: 1px solid #4b5563;">
                             <label style="display: flex; align-items: center; cursor: pointer;">
                                 <input type="checkbox" checked value="${idx}" style="margin-right: 10px; width: auto;">
-                                ${sheet.name} (${sheet.rows.length} 筆)
+                                ${sheet.displayName || sheet.name} (${sheet.rows.length} 筆)
                             </label>
                         </div>
                     `).join('')}
@@ -1060,7 +1078,7 @@ if (processUploadBtn && excelUploadInput) {
                 // Flatten selected data
                 const flatRows = [];
                 selectedIndices.forEach(idx => {
-                    flatRows.push(...parsedSheets[idx].rows);
+                    flatRows.push(...allParsedSheets[idx].rows);
                 });
 
                 try {
