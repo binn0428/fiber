@@ -147,6 +147,19 @@ export async function syncData(rows, progressCallback) {
         const stationRows = rowsByStation[station];
         const tableName = getTableForStation(station);
         
+        // CLEANUP: If we are directing this station to a specific table (e.g. ms2),
+        // ensure we remove any legacy records for this station from the default 'udc' table
+        // to prevent duplicate/mixed data appearing in the UI.
+        if (tableName !== 'udc') {
+            try {
+                // Delete records from 'udc' where station_name matches this station
+                // This cleans up previous incorrect insertions
+                await sb.from('udc').delete().eq('station_name', station);
+            } catch (cleanupErr) {
+                console.warn(`Cleanup for ${station} in udc table failed:`, cleanupErr);
+            }
+        }
+        
         // Fetch existing data for this station/table to compare
         // We fetch ALL records for this table to ensure we match correctly
         // Optimization: In a real large DB, we might want to filter, but here datasets are small
