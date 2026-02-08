@@ -112,44 +112,46 @@ if (saveConfigBtn) {
     });
 }
 
-// Map Panning Logic
+// Map Panning & Zooming Logic
 function initMapPanning() {
     const mapInner = document.getElementById('fiber-map');
-    // We use .map-container as the wrapper/viewport
     const mapWrapper = document.querySelector('.map-container');
     
     if (!mapWrapper || !mapInner) return;
 
-    let isPanning = false;
-    let startX, startY;
-    let initialTx = 0, initialTy = 0;
-    
-    // Helper to get current translate values
-    const getTranslate = () => {
-        const style = window.getComputedStyle(mapInner);
-        // Handle transform matrix
-        if (style.transform === 'none') return { x: 0, y: 0 };
-        const matrix = new WebKitCSSMatrix(style.transform);
-        return { x: matrix.m41, y: matrix.m42 };
+    let state = {
+        panning: false,
+        startX: 0,
+        startY: 0,
+        tx: 0,
+        ty: 0,
+        scale: 1
     };
 
+    // Helper to apply transform
+    const updateTransform = () => {
+        mapInner.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
+    };
+
+    // Initialize state from current transform (if any)
+    const initStyle = window.getComputedStyle(mapInner);
+    if (initStyle.transform !== 'none') {
+        const matrix = new WebKitCSSMatrix(initStyle.transform);
+        state.tx = matrix.m41;
+        state.ty = matrix.m42;
+        state.scale = matrix.a; // Scale X (assuming uniform scaling)
+    }
+
+    // --- Panning ---
     const onMouseDown = (e) => {
-        // Only trigger if clicking on background, not on a node or link title
-        // Note: SVG lines might capture clicks, so we check target.
         if (e.target.closest('.site-node')) return;
         
-        isPanning = true;
-        // Support mouse and touch
-        startX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
-        startY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
-        
-        const t = getTranslate();
-        initialTx = t.x;
-        initialTy = t.y;
+        state.panning = true;
+        state.startX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
+        state.startY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
         
         mapWrapper.style.cursor = 'grabbing';
         
-        // Use document to capture drag outside container
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
         document.addEventListener('touchmove', onMouseMove, { passive: false });
@@ -157,23 +159,30 @@ function initMapPanning() {
     };
 
     const onMouseMove = (e) => {
-        if (!isPanning) return;
+        if (!state.panning) return;
         
+        // Check for pinch (2 fingers) -> Zoom logic handles this, ignore pan
+        if (e.touches && e.touches.length === 2) return;
+
         const clientX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
         const clientY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
         
-        const dx = clientX - startX;
-        const dy = clientY - startY;
+        const dx = clientX - state.startX;
+        const dy = clientY - state.startY;
         
-        // Prevent scrolling on touch devices when panning
+        state.tx += dx;
+        state.ty += dy;
+        state.startX = clientX;
+        state.startY = clientY;
+        
+        updateTransform();
+        
         if (e.cancelable) e.preventDefault();
-        
-        mapInner.style.transform = `translate(${initialTx + dx}px, ${initialTy + dy}px)`;
     };
 
     const onMouseUp = () => {
-        if (isPanning) {
-            isPanning = false;
+        if (state.panning) {
+            state.panning = false;
             mapWrapper.style.cursor = '';
             document.removeEventListener('mousemove', onMouseMove);
             document.removeEventListener('mouseup', onMouseUp);
@@ -184,6 +193,91 @@ function initMapPanning() {
 
     mapWrapper.addEventListener('mousedown', onMouseDown);
     mapWrapper.addEventListener('touchstart', onMouseDown, { passive: false });
+
+    // --- Zooming (Wheel) ---
+    mapWrapper.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        
+        const zoomIntensity = 0.1;
+        const direction = e.deltaY > 0 ? -1 : 1;
+        const factor = 1 + (direction * zoomIntensity);
+        
+        const rect = mapWrapper.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        
+        // Zoom towards mouse pointer
+        // NewScale = OldScale * factor
+        // NewTx = MouseX - (MouseX - OldTx) * factor
+        // NewTy = MouseY - (MouseY - OldTy) * factor
+        
+        const newScale = Math.min(Math.max(0.1, state.scale * factor), 5);
+        const actualFactor = newScale / state.scale;
+        
+        state.tx = mouseX - (mouseX - state.tx) * actualFactor;
+        state.ty = mouseY - (mouseY - state.ty) * actualFactor;
+        state.scale = newScale;
+        
+        updateTransform();
+    }, { passive: false });
+
+    // --- Zooming (Pinch) ---
+    let initialPinchDistance = null;
+    let initialScale = 1;
+
+    const getDistance = (touches) => {
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        return Math.sqrt(dx * dx + dy * dy);
+    };
+
+    mapWrapper.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 2) {
+            initialPinchDistance = getDistance(e.touches);
+            initialScale = state.scale;
+            state.panning = false; // Stop panning
+        }
+    }, { passive: false });
+
+    mapWrapper.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 2 && initialPinchDistance) {
+            e.preventDefault();
+            const currentDistance = getDistance(e.touches);
+            const factor = currentDistance / initialPinchDistance;
+            
+            // Zoom Center (Midpoint of two fingers)
+            const rect = mapWrapper.getBoundingClientRect();
+            const p1 = { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
+            const p2 = { x: e.touches[1].clientX - rect.left, y: e.touches[1].clientY - rect.top };
+            const midX = (p1.x + p2.x) / 2;
+            const midY = (p1.y + p2.y) / 2;
+            
+            const newScale = Math.min(Math.max(0.1, initialScale * factor), 5);
+            const actualFactor = newScale / state.scale; // Calculate relative change step-by-step or just absolute
+            
+            // Better to use absolute calc from initial pinch
+            // But state.tx/ty drift if we don't track carefully.
+            // Simplified: Zoom center of screen or previous center?
+            // Let's stick to the relative factor logic used in wheel for consistency if we update state incrementally
+            // But here we have absolute start reference.
+            
+            // Let's just update incrementally based on previous frame? No, jerky.
+            // Let's use the standard "zoom towards center" logic with the new calculated scale.
+            
+            // To do this right with absolute initialScale:
+            // We need the center point at the START of the pinch (in world coords) to stay fixed?
+            // Let's keep it simple: Just update scale. Center zoom might be tricky without tracking pinch center start.
+            
+            state.scale = newScale;
+            updateTransform();
+        }
+    }, { passive: false });
+    
+    mapWrapper.addEventListener('touchend', (e) => {
+        if (e.touches.length < 2) {
+            initialPinchDistance = null;
+        }
+    });
 }
 
 // Navigation
@@ -529,35 +623,51 @@ function makeDraggable(el, nodeData) {
     let startX, startY;
     let initialLeft, initialTop; // Store initial % positions
     
-    const onMouseDown = (e) => {
-        // Only left click
-        if (e.button !== 0) return;
+    
+    // Unified Start Handler
+    const onStart = (e) => {
+        // Only left click or touch
+        if (e.type === 'mousedown' && e.button !== 0) return;
+        
         isDragging = true;
         el.setAttribute('data-dragging', 'false'); // Reset
         
+        const clientX = e.type.startsWith('touch') ? e.touches[0].clientX : e.clientX;
+        const clientY = e.type.startsWith('touch') ? e.touches[0].clientY : e.clientY;
+
         // Capture initial state
-        startX = e.clientX;
-        startY = e.clientY;
+        startX = clientX;
+        startY = clientY;
         initialLeft = parseFloat(el.style.left);
         initialTop = parseFloat(el.style.top);
         
         el.style.zIndex = 100;
         el.style.cursor = 'grabbing';
         
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
-        e.preventDefault(); // Prevent text selection
+        if (e.type === 'mousedown') {
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onEnd);
+        } else {
+            document.addEventListener('touchmove', onMove, { passive: false });
+            document.addEventListener('touchend', onEnd);
+        }
+        
+        if (e.cancelable) e.preventDefault(); // Prevent text selection / scroll
     };
     
-    const onMouseMove = (e) => {
+    // Unified Move Handler
+    const onMove = (e) => {
         if (!isDragging) return;
         el.setAttribute('data-dragging', 'true');
+        
+        const clientX = e.type.startsWith('touch') ? e.touches[0].clientX : e.clientX;
+        const clientY = e.type.startsWith('touch') ? e.touches[0].clientY : e.clientY;
         
         const containerRect = mapContainer.getBoundingClientRect();
         
         // Calculate Delta in Percentage relative to container size
-        const deltaX = ((e.clientX - startX) / containerRect.width) * 100;
-        const deltaY = ((e.clientY - startY) / containerRect.height) * 100;
+        const deltaX = ((clientX - startX) / containerRect.width) * 100;
+        const deltaY = ((clientY - startY) / containerRect.height) * 100;
         
         // Apply to Initial Position (Absolute Delta method avoids accumulation errors/jitter)
         const newLeft = Math.max(0, Math.min(100, initialLeft + deltaX));
@@ -572,14 +682,20 @@ function makeDraggable(el, nodeData) {
         
         // Update connected lines
         updateConnectedLines(nodeData.name, newLeft, newTop);
+        
+        if (e.cancelable) e.preventDefault();
     };
     
-    const onMouseUp = () => {
+    // Unified End Handler
+    const onEnd = () => {
         isDragging = false;
         el.style.zIndex = '';
         el.style.cursor = 'grab';
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
+        
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onEnd);
+        document.removeEventListener('touchmove', onMove);
+        document.removeEventListener('touchend', onEnd);
         
         // Small timeout to clear dragging flag so click event doesn't fire immediately
         setTimeout(() => {
@@ -587,17 +703,8 @@ function makeDraggable(el, nodeData) {
         }, 100);
     };
     
-    el.addEventListener('mousedown', onMouseDown);
-    // Touch support for mobile
-    el.addEventListener('touchstart', (e) => {
-        const touch = e.touches[0];
-        const mouseEvent = new MouseEvent('mousedown', {
-            clientX: touch.clientX,
-            clientY: touch.clientY,
-            button: 0
-        });
-        el.dispatchEvent(mouseEvent);
-    }, { passive: false });
+    el.addEventListener('mousedown', onStart);
+    el.addEventListener('touchstart', onStart, { passive: false });
 }
 
 function updateConnectedLines(nodeName, xPct, yPct) {
@@ -696,6 +803,7 @@ function openSiteDetails(siteName) {
                 const content = document.createElement('div');
                 content.className = 'accordion-content hidden';
                 content.style.padding = '0.5rem';
+                content.style.paddingLeft = '1.5rem'; // Indentation for detail view
                 
                 // Mini Table inside
                 const table = document.createElement('table');
