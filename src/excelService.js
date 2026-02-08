@@ -98,14 +98,19 @@ export async function parseExcel(file) {
                         const port = map.port !== -1 ? row[map.port] : row[1];
                         let raw_core_count = map.core_count !== -1 ? row[map.core_count] : '';
 
+                        // 1. Fill down Line Name (Handle merged cells/empty fields for same cable)
+                        if (!line_name && lastFiberName) {
+                            // Check if row has meaningful content to avoid filling down on empty spacer rows
+                            // We check if any cell (other than the line name column itself) has data
+                            const hasData = row.some((cell, idx) => cell && idx !== map.line);
+                            if (hasData) {
+                                line_name = lastFiberName;
+                            }
+                        }
+
                         // Skip completely empty rows
                         if (!line_name && !port) {
                             continue; 
-                        }
-
-                        // 1. Fill down Line Name (Handle merged cells/empty fields for same cable)
-                        if (!line_name && port && lastFiberName) {
-                            line_name = lastFiberName;
                         }
                         
                         if (line_name) {
