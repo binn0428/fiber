@@ -803,7 +803,11 @@ function openSiteDetails(siteName) {
             accordionContainer.innerHTML = '<div style="text-align:center; padding: 2rem;">無資料</div>';
         } else {
             sortedKeys.forEach(key => {
-                const groupRows = groups[key];
+                const groupRows = groups[key].sort((a, b) => {
+                    const valA = String(a.core_count || '');
+                    const valB = String(b.core_count || '');
+                    return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+                });
                 
                 // Create Accordion Item
                 const item = document.createElement('div');
