@@ -1011,7 +1011,19 @@ if (processUploadBtn && excelUploadInput) {
                     // Append file name to sheet name to avoid confusion if same sheet names exist
                     sheets.forEach(sheet => {
                         sheet.displayName = `[${file.name}] ${sheet.name}`;
-                        // We still keep original sheet name if needed, but display name is better for UI
+                        
+                        // Update station_name in rows to include filename
+                        // This ensures that if the sheet name is generic (e.g. "Sheet1") but filename is "MS2.xlsx",
+                        // we can still correctly route it to the MS2 table.
+                        const cleanFileName = file.name.replace(/\.[^/.]+$/, "");
+                        // Construct a composite name. 
+                        // If sheet name is already specific, this just adds context.
+                        // If sheet name is generic, filename takes over.
+                        const newStationName = `${cleanFileName} ${sheet.name}`;
+                        
+                        sheet.rows.forEach(row => {
+                            row.station_name = newStationName;
+                        });
                     });
                     allParsedSheets.push(...sheets);
                 } catch (err) {
