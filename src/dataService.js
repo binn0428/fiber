@@ -166,6 +166,15 @@ export async function syncData(rows, progressCallback) {
                 if ((row.destination||'') !== (existing.destination||'')) updates.destination = row.destination;
                 if ((row.core_count||'') !== (existing.core_count||'')) updates.core_count = row.core_count === '' ? null : row.core_count;
                 if ((row.source||'') !== (existing.source||'')) updates.source = row.source;
+                
+                // New fields sync
+                if ((row.connection_line||'') !== (existing.connection_line||'')) updates.connection_line = row.connection_line;
+                if ((row.net_start||'') !== (existing.net_start||'')) updates.net_start = row.net_start;
+                if ((row.net_end||'') !== (existing.net_end||'')) updates.net_end = row.net_end;
+                if ((row.department||'') !== (existing.department||'')) updates.department = row.department;
+                if ((row.contact||'') !== (existing.contact||'')) updates.contact = row.contact;
+                if ((row.phone||'') !== (existing.phone||'')) updates.phone = row.phone;
+
                 // Sequence is likely not in DB schema, skipping update for now to prevent errors
                 // if ((row.sequence||0) !== (existing.sequence||0)) updates.sequence = row.sequence; 
                 
@@ -216,6 +225,12 @@ export async function syncData(rows, progressCallback) {
                     const safePayload = { ...payload };
                     delete safePayload.destination;
                     delete safePayload.source;
+                    delete safePayload.connection_line;
+                    delete safePayload.net_start;
+                    delete safePayload.net_end;
+                    delete safePayload.department;
+                    delete safePayload.contact;
+                    delete safePayload.phone;
                     
                     const { data: retryRec, error: retryError } = await sb.from(tableName).insert([safePayload]).select();
                     
@@ -280,10 +295,13 @@ export function getStats() {
         const group = siteFibers[sName][fName];
         group.rowCount++;
 
-        // Determine Usage: Usage field OR Destination field has content
+        // Determine Usage: Usage field OR Destination/NetEnd OR Department has content
         const usage = d.usage ? String(d.usage).trim() : '';
         const destination = d.destination ? String(d.destination).trim() : '';
-        const isUsed = usage.length > 0 || destination.length > 0;
+        const netEnd = d.net_end ? String(d.net_end).trim() : '';
+        const department = d.department ? String(d.department).trim() : '';
+        
+        const isUsed = usage.length > 0 || destination.length > 0 || netEnd.length > 0 || department.length > 0;
         
         if (isUsed) {
             group.usedCount++;
@@ -336,8 +354,14 @@ export function searchLine(query) {
         (d.fiber_name && String(d.fiber_name).toLowerCase().includes(lowerQ)) ||
         (d.usage && String(d.usage).toLowerCase().includes(lowerQ)) ||
         (d.notes && String(d.notes).toLowerCase().includes(lowerQ)) ||
-        (d.station_name && String(d.station_name).toLowerCase().includes(lowerQ)) || // Source
-        (d.destination && String(d.destination).toLowerCase().includes(lowerQ))      // Destination
+        (d.station_name && String(d.station_name).toLowerCase().includes(lowerQ)) ||
+        (d.destination && String(d.destination).toLowerCase().includes(lowerQ)) ||
+        (d.net_end && String(d.net_end).toLowerCase().includes(lowerQ)) ||
+        (d.net_start && String(d.net_start).toLowerCase().includes(lowerQ)) ||
+        (d.department && String(d.department).toLowerCase().includes(lowerQ)) ||
+        (d.connection_line && String(d.connection_line).toLowerCase().includes(lowerQ)) ||
+        (d.contact && String(d.contact).toLowerCase().includes(lowerQ)) ||
+        (d.phone && String(d.phone).toLowerCase().includes(lowerQ))
     );
 }
 

@@ -741,7 +741,7 @@ function renderTableRows(tbody, data) {
     if (!tbody) return;
     tbody.innerHTML = '';
     if (data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center">無資料</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="14" style="text-align:center">無資料</td></tr>';
         return;
     }
 
@@ -759,11 +759,16 @@ function renderTableRows(tbody, data) {
         tr.innerHTML = `
             <td>${row.station_name || ''}</td>
             <td>${fiberCell}</td>
-            ${createEditableCell('destination', row.destination, row.id)}
             ${createEditableCell('core_count', row.core_count, row.id)}
             ${createEditableCell('source', row.source, row.id)}
+            ${createEditableCell('connection_line', row.connection_line, row.id)}
             ${createEditableCell('port', row.port, row.id)}
+            ${createEditableCell('net_start', row.net_start, row.id)}
+            ${createEditableCell('net_end', row.net_end, row.id)}
             ${createEditableCell('usage', row.usage, row.id)}
+            ${createEditableCell('department', row.department, row.id)}
+            ${createEditableCell('contact', row.contact, row.id)}
+            ${createEditableCell('phone', row.phone, row.id)}
             ${createEditableCell('notes', row.notes, row.id)}
             <td>
                 <!-- Removed Edit button as we have inline editing now, or keep as fallback -->

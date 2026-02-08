@@ -24,16 +24,36 @@ export async function parseExcel(file) {
 
                     // Simple header detection (assuming row 0 is header)
                     const headers = jsonData[0].map(h => h ? h.toString().trim() : '');
-                    const findIndexSafe = (keyword) => headers.findIndex(h => h && h.toLowerCase().includes(keyword));
+                    
+                    const findHeader = (keywords) => {
+                        // 1. Try exact match
+                        for (const k of keywords) {
+                            const idx = headers.findIndex(h => h === k);
+                            if (idx !== -1) return idx;
+                        }
+                        // 2. Try includes (fallback)
+                        for (const k of keywords) {
+                            const idx = headers.findIndex(h => h && h.toLowerCase().includes(k.toLowerCase()));
+                            if (idx !== -1) return idx;
+                        }
+                        return -1;
+                    };
                     
                     const map = {
-                        line: findIndexSafe('線路') !== -1 ? findIndexSafe('線路') : findIndexSafe('line'),
-                        port: findIndexSafe('port'),
-                        usage: findIndexSafe('用途') !== -1 ? findIndexSafe('用途') : findIndexSafe('usage'),
-                        remarks: findIndexSafe('備註') !== -1 ? findIndexSafe('備註') : findIndexSafe('remark'),
-                        core_count: findIndexSafe('芯數') !== -1 ? findIndexSafe('芯數') : findIndexSafe('core'),
-                        destination: findIndexSafe('目的') !== -1 ? findIndexSafe('目的') : findIndexSafe('dest'),
-                        source: findIndexSafe('來源') !== -1 ? findIndexSafe('來源') : findIndexSafe('source')
+                        line: findHeader(['線路名稱', 'Line Name', '線路']),
+                        port: findHeader(['Port']),
+                        usage: findHeader(['用途', 'Usage']),
+                        remarks: findHeader(['備註', 'Remarks']),
+                        core_count: findHeader(['芯數', 'Core Count', 'Core']),
+                        
+                        // New fields
+                        source: findHeader(['線路來源', 'Source']),
+                        connection_line: findHeader(['來源線路', 'Connection Line', 'Source Circuit']),
+                        net_start: findHeader(['網路起點', 'Network Start']),
+                        net_end: findHeader(['網路終點', 'Network End', '目的', 'Destination']),
+                        department: findHeader(['使用單位', 'Department']),
+                        contact: findHeader(['聯絡人', 'Contact']),
+                        phone: findHeader(['連絡電話', 'Phone'])
                     };
 
                     const rows = [];
@@ -50,11 +70,6 @@ export async function parseExcel(file) {
 
                         // Skip completely empty rows
                         if (!line_name && !port) {
-                            // Reset context on empty row separation? 
-                            // Usually safer not to reset unless we are sure, but standard Excel behavior 
-                            // for data tables often implies continuity only if no gap.
-                            // However, let's keep it simple: if row is empty, just skip.
-                            // But if we encounter a new valid line_name later, it updates lastFiberName.
                             continue; 
                         }
 
@@ -67,23 +82,10 @@ export async function parseExcel(file) {
                             lastFiberName = line_name;
                         }
 
-                        // 2. Parse Core Count from Line Name (User Rule: "48_xx" -> 48)
-                        let parsedCoreCount = '';
-                        if (line_name) {
-                            const strName = String(line_name);
-                            const match = strName.match(/^(\d+)_/);
-                            if (match) {
-                                parsedCoreCount = match[1];
-                            }
-                        }
-
-                        // 3. Determine Final Core Count
-                        // Priority: Explicit Excel Value > Parsed from Name > Inherited from Group
+                        // 2. Determine Final Core Count
+                        // Priority: Explicit Excel Value > Inherited from Group
+                        // (Removed parsing from Line Name as per user request: "Line Name is not Line Number")
                         let finalCoreCount = raw_core_count;
-                        
-                        if (!finalCoreCount && parsedCoreCount) {
-                            finalCoreCount = parsedCoreCount;
-                        }
                         
                         // Inherit from previous row if in same group (same Line Name)
                         if (!finalCoreCount && line_name === lastFiberName && lastCoreCount) {
@@ -93,6 +95,12 @@ export async function parseExcel(file) {
                         if (finalCoreCount) {
                             lastCoreCount = finalCoreCount;
                         }
+                        
+                        // Map net_end to destination as well for backward compatibility/topology
+                        const valNetEnd = map.net_end !== -1 ? row[map.net_end] || '' : '';
+                        // If we have a separate destination field (not likely if mapped to net_end), use it.
+                        // But here we mapped '目的' to net_end.
+                        const valDestination = valNetEnd;
 
                         rows.push({
                             station_name: sheetName,
@@ -101,8 +109,14 @@ export async function parseExcel(file) {
                             usage: map.usage !== -1 ? row[map.usage] || '' : row[2] || '',
                             notes: map.remarks !== -1 ? row[map.remarks] || '' : row[3] || '',
                             core_count: finalCoreCount || '',
-                            destination: map.destination !== -1 ? row[map.destination] || '' : '',
+                            destination: valDestination,
                             source: map.source !== -1 ? row[map.source] || '' : '',
+                            connection_line: map.connection_line !== -1 ? row[map.connection_line] || '' : '',
+                            net_start: map.net_start !== -1 ? row[map.net_start] || '' : '',
+                            net_end: valNetEnd,
+                            department: map.department !== -1 ? row[map.department] || '' : '',
+                            contact: map.contact !== -1 ? row[map.contact] || '' : '',
+                            phone: map.phone !== -1 ? row[map.phone] || '' : '',
                             sequence: i // Preserve Excel row order
                         });
                     }
@@ -133,8 +147,16 @@ export function exportToExcel(data) {
         if (!sites[site]) sites[site] = [];
         sites[site].push({
             "線路名稱": item.fiber_name,
+            "芯數": item.core_count,
+            "線路來源": item.source,
+            "來源線路": item.connection_line,
             "Port": item.port,
+            "網路起點": item.net_start,
+            "網路終點": item.net_end,
             "用途": item.usage,
+            "使用單位": item.department,
+            "聯絡人": item.contact,
+            "連絡電話": item.phone,
             "備註": item.notes
         });
     });
