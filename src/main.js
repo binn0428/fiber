@@ -112,6 +112,19 @@ if (saveConfigBtn) {
     });
 }
 
+// Global State
+let mapState = {
+    panning: false,
+    startX: 0,
+    startY: 0,
+    tx: 0,
+    ty: 0,
+    scale: 1
+};
+
+let currentPage = 1;
+const ITEMS_PER_PAGE = 20;
+
 // Map Panning & Zooming Logic
 function initMapPanning() {
     const mapInner = document.getElementById('fiber-map');
@@ -119,36 +132,21 @@ function initMapPanning() {
     
     if (!mapWrapper || !mapInner) return;
 
-    let state = {
-        panning: false,
-        startX: 0,
-        startY: 0,
-        tx: 0,
-        ty: 0,
-        scale: 1
-    };
-
     // Helper to apply transform
     const updateTransform = () => {
-        mapInner.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
+        mapInner.style.transform = `translate(${mapState.tx}px, ${mapState.ty}px) scale(${mapState.scale})`;
     };
-
-    // Initialize state from current transform (if any)
-    const initStyle = window.getComputedStyle(mapInner);
-    if (initStyle.transform !== 'none') {
-        const matrix = new WebKitCSSMatrix(initStyle.transform);
-        state.tx = matrix.m41;
-        state.ty = matrix.m42;
-        state.scale = matrix.a; // Scale X (assuming uniform scaling)
-    }
+    
+    // Apply initial state
+    updateTransform();
 
     // --- Panning ---
     const onMouseDown = (e) => {
         if (e.target.closest('.site-node')) return;
         
-        state.panning = true;
-        state.startX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
-        state.startY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
+        mapState.panning = true;
+        mapState.startX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
+        mapState.startY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
         
         mapWrapper.style.cursor = 'grabbing';
         
@@ -159,7 +157,7 @@ function initMapPanning() {
     };
 
     const onMouseMove = (e) => {
-        if (!state.panning) return;
+        if (!mapState.panning) return;
         
         // Check for pinch (2 fingers) -> Zoom logic handles this, ignore pan
         if (e.touches && e.touches.length === 2) return;
@@ -167,13 +165,13 @@ function initMapPanning() {
         const clientX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
         const clientY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
         
-        const dx = clientX - state.startX;
-        const dy = clientY - state.startY;
+        const dx = clientX - mapState.startX;
+        const dy = clientY - mapState.startY;
         
-        state.tx += dx;
-        state.ty += dy;
-        state.startX = clientX;
-        state.startY = clientY;
+        mapState.tx += dx;
+        mapState.ty += dy;
+        mapState.startX = clientX;
+        mapState.startY = clientY;
         
         updateTransform();
         
@@ -181,8 +179,8 @@ function initMapPanning() {
     };
 
     const onMouseUp = () => {
-        if (state.panning) {
-            state.panning = false;
+        if (mapState.panning) {
+            mapState.panning = false;
             mapWrapper.style.cursor = '';
             document.removeEventListener('mousemove', onMouseMove);
             document.removeEventListener('mouseup', onMouseUp);
@@ -196,7 +194,7 @@ function initMapPanning() {
 
     // --- Zooming (Wheel) ---
     mapWrapper.addEventListener('wheel', (e) => {
-        e.preventDefault();
+        e.preventDefault(); // Stop page scroll
         
         const zoomIntensity = 0.1;
         const direction = e.deltaY > 0 ? -1 : 1;
@@ -206,17 +204,12 @@ function initMapPanning() {
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
         
-        // Zoom towards mouse pointer
-        // NewScale = OldScale * factor
-        // NewTx = MouseX - (MouseX - OldTx) * factor
-        // NewTy = MouseY - (MouseY - OldTy) * factor
+        const newScale = Math.min(Math.max(0.1, mapState.scale * factor), 5);
+        const actualFactor = newScale / mapState.scale;
         
-        const newScale = Math.min(Math.max(0.1, state.scale * factor), 5);
-        const actualFactor = newScale / state.scale;
-        
-        state.tx = mouseX - (mouseX - state.tx) * actualFactor;
-        state.ty = mouseY - (mouseY - state.ty) * actualFactor;
-        state.scale = newScale;
+        mapState.tx = mouseX - (mouseX - mapState.tx) * actualFactor;
+        mapState.ty = mouseY - (mouseY - mapState.ty) * actualFactor;
+        mapState.scale = newScale;
         
         updateTransform();
     }, { passive: false });
@@ -234,8 +227,8 @@ function initMapPanning() {
     mapWrapper.addEventListener('touchstart', (e) => {
         if (e.touches.length === 2) {
             initialPinchDistance = getDistance(e.touches);
-            initialScale = state.scale;
-            state.panning = false; // Stop panning
+            initialScale = mapState.scale;
+            mapState.panning = false; // Stop panning
         }
     }, { passive: false });
 
@@ -245,30 +238,9 @@ function initMapPanning() {
             const currentDistance = getDistance(e.touches);
             const factor = currentDistance / initialPinchDistance;
             
-            // Zoom Center (Midpoint of two fingers)
-            const rect = mapWrapper.getBoundingClientRect();
-            const p1 = { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
-            const p2 = { x: e.touches[1].clientX - rect.left, y: e.touches[1].clientY - rect.top };
-            const midX = (p1.x + p2.x) / 2;
-            const midY = (p1.y + p2.y) / 2;
-            
             const newScale = Math.min(Math.max(0.1, initialScale * factor), 5);
-            const actualFactor = newScale / state.scale; // Calculate relative change step-by-step or just absolute
             
-            // Better to use absolute calc from initial pinch
-            // But state.tx/ty drift if we don't track carefully.
-            // Simplified: Zoom center of screen or previous center?
-            // Let's stick to the relative factor logic used in wheel for consistency if we update state incrementally
-            // But here we have absolute start reference.
-            
-            // Let's just update incrementally based on previous frame? No, jerky.
-            // Let's use the standard "zoom towards center" logic with the new calculated scale.
-            
-            // To do this right with absolute initialScale:
-            // We need the center point at the START of the pinch (in world coords) to stay fixed?
-            // Let's keep it simple: Just update scale. Center zoom might be tricky without tracking pinch center start.
-            
-            state.scale = newScale;
+            mapState.scale = newScale;
             updateTransform();
         }
     }, { passive: false });
@@ -615,6 +587,11 @@ function renderMap() {
 
         svgContainer.appendChild(line);
     }
+
+    // Restore Transform from Global State (Memory)
+    if (mapContainer && mapState) {
+        mapContainer.style.transform = `translate(${mapState.tx}px, ${mapState.ty}px) scale(${mapState.scale})`;
+    }
 }
 
 // Draggable Logic
@@ -803,7 +780,16 @@ function openSiteDetails(siteName) {
                 const content = document.createElement('div');
                 content.className = 'accordion-content hidden';
                 content.style.padding = '0.5rem';
-                content.style.paddingLeft = '1.5rem'; // Indentation for detail view
+                
+                // Indentation Container
+                const tableWrapper = document.createElement('div');
+                tableWrapper.style.borderLeft = '5px solid var(--primary-color)'; // Thicker border
+                tableWrapper.style.paddingLeft = '2rem'; // More indentation
+                tableWrapper.style.marginLeft = '1rem';
+                tableWrapper.style.background = 'rgba(255,255,255,0.03)';
+                tableWrapper.style.borderRadius = '0 6px 6px 0';
+                tableWrapper.style.marginTop = '0.5rem';
+                tableWrapper.style.marginBottom = '0.5rem';
                 
                 // Mini Table inside
                 const table = document.createElement('table');
@@ -865,7 +851,8 @@ function openSiteDetails(siteName) {
                 // Re-attach listeners for inline editing
                 attachInlineEditing(tbody);
                 
-                content.appendChild(table);
+                tableWrapper.appendChild(table);
+                content.appendChild(tableWrapper);
                 item.appendChild(header);
                 item.appendChild(content);
                 accordionContainer.appendChild(item);
@@ -931,7 +918,62 @@ function attachInlineEditing(container) {
 // Render Table
 function renderDataTable() {
     const data = getData();
-    if (dataTableBody) renderTableRows(dataTableBody, data);
+    const totalPages = Math.ceil(data.length / ITEMS_PER_PAGE);
+    
+    // Ensure currentPage is valid
+    if (currentPage > totalPages) currentPage = totalPages || 1;
+    if (currentPage < 1) currentPage = 1;
+    
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    const end = start + ITEMS_PER_PAGE;
+    const pageData = data.slice(start, end);
+    
+    if (dataTableBody) renderTableRows(dataTableBody, pageData);
+    
+    renderPaginationControls(totalPages);
+}
+
+function renderPaginationControls(totalPages) {
+    const container = document.getElementById('pagination-container') || createPaginationContainer();
+    container.innerHTML = '';
+    
+    if (totalPages <= 1) return;
+    
+    const prevBtn = document.createElement('button');
+    prevBtn.className = 'pagination-btn';
+    prevBtn.textContent = '上一頁';
+    prevBtn.disabled = currentPage === 1;
+    prevBtn.onclick = () => changePage(-1);
+    
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'pagination-btn';
+    nextBtn.textContent = '下一頁';
+    nextBtn.disabled = currentPage === totalPages;
+    nextBtn.onclick = () => changePage(1);
+    
+    const info = document.createElement('span');
+    info.className = 'pagination-info';
+    info.textContent = `第 ${currentPage} / ${totalPages} 頁 (共 ${getData().length} 筆)`;
+    
+    container.appendChild(prevBtn);
+    container.appendChild(info);
+    container.appendChild(nextBtn);
+}
+
+function createPaginationContainer() {
+    const tableContainer = document.querySelector('.table-container');
+    const div = document.createElement('div');
+    div.id = 'pagination-container';
+    div.className = 'pagination-controls';
+    if (tableContainer) {
+        tableContainer.parentNode.insertBefore(div, tableContainer.nextSibling);
+    }
+    return div;
+}
+
+function changePage(delta) {
+    currentPage += delta;
+    renderDataTable();
 }
 
 function renderTableRows(tbody, data) {
@@ -1018,10 +1060,8 @@ function openPathDiagram(fiberName) {
                 <small>Port: ${rec.port || '-'}</small><br>
                 <small>To: ${rec.destination || '-'}</small>
             `;
-            node.style.border = '2px solid #3498db';
-            node.style.padding = '10px';
-            node.style.borderRadius = '8px';
-            node.style.background = '#f8f9fa';
+            // Removed inline styles that conflict with dark mode
+            // Styling handled by CSS .path-node
 
             pathDiv.appendChild(node);
 
@@ -1071,6 +1111,7 @@ function renderDashboard() {
         return;
     }
 
+    const fragment = document.createDocumentFragment();
     stats.forEach(site => {
         const card = document.createElement('div');
         card.className = 'stat-card';
@@ -1107,14 +1148,11 @@ function renderDashboard() {
                     try {
                         await deleteStation(site.name);
                         alert(`已刪除站點 ${site.name}`);
-                        // Dashboard re-renders automatically via notify() -> renderDashboard() if listener set up, 
-                        // but main.js manually calls renderDashboard on load. 
-                        // dataService.js notify() calls listeners. We haven't subscribed main.js's renderDashboard to dataService yet.
-                        // So we should manually refresh or set up subscription.
-                        // For now, let's just re-render here or rely on the reload that usually happens.
-                        // But wait, dataService updates local state.
+                        // Refresh all views
+                        const updatedData = await loadData();
                         renderDashboard();
                         renderMap();
+                        renderDataTable();
                     } catch (e) {
                         alert('刪除失敗: ' + e.message);
                     }
@@ -1142,8 +1180,9 @@ function renderDashboard() {
             openSiteDetails(site.name);
         });
 
-        container.appendChild(card);
+        fragment.appendChild(card);
     });
+    container.appendChild(fragment);
 }
 
 function populateSiteSelector() {
