@@ -89,7 +89,59 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
-// Config Handler
+// Login Logic
+    const mgmtBtn = document.getElementById('mgmt-btn');
+    const loginModal = document.getElementById('login-modal');
+    const loginForm = document.getElementById('login-form');
+    const loginPassword = document.getElementById('login-password');
+
+    if (mgmtBtn && loginModal) {
+        mgmtBtn.addEventListener('click', () => {
+            if (isAdminLoggedIn) {
+                alert('您已登入管理員模式');
+            } else {
+                openModal(loginModal);
+                // Auto focus
+                setTimeout(() => {
+                    if (loginPassword) loginPassword.focus();
+                }, 100);
+            }
+        });
+    }
+
+    if (loginForm && loginPassword) {
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const pwd = loginPassword.value.trim();
+            if (pwd === '179747') {
+                isAdminLoggedIn = true;
+                alert('登入成功！現在可以使用編輯和匯入功能。');
+                closeModal(loginModal);
+                loginPassword.value = '';
+                
+                // Refresh views to enable editing
+                renderDataTable();
+                if (siteModal && !siteModal.classList.contains('hidden')) {
+                     // If site modal is open, we might need to refresh it to show editable cells
+                     // Since we don't track which site is open easily without parsing title, 
+                     // users can just close and reopen or we let them know.
+                     // But actually, openSiteDetails takes siteName. 
+                     // We can't easily re-call it without knowing the site.
+                     // Let's just rely on user re-opening or next interaction.
+                     // Or better: update the current view if possible.
+                     // Actually, renderDataTable updates the background table.
+                     // The modal content is static until regenerated.
+                     alert('請關閉並重新開啟站點詳情以啟用編輯功能。');
+                }
+            } else {
+                alert('密碼錯誤');
+                loginPassword.value = '';
+                loginPassword.focus();
+            }
+        });
+    }
+
+    // Config Handler
 if (saveConfigBtn) {
     saveConfigBtn.addEventListener('click', async () => {
         const url = supabaseUrlInput.value.trim();
@@ -113,6 +165,7 @@ if (saveConfigBtn) {
 }
 
 // Global State
+let isAdminLoggedIn = false;
 let mapState = {
     panning: false,
     startX: 0,
@@ -1026,7 +1079,11 @@ function openSiteDetails(siteName) {
                      
                      // Helper
                      const createEditableCell = (field, value, id) => {
-                        return `<td class="editable-cell" data-id="${id}" data-field="${field}" title="點擊編輯" style="padding:8px;">${value || ''}</td>`;
+                        if (isAdminLoggedIn) {
+                            return `<td class="editable-cell" data-id="${id}" data-field="${field}" title="點擊編輯" style="padding:8px;">${value || ''}</td>`;
+                        } else {
+                            return `<td style="padding:8px;">${value || ''}</td>`;
+                        }
                      };
                      
                      tr.innerHTML = `
@@ -1188,7 +1245,11 @@ function renderTableRows(tbody, data) {
         
         // Helper to create editable cell
         const createEditableCell = (field, value, id) => {
-            return `<td class="editable-cell" data-id="${id}" data-field="${field}" title="點擊編輯">${value || ''}</td>`;
+            if (isAdminLoggedIn) {
+                return `<td class="editable-cell" data-id="${id}" data-field="${field}" title="點擊編輯">${value || ''}</td>`;
+            } else {
+                return `<td style="padding: 8px;">${value || ''}</td>`;
+            }
         };
 
         // Make fiber name clickable
@@ -1283,6 +1344,12 @@ function openPathDiagram(fiberName) {
 if (addForm) {
     addForm.addEventListener('submit', async (e) => {
         e.preventDefault();
+        
+        if (!isAdminLoggedIn) {
+            alert('請先登入管理員帳號以新增資料');
+            return;
+        }
+
         const formData = new FormData(addForm);
         const record = Object.fromEntries(formData.entries());
         
@@ -1343,6 +1410,12 @@ function renderDashboard() {
             isLongPress = false;
             pressTimer = setTimeout(async () => {
                 isLongPress = true;
+                
+                if (!isAdminLoggedIn) {
+                    alert('請先登入管理員帳號以刪除站點');
+                    return;
+                }
+
                 if (confirm(`確定要刪除站點 "${site.name}" 嗎？\n此操作將永久刪除該站點的所有光纖資料！`)) {
                     try {
                         await deleteStation(site.name);
@@ -1413,6 +1486,11 @@ const excelUploadInput = document.getElementById('excel-upload');
 
 if (processUploadBtn && excelUploadInput) {
     processUploadBtn.addEventListener('click', async () => {
+        if (!isAdminLoggedIn) {
+            alert('請先登入管理員帳號以使用匯入功能');
+            return;
+        }
+
         const files = excelUploadInput.files;
         if (!files || files.length === 0) {
             alert('請先選擇至少一個 Excel 檔案');
