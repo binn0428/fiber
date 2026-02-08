@@ -352,6 +352,10 @@ tr:hover {
     display: none;
 }
 
+.hidden {
+    display: none !important;
+}
+
 .modal-content {
     background-color: var(--sidebar-bg);
     padding: 2rem;
