@@ -46,6 +46,8 @@
                 <button class="nav-btn" data-target="data-mgmt">資料管理 (Data)</button>
                 <button class="nav-btn" data-target="manual-add">手動新增 (Add)</button>
                 <button class="nav-btn" data-target="io-panel">上傳/匯出 (IO)</button>
+                <div style="flex-grow: 1;"></div>
+                <button class="nav-btn" id="mgmt-btn" style="color: var(--warning-color);">管理功能 (Admin)</button>
             </nav>
             <div class="search-box">
                 <input type="text" id="global-search" placeholder="搜尋線路編號...">
@@ -250,6 +252,26 @@
                     <input type="text" id="edit-remarks">
                 </div>
                 <button type="submit">儲存</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Login Modal -->
+    <div id="login-modal" class="modal hidden">
+        <div class="modal-content sm login-content">
+            <span class="close-modal">&times;</span>
+            <div class="login-header">
+                <h3>管理員登入</h3>
+                <p>請輸入密碼以存取管理功能</p>
+            </div>
+            <form id="login-form">
+                <div class="form-group">
+                    <label>密碼</label>
+                    <input type="password" id="login-password" placeholder="請輸入密碼" required>
+                </div>
+                <div class="login-actions">
+                    <button type="submit" class="btn-primary full-width">登入</button>
+                </div>
             </form>
         </div>
     </div>
