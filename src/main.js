@@ -100,13 +100,23 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (isAdminLoggedIn) {
                 if (confirm('確定要登出管理員模式嗎？')) {
                     isAdminLoggedIn = false;
-                    mgmtBtn.textContent = '管理功能 (Admin)';
+                    mgmtBtn.textContent = '管理功能';
                     mgmtBtn.style.color = 'var(--warning-color)';
                     alert('已登出，編輯功能已鎖定。');
                     
                     // Switch to Dashboard
                     const dashboardBtn = document.querySelector('[data-target="dashboard"]');
-                    if (dashboardBtn) dashboardBtn.click();
+                    if (dashboardBtn) {
+                        dashboardBtn.click();
+                        // Force switch if click didn't work (e.g. event propagation issues)
+                        if (!document.getElementById('dashboard').classList.contains('active')) {
+                             navBtns.forEach(b => b.classList.remove('active'));
+                             dashboardBtn.classList.add('active');
+                             viewSections.forEach(section => section.classList.remove('active'));
+                             document.getElementById('dashboard').classList.add('active');
+                             renderDashboard();
+                        }
+                    }
                     
                     renderDataTable(); // Refresh to remove editable inputs
                     
@@ -134,7 +144,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 
                 // Update Button State
                 if (mgmtBtn) {
-                    mgmtBtn.textContent = '登出 (Logout)';
+                    mgmtBtn.textContent = '登出';
                     mgmtBtn.style.color = 'var(--success-color)';
                 }
 
