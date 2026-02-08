@@ -77,9 +77,10 @@ export async function parseExcel(file) {
                         
                         // New fields
                         source: findHeader(['線路來源', 'Source']),
-                        connection_line: findHeader(['來源線路', 'Connection Line', 'Source Circuit']),
+                        connection_line: findHeader(['跳接線路', '來源線路', 'Connection Line', 'Source Circuit']),
                         net_start: findHeader(['網路起點', 'Network Start']),
-                        net_end: findHeader(['網路終點', 'Network End', '目的', 'Destination']),
+                        net_end: findHeader(['網路終點', 'Network End']), // Removed '目的' from here
+                        destination: findHeader(['線路目的', 'Line Destination', '目的', 'Destination']), // Separate destination
                         department: findHeader(['使用單位', 'Department']),
                         contact: findHeader(['聯絡人', 'Contact']),
                         phone: findHeader(['連絡電話', 'Phone'])
@@ -127,9 +128,7 @@ export async function parseExcel(file) {
                         
                         // Map net_end to destination as well for backward compatibility/topology
                         const valNetEnd = map.net_end !== -1 ? row[map.net_end] || '' : '';
-                        // If we have a separate destination field (not likely if mapped to net_end), use it.
-                        // But here we mapped '目的' to net_end.
-                        const valDestination = valNetEnd;
+                        const valDestination = map.destination !== -1 ? row[map.destination] || '' : '';
 
                         rows.push({
                             station_name: sheetName,
@@ -176,9 +175,10 @@ export function exportToExcel(data) {
         if (!sites[site]) sites[site] = [];
         sites[site].push({
             "線路名稱": item.fiber_name,
+            "線路目的": item.destination,
             "芯數": item.core_count,
             "線路來源": item.source,
-            "來源線路": item.connection_line,
+            "跳接線路": item.connection_line,
             "Port": item.port,
             "網路起點": item.net_start,
             "網路終點": item.net_end,

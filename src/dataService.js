@@ -295,7 +295,8 @@ export function getStats() {
             siteFibers[sName][fName] = { 
                 explicitCapacity: 0, 
                 usedCount: 0, 
-                rowCount: 0 
+                rowCount: 0,
+                validCoreCount: 0 // New counter
             };
         }
         
@@ -314,12 +315,14 @@ export function getStats() {
             group.usedCount++;
         }
         
-        // Track Max Explicit Core Count seen for this cable
+        // Track Max Explicit Core Count seen for this cable (Legacy, but kept for ref)
         let cores = parseInt(d.core_count);
         if (!isNaN(cores) && cores > 0) {
             if (cores > group.explicitCapacity) {
                 group.explicitCapacity = cores;
             }
+            // Count valid core rows for Total Capacity calculation
+            group.validCoreCount++;
         }
     });
     
@@ -330,12 +333,25 @@ export function getStats() {
             const group = fibers[fName];
             
             // Capacity Logic:
-            // 1. Use explicit 'core_count' if available (e.g., 48 from "48_xx")
-            // 2. Fallback to row count is REMOVED as per user request (Line Name is not a number)
-            let capacity = group.explicitCapacity;
-            // if (capacity === 0) {
-            //     capacity = group.rowCount;
-            // }
+            // 1. Count rows that have a valid core_count value (as requested: "Count numeric entries in field")
+            // This replaces inferred capacity from Line Name.
+            // We assume "Sum of field numbers" implies counting the valid entries if they are IDs, 
+            // or summing them if they are counts. Given screenshot shows IDs (1, 2, 3...), we COUNT the rows.
+            // If the user truly meant SUM (e.g. 1+2+3...), it would be meaningless for IDs.
+            // However, we strictly follow "count rows with valid core number".
+            
+            // Check if we have explicit core counts
+            let validCoreRows = 0;
+            // let sumCoreValues = 0; // If user meant SUM values
+            
+            // We iterate through raw data to count valid core entries for this fiber in this station
+            // Optimization: We already grouped them.
+            // But wait, 'group' object is aggregated. We need to iterate the raw rows?
+            // No, we didn't store raw rows in 'group'.
+            // Let's iterate currentData again? No, that's slow.
+            // Better: update the aggregation loop above.
+            
+            let capacity = group.validCoreCount; // We will add this property
             
             const used = group.usedCount;
             // Free is remaining capacity. Ensure non-negative.

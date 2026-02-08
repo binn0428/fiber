@@ -741,7 +741,7 @@ function renderTableRows(tbody, data) {
     if (!tbody) return;
     tbody.innerHTML = '';
     if (data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="14" style="text-align:center">無資料</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="15" style="text-align:center">無資料</td></tr>';
         return;
     }
 
@@ -757,8 +757,8 @@ function renderTableRows(tbody, data) {
         const fiberCell = row.fiber_name ? `<a href="#" class="fiber-link" data-fiber="${row.fiber_name}">${row.fiber_name}</a>` : '-';
         
         tr.innerHTML = `
-            <td>${row.station_name || ''}</td>
             <td>${fiberCell}</td>
+            ${createEditableCell('destination', row.destination, row.id)}
             ${createEditableCell('core_count', row.core_count, row.id)}
             ${createEditableCell('source', row.source, row.id)}
             ${createEditableCell('connection_line', row.connection_line, row.id)}
@@ -770,6 +770,7 @@ function renderTableRows(tbody, data) {
             ${createEditableCell('contact', row.contact, row.id)}
             ${createEditableCell('phone', row.phone, row.id)}
             ${createEditableCell('notes', row.notes, row.id)}
+            <td>${row.station_name || ''}</td>
             <td>
                 <!-- Removed Edit button as we have inline editing now, or keep as fallback -->
             </td>
