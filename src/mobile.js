@@ -34,55 +34,41 @@ if (mobileMenuBtn && sidebar) {
 // This ensures that when the user presses the back button on mobile,
 // they are prompted before leaving the application.
 document.addEventListener('DOMContentLoaded', () => {
-    let lastBackPressTime = 0;
-    const TOAST_DURATION = 2000;
-
     // Toast Helper
-    function showToast(message) {
-        let toast = document.getElementById('exit-toast');
+    const showToast = (msg) => {
+        let toast = document.getElementById('app-toast');
         if (!toast) {
             toast = document.createElement('div');
-            toast.id = 'exit-toast';
-            toast.className = 'toast-notification';
-            toast.innerHTML = `<span class="toast-icon">👋</span> <span id="toast-msg"></span>`;
+            toast.id = 'app-toast';
+            toast.className = 'toast-message';
             document.body.appendChild(toast);
         }
-        
-        const msgSpan = toast.querySelector('#toast-msg');
-        if (msgSpan) msgSpan.textContent = message;
-        
-        // Reset animation
-        toast.classList.remove('show');
-        void toast.offsetWidth; // Trigger reflow
-        
-        // Show
+        toast.textContent = msg;
         toast.classList.add('show');
         
-        // Hide after duration
-        if (toast.timeoutId) clearTimeout(toast.timeoutId);
-        toast.timeoutId = setTimeout(() => {
+        if (window.toastTimeout) clearTimeout(window.toastTimeout);
+        window.toastTimeout = setTimeout(() => {
             toast.classList.remove('show');
-        }, TOAST_DURATION);
-    }
+        }, 2000);
+    };
 
+    let lastBackTime = 0;
+    
     // Initial push to create a history entry
     if (window.history && window.history.pushState) {
         window.history.pushState({ app: true }, document.title);
         
         window.addEventListener('popstate', (event) => {
             const now = Date.now();
-            
-            if (now - lastBackPressTime < TOAST_DURATION) {
-                // User pressed back twice within duration -> Allow exit
-                // We are already at the previous state (popstate happened), so we just let it be.
+            if (now - lastBackTime < 2000) {
+                // User pressed back twice within 2 seconds. Allow exit.
+                // Go back one more time to actually leave the page
+                window.history.back();
             } else {
-                // First press -> Prevent exit and show toast
-                lastBackPressTime = now;
-                
-                // Restore state to "in app"
+                // First press: Cancel leave and show toast
                 window.history.pushState({ app: true }, document.title);
-                
-                showToast("再按一次離開系統");
+                lastBackTime = now;
+                showToast("👋 再按一次離開系統");
             }
         });
     }
