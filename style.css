@@ -176,6 +176,17 @@ h2 {
     user-select: none; 
 }
 
+#fiber-map {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    min-width: 800px;
+    min-height: 800px;
+    transform-origin: 0 0;
+}
+
 .site-node {
     position: absolute;
     width: auto;
@@ -300,28 +311,79 @@ tr:hover {
     border: none;
     border-radius: 0.25rem;
     cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.btn-primary:hover {
+    background-color: var(--secondary-color);
 }
 
 .btn-sm {
     padding: 0.25rem 0.5rem;
     font-size: 0.8rem;
-    border-radius: 0.25rem;
-    border: none;
-    cursor: pointer;
     background-color: var(--border-color);
     color: white;
+    border: none;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    margin-right: 0.25rem;
 }
 
 .btn-sm:hover {
-    background-color: var(--primary-color);
+    background-color: #6b7280;
 }
 
-/* Forms */
-.data-form {
-    background-color: var(--card-bg);
+/* Modals */
+.modal {
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.7);
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal.hidden {
+    display: none;
+}
+
+.modal-content {
+    background-color: var(--sidebar-bg);
     padding: 2rem;
     border-radius: 0.5rem;
-    max-width: 600px;
+    width: 80%;
+    max-width: 800px;
+    max-height: 80vh;
+    overflow-y: auto;
+    position: relative;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+}
+
+.modal-content.sm {
+    max-width: 400px;
+}
+
+.modal-content.large-modal {
+    width: 95%;
+    max-width: 1200px;
+    height: 90vh;
+}
+
+.close-modal {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: var(--text-muted);
+}
+
+.close-modal:hover {
+    color: white;
 }
 
 .form-group {
@@ -336,14 +398,13 @@ tr:hover {
 
 .form-group input {
     width: 100%;
-    padding: 0.75rem;
-    border-radius: 0.25rem;
-    border: 1px solid var(--border-color);
+    padding: 0.5rem;
     background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 0.25rem;
     color: white;
 }
 
-/* IO Panel */
 .io-card {
     background-color: var(--card-bg);
     padding: 1.5rem;
@@ -355,178 +416,45 @@ tr:hover {
     margin-bottom: 1rem;
 }
 
-/* Modal */
-.modal {
-    display: flex;
-    position: fixed;
-    top: 0;
-    left: 0;
+.io-card input[type="text"], .io-card input[type="password"] {
     width: 100%;
-    height: 100%;
-    background-color: rgba(0,0,0,0.7);
-    z-index: 1000;
-    justify-content: center;
-    align-items: center;
-    padding: 20px;
-}
-
-.hidden {
-    display: none !important;
-}
-
-.modal-content {
+    padding: 0.5rem;
+    margin-bottom: 1rem;
     background-color: var(--bg-color);
-    padding: 2rem;
-    border-radius: 0.5rem;
-    width: 90%;
-    max-width: 900px;
-    max-height: 90vh;
-    overflow-y: auto;
-    position: relative;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    border: 1px solid var(--border-color);
+    border-radius: 0.25rem;
+    color: white;
 }
 
-.large-modal {
-    max-width: 1200px;
-}
-
-.sm {
-    max-width: 400px;
-}
-
-.close-modal {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    font-size: 1.5rem;
-    cursor: pointer;
-    color: var(--text-muted);
-}
-
-.fiber-link {
-    color: var(--primary-color);
-    text-decoration: none;
-    border-bottom: 1px dashed var(--primary-color);
-}
-
-.path-node {
-    color: black;
-}
-
-/* Mobile Responsiveness */
+/* Responsive */
 @media (max-width: 768px) {
-    body {
-        flex-direction: column;
-        overflow: auto;
-        height: auto;
-    }
-
-    #mobile-menu-btn {
-        display: flex; /* Show gear icon */
-    }
-
-    .app-container {
-        flex-direction: column;
-        height: auto;
-        padding-top: 50px; /* Space for gear icon */
-    }
-
     .sidebar {
         position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
         height: 100%;
-        padding: 2rem;
-        flex-direction: column;
-        align-items: center;
-        justify-content: flex-start;
-        transform: translateX(-100%); /* Hide by default */
-        z-index: 150;
+        transform: translateX(-100%);
     }
 
     .sidebar.active {
-        transform: translateX(0); /* Show when active */
+        transform: translateX(0);
     }
 
-    .logo {
-        margin-bottom: 2rem;
-        font-size: 2rem;
-    }
-
-    nav {
-        width: 100%;
-        gap: 1rem;
-    }
-
-    .nav-btn {
-        text-align: center;
-        padding: 0.75rem; /* Reduced padding */
-        font-size: 1rem; /* Reduced font size */
-        border-bottom: 1px solid rgba(255,255,255,0.1);
-    }
-
-    .search-box {
-        width: 100%;
-        margin-top: 2rem;
+    #mobile-menu-btn {
+        display: flex;
     }
 
     .main-content {
-        padding: 0.5rem;
-        overflow: visible;
+        padding: 1rem;
+        padding-top: 4rem; /* Space for menu btn */
     }
 
+    .modal-content {
+        width: 95%;
+        max-height: 90vh;
+        padding: 1rem;
+        margin: auto;
+    }
+    
     .map-container {
         height: 500px;
     }
-
-    /* Compact Stats for Mobile */
-    .stats-grid {
-        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); /* Smaller min-width */
-        gap: 0.5rem;
-    }
-    
-    .stat-card {
-        padding: 0.75rem; /* Reduced padding */
-    }
-    
-    .stat-card h3 {
-        font-size: 1rem;
-        margin-bottom: 0.5rem;
-    }
-    
-    .stat-row {
-        font-size: 0.8rem;
-        margin-bottom: 0.25rem;
-    }
-
-    th, td {
-        padding: 0.5rem;
-        font-size: 0.8rem;
-    }
-    
-    .modal-content {
-        width: 98%;
-        padding: 1rem;
-    }
-}
-
-/* Editable Styles */
-.editable-cell {
-    cursor: pointer;
-    transition: background 0.2s;
-    position: relative;
-}
-
-.editable-cell:hover {
-    background-color: rgba(59, 130, 246, 0.2);
-}
-
-.editable-input {
-    width: 100%;
-    background: #1f2937;
-    color: white;
-    border: 1px solid #3b82f6;
-    padding: 4px;
-    border-radius: 4px;
 }
