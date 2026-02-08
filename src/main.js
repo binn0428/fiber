@@ -833,6 +833,7 @@ function openSiteDetails(siteName) {
                 
                 // Indentation Container
                 const tableWrapper = document.createElement('div');
+                tableWrapper.className = 'site-detail-table-wrapper'; // Add class for styling
                 tableWrapper.style.borderLeft = '5px solid var(--primary-color)'; // Thicker border
                 tableWrapper.style.paddingLeft = '2rem'; // More indentation
                 tableWrapper.style.marginLeft = '1rem';
@@ -843,6 +844,7 @@ function openSiteDetails(siteName) {
                 
                 // Mini Table inside
                 const table = document.createElement('table');
+                table.className = 'site-detail-table'; // Add class for styling
                 table.style.width = '100%';
                 table.style.borderCollapse = 'collapse';
                 
