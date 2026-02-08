@@ -889,17 +889,33 @@ function openSiteDetails(siteName) {
             groups[key].push(row);
         });
         
-        // Sort keys? Maybe alphabetical or original order?
-        // Let's use the order they appear (which is already sorted by sequence from getSiteData)
-        // To preserve "original order", we iterate the sorted data and build keys
-        const sortedKeys = [];
-        const seenKeys = new Set();
+        // Sort keys based on user request:
+        // 1. Numbers first (Descending)
+        // 2. Non-numbers last (Descending)
+        const keys = new Set();
         data.forEach(row => {
-            const key = row.fiber_name || '未分類';
-            if (!seenKeys.has(key)) {
-                seenKeys.add(key);
-                sortedKeys.push(key);
+            keys.add(row.fiber_name || '未分類');
+        });
+
+        const sortedKeys = Array.from(keys).sort((a, b) => {
+            const aIsNum = /^\d/.test(a);
+            const bIsNum = /^\d/.test(b);
+
+            // Group 1: Numbers
+            // Group 2: Non-Numbers
+            if (aIsNum && !bIsNum) return -1;
+            if (!aIsNum && bIsNum) return 1;
+
+            if (aIsNum && bIsNum) {
+                // Numeric Sort Descending
+                const numA = parseInt(a);
+                const numB = parseInt(b);
+                if (numA !== numB) return numB - numA;
+                return b.localeCompare(a); // Tie-breaker
             }
+
+            // String Sort Descending (Handles letters etc.)
+            return b.localeCompare(a);
         });
         
         if (sortedKeys.length === 0 && data.length === 0) {
