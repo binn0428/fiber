@@ -928,6 +928,18 @@ function openSiteDetails(siteName) {
                     // Use numeric sort to handle 1, 2, 10 correctly
                     return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
                 });
+
+                // Calculate stats for this group
+                const isRowUsed = (row) => {
+                    return (row.usage && String(row.usage).trim().length > 0) || 
+                           (row.destination && String(row.destination).trim().length > 0) || 
+                           (row.net_end && String(row.net_end).trim().length > 0) || 
+                           (row.department && String(row.department).trim().length > 0);
+                };
+                
+                const total = groupRows.length;
+                const used = groupRows.filter(isRowUsed).length;
+                const free = total - used;
                 
                 // Create Accordion Item
                 const item = document.createElement('div');
@@ -948,6 +960,10 @@ function openSiteDetails(siteName) {
                 
                 header.innerHTML = `
                     <strong>${key}</strong>
+                    <div style="font-size: 0.9em;">
+                        <span style="color: #ef4444; margin-right: 12px; font-weight: bold;">已用: ${used}</span>
+                        <span style="color: #10b981; font-weight: bold;">可用: ${free}</span>
+                    </div>
                 `;
                 
                 // Content (Hidden by default)
