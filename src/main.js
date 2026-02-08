@@ -313,7 +313,10 @@ if (navBtns.length > 0) {
 }
 
 // Search Statistics Logic
+let lastSearchResults = [];
+
 function calculateAndRenderStats(results) {
+    lastSearchResults = results;
     const container = document.getElementById('search-stats-container');
     if (!container) return;
 
@@ -328,17 +331,44 @@ function calculateAndRenderStats(results) {
     container.style.gap = '1rem';
     container.innerHTML = '';
 
-    const getCounts = (field) => {
-        const counts = {};
+    // Helper to check usage (Same logic as dataService)
+    const isRowUsed = (row) => {
+        return (row.usage && String(row.usage).trim().length > 0) || 
+               (row.destination && String(row.destination).trim().length > 0) || 
+               (row.net_end && String(row.net_end).trim().length > 0) || 
+               (row.department && String(row.department).trim().length > 0);
+    };
+
+    const getStatsMap = (field) => {
+        const stats = {};
         results.forEach(row => {
             const val = row[field] || '未分類';
-            counts[val] = (counts[val] || 0) + 1;
+            if (!stats[val]) stats[val] = { total: 0, used: 0 };
+            stats[val].total++;
+            if (isRowUsed(row)) stats[val].used++;
         });
-        return counts;
+        return stats;
+    };
+
+    const applyFilters = () => {
+        const selects = container.querySelectorAll('select');
+        let filtered = [...lastSearchResults];
+
+        selects.forEach(sel => {
+            if (sel.value !== 'ALL') {
+                const field = sel.dataset.field;
+                filtered = filtered.filter(row => {
+                    const val = row[field] || '未分類';
+                    return val === sel.value;
+                });
+            }
+        });
+
+        renderTableRows(dataTableBody, filtered);
     };
 
     const createDropdown = (label, field) => {
-        const counts = getCounts(field);
+        const stats = getStatsMap(field);
         const wrapper = document.createElement('div');
         wrapper.className = 'stat-group';
         wrapper.style.display = 'flex';
@@ -351,17 +381,21 @@ function calculateAndRenderStats(results) {
 
         const select = document.createElement('select');
         select.className = 'stat-select';
+        select.dataset.field = field;
+        select.addEventListener('change', applyFilters);
         
+        const totalUsed = results.filter(isRowUsed).length;
         const defaultOption = document.createElement('option');
-        defaultOption.textContent = `總計 (${results.length})`;
+        defaultOption.value = 'ALL';
+        defaultOption.textContent = `全部 (${totalUsed})`;
         select.appendChild(defaultOption);
 
-        Object.entries(counts)
-            .sort((a,b) => b[1] - a[1])
-            .forEach(([key, count]) => {
+        Object.entries(stats)
+            .sort((a,b) => b[1].used - a[1].used)
+            .forEach(([key, stat]) => {
                 const option = document.createElement('option');
                 option.value = key;
-                option.textContent = `${key} (${count})`;
+                option.textContent = `${key} (${stat.used})`;
                 select.appendChild(option);
             });
 
@@ -397,8 +431,9 @@ if (searchBtn && globalSearchInput) {
         // Calculate and Render Stats
         calculateAndRenderStats(results);
 
-        // Render results
-        renderTableRows(dataTableBody, results);
+        // Do NOT render results immediately (User Request)
+        // renderTableRows(dataTableBody, results);
+        dataTableBody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding: 2rem; color: var(--text-muted);">請選擇上方篩選條件以檢視結果</td></tr>';
         
         // Reset site selector
         if (siteSelector) siteSelector.value = "";
