@@ -419,26 +419,25 @@ tr:hover {
     }
     
     .dashboard-grid {
-        grid-template-columns: 1fr; /* Default 1 column */
-    }
-
-    /* Force 3 columns for stats on mobile as requested */
-    .dashboard-grid:has(.card) {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(3, 1fr); /* Force 3 columns on mobile */
         gap: 0.5rem;
         padding: 0.5rem;
     }
     
     .card {
-        padding: 0.75rem;
+        padding: 0.5rem;
     }
     
     .card-title {
-        font-size: 0.8rem;
+        font-size: 0.7rem;
+        margin-bottom: 0.25rem;
+        white-space: nowrap; /* Prevent wrapping if possible, or let it wrap if needed */
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
     
     .card-value {
-        font-size: 1.2rem;
+        font-size: 1rem;
     }
 
     /* Adjust Chart Container height on mobile if needed */
