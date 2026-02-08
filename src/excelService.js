@@ -95,6 +95,12 @@ export async function parseExcel(file) {
                         if (!row || row.length === 0) continue;
 
                         let line_name = map.line !== -1 ? row[map.line] : row[0];
+                        
+                        // FIX: Skip repeated header rows (e.g. print titles in Excel)
+                        if (line_name && (String(line_name).includes('線路名稱') || String(line_name).includes('Line Name'))) {
+                            continue;
+                        }
+
                         const port = map.port !== -1 ? row[map.port] : row[1];
                         let raw_core_count = map.core_count !== -1 ? row[map.core_count] : '';
 
