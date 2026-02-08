@@ -449,9 +449,7 @@ tr:hover {
 
     .modal-content {
         width: 95%;
-        max-height: 90vh;
         padding: 1rem;
-        margin: auto;
     }
     
     .map-container {
