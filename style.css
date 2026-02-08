@@ -435,6 +435,8 @@ tr:hover {
     background-color: var(--bg-color);
     border: 1px solid var(--border-color);
     border-radius: 0.25rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.25rem;
     color: white;
 }
 
@@ -588,4 +590,118 @@ tr:hover {
         white-space: nowrap;
         padding: 0.5rem;
     }
+}
+
+/* Search Statistics Panel */
+.stats-panel {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.stats-group {
+    margin-bottom: 1rem;
+}
+
+.stats-group h3 {
+    font-size: 1rem;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.25rem;
+}
+
+.stats-accordion {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.stats-item {
+    border: 1px solid var(--border-color);
+    border-radius: 0.25rem;
+    overflow: hidden;
+}
+
+.stats-header {
+    background-color: rgba(0,0,0,0.2);
+    padding: 0.75rem;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background-color 0.2s;
+}
+
+.stats-header:hover {
+    background-color: rgba(255,255,255,0.05);
+}
+
+.stats-header .title {
+    font-weight: bold;
+    color: var(--primary-color);
+}
+
+.stats-header .count {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+.stats-details {
+    display: none;
+    padding: 0.75rem;
+    background-color: rgba(0,0,0,0.1);
+    border-top: 1px solid var(--border-color);
+}
+
+.stats-item.active .stats-details {
+    display: block;
+}
+
+.stats-item.active .stats-header {
+    background-color: rgba(59, 130, 246, 0.1);
+}
+
+.global-stats {
+    display: flex;
+    gap: 2rem;
+    padding: 1rem;
+    background-color: rgba(16, 185, 129, 0.1); /* Greenish tint */
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.global-stat-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.global-stat-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.global-stat-value {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: white;
+}
+
+/* Stats Select */
+.stat-select {
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.9rem;
+    outline: none;
+}
+
+.stat-select:focus {
+    border-color: var(--primary-color);
 }
