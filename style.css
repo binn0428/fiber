@@ -553,14 +553,16 @@ tr:hover {
     }
 
     .site-detail-table {
-        min-width: 800px; /* Prevent squeezing */
+        min-width: 1200px; /* Force larger width to prevent wrapping */
         font-size: 0.8rem;
+        table-layout: auto;
     }
 
     .site-detail-table th, 
     .site-detail-table td {
-        padding: 4px 6px !important;
-        white-space: nowrap;
+        padding: 6px 8px !important;
+        white-space: nowrap !important; /* Force no wrap */
+        vertical-align: middle;
     }
     
     /* Main Data Table - Consistent Behavior */
