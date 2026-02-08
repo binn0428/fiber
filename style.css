@@ -448,11 +448,19 @@ tr:hover {
         height: 100%;
         transform: translateX(-100%);
         padding: 0.5rem; /* Reduced padding */
+        width: max-content; /* Fit to content */
+        max-width: 80vw;
     }
     
+    .search-box input {
+        min-width: 0; /* Allow shrinking */
+        width: 8rem; /* Small default width to prevent forcing sidebar wide */
+    }
+
     .logo {
         font-size: 1.2rem; /* Smaller font */
         margin-bottom: 1rem; /* Reduced margin */
+        white-space: nowrap; /* Prevent wrapping */
     }
     
     nav {
@@ -462,6 +470,7 @@ tr:hover {
     .nav-btn {
         padding: 0.75rem; /* Reduced padding */
         font-size: 0.9rem; /* Smaller font */
+        white-space: nowrap; /* Prevent wrapping */
     }
 
     .sidebar.active {
