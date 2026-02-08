@@ -536,3 +536,47 @@ tr:hover {
     color: var(--text-muted);
     font-size: 0.9rem;
 }
+
+/* Mobile Table Optimization & Scroll Fixes */
+@media (max-width: 768px) {
+    /* Station Detail Table - Independent Scrolling */
+    .site-detail-table-wrapper {
+        overflow-x: auto;
+        overflow-y: auto;
+        max-height: 50vh;
+        -webkit-overflow-scrolling: touch;
+        margin-left: 0.5rem !important;
+        padding-left: 0.5rem !important;
+        border-left-width: 3px !important;
+        overscroll-behavior: contain; /* Prevent background scroll */
+        touch-action: pan-x pan-y;
+    }
+
+    .site-detail-table {
+        min-width: 800px; /* Prevent squeezing */
+        font-size: 0.8rem;
+    }
+
+    .site-detail-table th, 
+    .site-detail-table td {
+        padding: 4px 6px !important;
+        white-space: nowrap;
+    }
+    
+    /* Main Data Table - Consistent Behavior */
+    .data-table-container {
+        overscroll-behavior: contain;
+        touch-action: pan-x pan-y;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    #data-table {
+        min-width: 800px;
+    }
+    
+    #data-table th,
+    #data-table td {
+        white-space: nowrap;
+        padding: 0.5rem;
+    }
+}
