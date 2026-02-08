@@ -98,7 +98,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (mgmtBtn && loginModal) {
         mgmtBtn.addEventListener('click', () => {
             if (isAdminLoggedIn) {
-                alert('您已登入管理員模式');
+                if (confirm('確定要登出管理員模式嗎？')) {
+                    isAdminLoggedIn = false;
+                    mgmtBtn.textContent = '管理功能 (Admin)';
+                    mgmtBtn.style.color = 'var(--warning-color)';
+                    alert('已登出，編輯功能已鎖定。');
+                    renderDataTable(); // Refresh to remove editable inputs
+                    
+                    // Also close site details modal if open to prevent confusion
+                    if (siteModal && !siteModal.classList.contains('hidden')) {
+                        closeModal(siteModal);
+                    }
+                }
             } else {
                 openModal(loginModal);
                 // Auto focus
@@ -115,6 +126,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             const pwd = loginPassword.value.trim();
             if (pwd === '179747') {
                 isAdminLoggedIn = true;
+                
+                // Update Button State
+                if (mgmtBtn) {
+                    mgmtBtn.textContent = '登出 (Logout)';
+                    mgmtBtn.style.color = 'var(--success-color)';
+                }
+
                 alert('登入成功！現在可以使用編輯和匯入功能。');
                 closeModal(loginModal);
                 loginPassword.value = '';
@@ -122,15 +140,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // Refresh views to enable editing
                 renderDataTable();
                 if (siteModal && !siteModal.classList.contains('hidden')) {
-                     // If site modal is open, we might need to refresh it to show editable cells
-                     // Since we don't track which site is open easily without parsing title, 
-                     // users can just close and reopen or we let them know.
-                     // But actually, openSiteDetails takes siteName. 
-                     // We can't easily re-call it without knowing the site.
-                     // Let's just rely on user re-opening or next interaction.
-                     // Or better: update the current view if possible.
-                     // Actually, renderDataTable updates the background table.
-                     // The modal content is static until regenerated.
                      alert('請關閉並重新開啟站點詳情以啟用編輯功能。');
                 }
             } else {
