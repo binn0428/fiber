@@ -22,9 +22,38 @@ export async function parseExcel(file) {
                     
                     if (jsonData.length === 0) return;
 
-                    // Simple header detection (assuming row 0 is header)
-                    const headers = jsonData[0].map(h => h ? h.toString().trim() : '');
-                    
+                    // Header Detection with Multi-row scan
+                    // Scan first 5 rows to find a likely header row
+                    let headerRowIndex = 0;
+                    let headers = [];
+                    let bestMatchScore = 0;
+
+                    // Keywords to identify header row
+                    const headerKeywords = ['線路名稱', 'Line Name', '線路', 'Port', '用途', 'Usage', '芯數', 'Core'];
+
+                    for (let r = 0; r < Math.min(5, jsonData.length); r++) {
+                        const row = jsonData[r];
+                        if (!row) continue;
+                        
+                        const rowStr = row.map(c => c ? c.toString().trim() : '').join(' ');
+                        let score = 0;
+                        headerKeywords.forEach(k => {
+                            if (rowStr.includes(k)) score++;
+                        });
+
+                        if (score > bestMatchScore) {
+                            bestMatchScore = score;
+                            headerRowIndex = r;
+                            headers = row.map(h => h ? h.toString().trim() : '');
+                        }
+                    }
+
+                    // Fallback to row 0 if no good match found
+                    if (bestMatchScore === 0 && jsonData.length > 0) {
+                        headerRowIndex = 0;
+                        headers = jsonData[0].map(h => h ? h.toString().trim() : '');
+                    }
+
                     const findHeader = (keywords) => {
                         // 1. Try exact match
                         for (const k of keywords) {
@@ -60,7 +89,7 @@ export async function parseExcel(file) {
                     let lastFiberName = '';
                     let lastCoreCount = '';
 
-                    for (let i = 1; i < jsonData.length; i++) {
+                    for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
                         const row = jsonData[i];
                         if (!row || row.length === 0) continue;
 

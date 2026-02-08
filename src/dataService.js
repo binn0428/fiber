@@ -61,7 +61,7 @@ export async function loadData() {
 }
 
 function getTableForStation(stationName) {
-    const station = (stationName || '').toLowerCase();
+    const station = (stationName || '').toLowerCase().trim();
     if (station.includes('udc')) return 'udc';
     if (station.includes('1ph')) return 'station_1ph';
     if (station.includes('2ph')) return 'station_2ph';
@@ -72,6 +72,13 @@ function getTableForStation(stationName) {
     if (station.includes('ms4')) return 'ms4';
     if (station.includes('o2')) return 'o2';
     if (station.includes('room') || station.includes('機房')) return 'room';
+    
+    // Fallback: Check if the station name exactly matches one of the known tables (ignoring case/prefix)
+    const knownTables = ['ms2', 'ms3', 'ms4', 'o2', 'dkb', 'udc'];
+    for (const t of knownTables) {
+        if (station.includes(t)) return t;
+    }
+    
     return 'udc'; // Default
 }
 
@@ -324,11 +331,11 @@ export function getStats() {
             
             // Capacity Logic:
             // 1. Use explicit 'core_count' if available (e.g., 48 from "48_xx")
-            // 2. Fallback to row count if explicit count is missing/0
+            // 2. Fallback to row count is REMOVED as per user request (Line Name is not a number)
             let capacity = group.explicitCapacity;
-            if (capacity === 0) {
-                capacity = group.rowCount;
-            }
+            // if (capacity === 0) {
+            //     capacity = group.rowCount;
+            // }
             
             const used = group.usedCount;
             // Free is remaining capacity. Ensure non-negative.
