@@ -629,11 +629,17 @@ function openSiteDetails(siteName) {
                 table.innerHTML = `
                     <thead>
                         <tr style="background: rgba(255,255,255,0.05);">
-                            <th style="padding:8px; text-align:left;">Port</th>
+                            <th style="padding:8px; text-align:left;">線路目的</th>
                             <th style="padding:8px; text-align:left;">芯數</th>
-                            <th style="padding:8px; text-align:left;">目的</th>
-                            <th style="padding:8px; text-align:left;">來源</th>
+                            <th style="padding:8px; text-align:left;">線路來源</th>
+                            <th style="padding:8px; text-align:left;">跳接線路</th>
+                            <th style="padding:8px; text-align:left;">Port</th>
+                            <th style="padding:8px; text-align:left;">網路起點</th>
+                            <th style="padding:8px; text-align:left;">網路終點</th>
                             <th style="padding:8px; text-align:left;">用途</th>
+                            <th style="padding:8px; text-align:left;">使用單位</th>
+                            <th style="padding:8px; text-align:left;">聯絡人</th>
+                            <th style="padding:8px; text-align:left;">連絡電話</th>
                             <th style="padding:8px; text-align:left;">備註</th>
                             <th style="padding:8px; text-align:left;">操作</th>
                         </tr>
@@ -654,11 +660,17 @@ function openSiteDetails(siteName) {
                      };
                      
                      tr.innerHTML = `
-                        ${createEditableCell('port', row.port, row.id)}
-                        ${createEditableCell('core_count', row.core_count, row.id)}
                         ${createEditableCell('destination', row.destination, row.id)}
+                        ${createEditableCell('core_count', row.core_count, row.id)}
                         ${createEditableCell('source', row.source, row.id)}
+                        ${createEditableCell('connection_line', row.connection_line, row.id)}
+                        ${createEditableCell('port', row.port, row.id)}
+                        ${createEditableCell('net_start', row.net_start, row.id)}
+                        ${createEditableCell('net_end', row.net_end, row.id)}
                         ${createEditableCell('usage', row.usage, row.id)}
+                        ${createEditableCell('department', row.department, row.id)}
+                        ${createEditableCell('contact', row.contact, row.id)}
+                        ${createEditableCell('phone', row.phone, row.id)}
                         ${createEditableCell('notes', row.notes, row.id)}
                         <td style="padding:8px;"></td>
                      `;

@@ -333,25 +333,15 @@ export function getStats() {
             const group = fibers[fName];
             
             // Capacity Logic:
-            // 1. Count rows that have a valid core_count value (as requested: "Count numeric entries in field")
-            // This replaces inferred capacity from Line Name.
-            // We assume "Sum of field numbers" implies counting the valid entries if they are IDs, 
-            // or summing them if they are counts. Given screenshot shows IDs (1, 2, 3...), we COUNT the rows.
-            // If the user truly meant SUM (e.g. 1+2+3...), it would be meaningless for IDs.
-            // However, we strictly follow "count rows with valid core number".
+            // User feedback: "Total core count calculation error, just columns are 728".
+            // This implies the Total should match the total number of rows (fibers) uploaded.
+            // Previous logic counted only rows with valid numeric core_count. 
+            // We switch to counting ALL rows in the group to ensure we match the "728 columns" expectation.
+            // We assume every row represents a core/fiber strand.
+            let capacity = group.rowCount;
             
-            // Check if we have explicit core counts
-            let validCoreRows = 0;
-            // let sumCoreValues = 0; // If user meant SUM values
-            
-            // We iterate through raw data to count valid core entries for this fiber in this station
-            // Optimization: We already grouped them.
-            // But wait, 'group' object is aggregated. We need to iterate the raw rows?
-            // No, we didn't store raw rows in 'group'.
-            // Let's iterate currentData again? No, that's slow.
-            // Better: update the aggregation loop above.
-            
-            let capacity = group.validCoreCount; // We will add this property
+            // Legacy check (kept for reference, but not used for capacity unless rowCount is suspicious?)
+            // No, strictly use rowCount as it represents physical entries.
             
             const used = group.usedCount;
             // Free is remaining capacity. Ensure non-negative.
