@@ -312,6 +312,69 @@ if (navBtns.length > 0) {
     console.error("No navigation buttons found!");
 }
 
+// Search Statistics Logic
+function calculateAndRenderStats(results) {
+    const container = document.getElementById('search-stats-container');
+    if (!container) return;
+
+    if (!results || results.length === 0) {
+        container.style.display = 'none';
+        container.innerHTML = '';
+        return;
+    }
+
+    container.style.display = 'flex';
+    container.style.flexWrap = 'wrap';
+    container.style.gap = '1rem';
+    container.innerHTML = '';
+
+    const getCounts = (field) => {
+        const counts = {};
+        results.forEach(row => {
+            const val = row[field] || '未分類';
+            counts[val] = (counts[val] || 0) + 1;
+        });
+        return counts;
+    };
+
+    const createDropdown = (label, field) => {
+        const counts = getCounts(field);
+        const wrapper = document.createElement('div');
+        wrapper.className = 'stat-group';
+        wrapper.style.display = 'flex';
+        wrapper.style.alignItems = 'center';
+
+        const labelEl = document.createElement('label');
+        labelEl.textContent = `${label}: `;
+        labelEl.style.marginRight = '0.5rem';
+        labelEl.style.color = 'var(--text-muted)';
+
+        const select = document.createElement('select');
+        select.className = 'stat-select';
+        
+        const defaultOption = document.createElement('option');
+        defaultOption.textContent = `總計 (${results.length})`;
+        select.appendChild(defaultOption);
+
+        Object.entries(counts)
+            .sort((a,b) => b[1] - a[1])
+            .forEach(([key, count]) => {
+                const option = document.createElement('option');
+                option.value = key;
+                option.textContent = `${key} (${count})`;
+                select.appendChild(option);
+            });
+
+        wrapper.appendChild(labelEl);
+        wrapper.appendChild(select);
+        return wrapper;
+    };
+
+    container.appendChild(createDropdown('線路名稱', 'fiber_name'));
+    container.appendChild(createDropdown('芯數', 'core_count'));
+    container.appendChild(createDropdown('站點', 'station_name'));
+}
+
 // Search Handler
 if (searchBtn && globalSearchInput) {
     const performSearch = () => {
@@ -331,6 +394,9 @@ if (searchBtn && globalSearchInput) {
         if (dataBtn) dataBtn.classList.add('active');
         if (dataSection) dataSection.classList.add('active');
         
+        // Calculate and Render Stats
+        calculateAndRenderStats(results);
+
         // Render results
         renderTableRows(dataTableBody, results);
         
