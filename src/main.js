@@ -103,6 +103,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     mgmtBtn.textContent = '管理功能 (Admin)';
                     mgmtBtn.style.color = 'var(--warning-color)';
                     alert('已登出，編輯功能已鎖定。');
+                    
+                    // Switch to Dashboard
+                    const dashboardBtn = document.querySelector('[data-target="dashboard"]');
+                    if (dashboardBtn) dashboardBtn.click();
+                    
                     renderDataTable(); // Refresh to remove editable inputs
                     
                     // Also close site details modal if open to prevent confusion
@@ -136,6 +141,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 alert('登入成功！現在可以使用編輯和匯入功能。');
                 closeModal(loginModal);
                 loginPassword.value = '';
+
+                // Switch to Dashboard
+                const dashboardBtn = document.querySelector('[data-target="dashboard"]');
+                if (dashboardBtn) dashboardBtn.click();
                 
                 // Refresh views to enable editing
                 renderDataTable();
