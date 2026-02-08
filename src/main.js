@@ -814,7 +814,8 @@ function makeDraggable(el, nodeData) {
     };
     
     // Unified End Handler
-    const onEnd = () => {
+    const onEnd = (e) => {
+        const wasDragging = el.getAttribute('data-dragging') === 'true';
         isDragging = false;
         el.style.zIndex = '';
         el.style.cursor = 'grab';
@@ -832,6 +833,12 @@ function makeDraggable(el, nodeData) {
         // Save position to memory
         nodePositions[nodeData.name] = { x: nodeData.xPct, y: nodeData.yPct };
         localStorage.setItem('fiber_node_positions', JSON.stringify(nodePositions));
+
+        // Fix for Mobile: touchstart preventDefault() kills the click event.
+        // If it was a touch event and NOT a drag, manually trigger the click.
+        if (e && e.type === 'touchend' && !wasDragging) {
+             el.click();
+        }
     };
     
     el.addEventListener('mousedown', onStart);
