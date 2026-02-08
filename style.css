@@ -279,15 +279,18 @@ h2 {
 
 /* Tables */
 .table-container {
-    overflow-x: auto;
+    overflow: auto;
+    max-height: calc(100vh - 200px); /* Limit height to enable sticky header within container */
+    position: relative;
+    border: 1px solid var(--border-color); /* Move border here */
+    border-radius: 0.5rem;
 }
 
 table {
     width: 100%;
     border-collapse: collapse;
     background-color: var(--card-bg);
-    border-radius: 0.5rem;
-    overflow: hidden;
+    /* overflow: hidden; Removed to allow sticky behavior if needed, though container handles it */
 }
 
 th, td {
@@ -299,6 +302,10 @@ th, td {
 th {
     background-color: #111827;
     color: var(--text-muted);
+    position: sticky;
+    top: 0;
+    z-index: 5; /* Ensure it stays on top */
+    box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.4); /* Optional shadow for separation */
 }
 
 tr:hover {
