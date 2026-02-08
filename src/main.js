@@ -112,6 +112,80 @@ if (saveConfigBtn) {
     });
 }
 
+// Map Panning Logic
+function initMapPanning() {
+    const mapInner = document.getElementById('fiber-map');
+    // We use .map-container as the wrapper/viewport
+    const mapWrapper = document.querySelector('.map-container');
+    
+    if (!mapWrapper || !mapInner) return;
+
+    let isPanning = false;
+    let startX, startY;
+    let initialTx = 0, initialTy = 0;
+    
+    // Helper to get current translate values
+    const getTranslate = () => {
+        const style = window.getComputedStyle(mapInner);
+        // Handle transform matrix
+        if (style.transform === 'none') return { x: 0, y: 0 };
+        const matrix = new WebKitCSSMatrix(style.transform);
+        return { x: matrix.m41, y: matrix.m42 };
+    };
+
+    const onMouseDown = (e) => {
+        // Only trigger if clicking on background, not on a node or link title
+        // Note: SVG lines might capture clicks, so we check target.
+        if (e.target.closest('.site-node')) return;
+        
+        isPanning = true;
+        // Support mouse and touch
+        startX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
+        startY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
+        
+        const t = getTranslate();
+        initialTx = t.x;
+        initialTy = t.y;
+        
+        mapWrapper.style.cursor = 'grabbing';
+        
+        // Use document to capture drag outside container
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+        document.addEventListener('touchmove', onMouseMove, { passive: false });
+        document.addEventListener('touchend', onMouseUp);
+    };
+
+    const onMouseMove = (e) => {
+        if (!isPanning) return;
+        
+        const clientX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
+        const clientY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
+        
+        const dx = clientX - startX;
+        const dy = clientY - startY;
+        
+        // Prevent scrolling on touch devices when panning
+        if (e.cancelable) e.preventDefault();
+        
+        mapInner.style.transform = `translate(${initialTx + dx}px, ${initialTy + dy}px)`;
+    };
+
+    const onMouseUp = () => {
+        if (isPanning) {
+            isPanning = false;
+            mapWrapper.style.cursor = '';
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            document.removeEventListener('touchmove', onMouseMove);
+            document.removeEventListener('touchend', onMouseUp);
+        }
+    };
+
+    mapWrapper.addEventListener('mousedown', onMouseDown);
+    mapWrapper.addEventListener('touchstart', onMouseDown, { passive: false });
+}
+
 // Navigation
 if (navBtns.length > 0) {
     navBtns.forEach(btn => {
@@ -166,15 +240,18 @@ if (searchBtn && globalSearchInput) {
 }
 
 // Modals
-function openModal(modal) {
-    if (modal) modal.classList.remove('hidden');
-}
+    function openModal(modal) {
+        if (modal) modal.classList.remove('hidden');
+    }
 
-function closeModal(modal) {
-    if (modal) modal.classList.add('hidden');
-}
+    function closeModal(modal) {
+        if (modal) modal.classList.add('hidden');
+    }
 
-if (closeModals) {
+    // Initialize Map Panning
+    initMapPanning();
+
+    if (closeModals) {
     closeModals.forEach(btn => {
         btn.addEventListener('click', (e) => {
             closeModal(e.target.closest('.modal'));
