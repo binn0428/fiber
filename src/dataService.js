@@ -284,7 +284,7 @@ export function getData() {
 }
 
 export function getSiteData(siteName) {
-    const data = currentData.filter(d => d.station_name === siteName);
+    const data = currentData.filter(d => d.station_name === siteName || d.destination === siteName);
     // Sort by sequence if available
     return data.sort((a, b) => {
         const seqA = parseInt(a.sequence) || 999999;

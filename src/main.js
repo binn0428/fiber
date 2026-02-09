@@ -731,6 +731,7 @@ function renderMap() {
     svg.setAttribute("class", "connections");
     svg.setAttribute("width", "100%");
     svg.setAttribute("height", "100%");
+    svg.style.overflow = "visible"; // Fix clipping for infinite canvas
     
     // Arrow Marker
     const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
@@ -1195,9 +1196,25 @@ function updateConnectedLines(nodeName, xPct, yPct) {
 function openSiteDetails(siteName) {
     if (modalSiteTitle) modalSiteTitle.textContent = `站點詳情: ${siteName}`;
     const data = getSiteData(siteName);
-    const stats = getStats().find(s => s.name === siteName) || { total: 0, used: 0, free: 0 };
     
-    const usageRate = stats.total > 0 ? Math.round((stats.used / stats.total) * 100) : 0;
+    // Calculate stats locally to include incoming connections
+    let total = data.length;
+    let used = 0;
+    
+    const isRowUsedCalc = (row) => {
+        return (row.usage && String(row.usage).trim().length > 0) || 
+               (row.destination && String(row.destination).trim().length > 0) || 
+               (row.net_end && String(row.net_end).trim().length > 0) || 
+               (row.department && String(row.department).trim().length > 0);
+    };
+
+    data.forEach(row => {
+        if (isRowUsedCalc(row)) used++;
+    });
+    
+    const free = total - used;
+    const usageRate = total > 0 ? Math.round((used / total) * 100) : 0;
+    const stats = { total, used, free };
 
     if (modalSiteStats) {
         modalSiteStats.innerHTML = `
