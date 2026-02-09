@@ -440,13 +440,16 @@ async function confirmAutoAdd() {
     if(selectedPathIndex === -1) return;
     
     const path = currentGeneratedPaths[selectedPathIndex];
+    // Get required core count from input, default to 1
+    const requiredCores = parseInt(document.getElementById('auto-core-count').value.trim()) || 1;
+
     const updates = {
         usage: document.getElementById('auto-usage').value.trim(),
         department: document.getElementById('auto-department').value.trim(),
         contact: document.getElementById('auto-contact').value.trim(),
         notes: document.getElementById('auto-notes').value.trim(),
-        core_count: document.getElementById('auto-core-count').value.trim(),
-        port: document.getElementById('auto-port').value.trim()
+        // core_count: document.getElementById('auto-core-count').value.trim(), // DO NOT OVERWRITE
+        // port: document.getElementById('auto-port').value.trim() // DO NOT OVERWRITE
     };
     
     // Validate
@@ -455,20 +458,19 @@ async function confirmAutoAdd() {
         return;
     }
 
-    if(!confirm(`確定要將此路徑 (${path.nodes.join('->')}) 設為已使用？`)) return;
+    if(!confirm(`確定要將此路徑 (${path.nodes.join('->')}) 設為已使用？\n(將佔用每個區段 ${requiredCores} 芯)`)) return;
 
     // Add Path ID to notes
     const pathId = 'PATH-' + Date.now();
     const noteWithId = (updates.notes ? updates.notes + ' ' : '') + `[PathID:${pathId}]`;
 
     try {
-        // For each segment (from->to), find ONE available record and update it.
+        // For each segment (from->to), find REQUIRED NUMBER of available records and update them.
         const data = getData();
         const recordsToUpdate = [];
         
         for(const segment of path.records) {
             // Find available core between segment.from and segment.to
-            // Sort by fiber_name to pick nicely?
             // First try finding direct forward connection
             let candidates = data.filter(d => 
                 d.station_name === segment.from && 
@@ -491,12 +493,14 @@ async function confirmAutoAdd() {
                 return 0;
             });
             
-            if(candidates.length === 0) {
-                throw new Error(`路徑段 ${segment.from} -> ${segment.to} 已無可用芯線！(可能已被搶占或無反向線路)`);
+            if(candidates.length < requiredCores) {
+                throw new Error(`路徑段 ${segment.from} -> ${segment.to} 可用芯線不足！(需要: ${requiredCores}, 可用: ${candidates.length})`);
             }
             
-            // Pick the first one
-            recordsToUpdate.push(candidates[0]);
+            // Pick the first N records
+            for (let i = 0; i < requiredCores; i++) {
+                recordsToUpdate.push(candidates[i]);
+            }
         }
         
         // Execute Updates
@@ -2468,7 +2472,7 @@ if (addForm) {
 
 // Dashboard Stats
 function renderDashboard() {
-    const stats = getStats();
+    let stats = getStats();
     const container = document.getElementById('stats-container');
     if (!container) return;
     container.innerHTML = '';
@@ -2478,14 +2482,50 @@ function renderDashboard() {
         return;
     }
 
+    // Sort by Total Capacity (Descending) to show Top 10 first
+    stats.sort((a, b) => b.total - a.total);
+
     const fragment = document.createDocumentFragment();
-    stats.forEach(site => {
+
+    // Colors for Top 10
+    const topColors = [
+        '#FFD700', // Gold
+        '#C0C0C0', // Silver
+        '#CD7F32', // Bronze
+        '#FF5252', // Red
+        '#448AFF', // Blue
+        '#69F0AE', // Green
+        '#E040FB', // Purple
+        '#FFAB40', // Orange
+        '#00E5FF', // Cyan
+        '#FF4081'  // Pink
+    ];
+
+    stats.forEach((site, index) => {
         const card = document.createElement('div');
         card.className = 'stat-card';
         const usageRate = site.total > 0 ? Math.round((site.used / site.total) * 100) : 0;
         
+        let rankHtml = '';
+        let titleStyle = '';
+        let progressColor = 'var(--primary-color)';
+
+        if (index < 10) {
+            const color = topColors[index];
+            card.style.borderTop = `4px solid ${color}`;
+            // Add a subtle background tint
+            card.style.background = `linear-gradient(to bottom, var(--bg-secondary) 0%, var(--bg-secondary) 90%, ${color}22 100%)`;
+            
+            titleStyle = `color: ${color};`;
+            progressColor = color;
+            rankHtml = `<span style="background-color:${color}; color:#000; padding:2px 6px; border-radius:4px; font-size:0.8em; font-weight:bold; margin-right:8px;">TOP ${index+1}</span>`;
+        }
+
         card.innerHTML = `
-            <h3>${site.name}</h3>
+            <div style="display:flex; align-items:center; margin-bottom:10px;">
+                ${rankHtml}
+                <h3 style="margin:0; ${titleStyle}">${site.name}</h3>
+            </div>
             <div class="stat-row">
                     <span>總芯數:</span>
                     <strong>${site.total}</strong>
@@ -2497,7 +2537,7 @@ function renderDashboard() {
             <div class="stat-row">
                 <span>使用率:</span>
                 <div class="progress-bar">
-                    <div class="progress" style="width: ${usageRate}%"></div>
+                    <div class="progress" style="width: ${usageRate}%; background-color: ${progressColor};"></div>
                 </div>
                 <span>${usageRate}%</span>
             </div>
