@@ -76,6 +76,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             console.log("Loaded Main Sites preference:", currentMainSites);
         }
+
+        // Load App Settings (Node Positions)
+        const nodePositionsSetting = await getAppSettings('fiber_node_positions');
+        if (nodePositionsSetting) {
+             if (typeof nodePositionsSetting === 'string') {
+                 try {
+                     nodePositions = JSON.parse(nodePositionsSetting);
+                 } catch (e) { console.error("Error parsing node positions", e); }
+             } else {
+                 nodePositions = nodePositionsSetting;
+             }
+             console.log("Loaded Node Positions from Supabase:", Object.keys(nodePositions).length);
+        }
         
         if (window.logToScreen) window.logToScreen(`Loaded ${data.length} records.`);
         console.log(`Loaded ${data.length} records.`);
@@ -116,6 +129,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     mgmtBtn.textContent = '管理功能';
                     mgmtBtn.style.color = 'var(--warning-color)';
                     alert('已登出，編輯功能已鎖定。');
+
+                    if (saveMapBtn) saveMapBtn.style.display = 'none';
+                    if (addLinkBtn) addLinkBtn.style.display = 'none';
+                    if (editMapBtn) {
+                         editMapBtn.textContent = '✏️ 編輯架構';
+                         editMapBtn.style.backgroundColor = 'var(--warning-color)';
+                    }
+                    isEditMode = false;
                     
                     // Switch to Dashboard
                     const dashboardBtn = document.querySelector('[data-target="dashboard"]');
@@ -160,6 +181,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     mgmtBtn.textContent = '登出';
                     mgmtBtn.style.color = 'var(--success-color)';
                 }
+
+                if (saveMapBtn) saveMapBtn.style.display = 'inline-block';
 
                 alert('登入成功！現在可以使用編輯和匯入功能。');
                 closeModal(loginModal);
@@ -231,12 +254,12 @@ try {
 
 // Node Positions Memory
 let nodePositions = {};
-try {
-    const savedNodes = localStorage.getItem('fiber_node_positions');
-    if (savedNodes) {
-        nodePositions = JSON.parse(savedNodes);
-    }
-} catch (e) { console.error("Failed to load node positions", e); }
+// try {
+//     const savedNodes = localStorage.getItem('fiber_node_positions');
+//     if (savedNodes) {
+//         nodePositions = JSON.parse(savedNodes);
+//     }
+// } catch (e) { console.error("Failed to load node positions", e); }
 
 let currentPage = 1;
 const ITEMS_PER_PAGE = 20;
@@ -547,7 +570,7 @@ if (searchBtn && globalSearchInput) {
 const editMapBtn = document.getElementById('edit-map-btn');
 const refreshMapBtn = document.getElementById('refresh-map-btn');
 const multiCenterSortBtn = document.getElementById('multi-center-sort-btn');
-const resetMapBtn = document.getElementById('reset-map-btn');
+const saveMapBtn = document.getElementById('save-map-btn');
 const addLinkBtn = document.getElementById('add-link-btn');
 
 if (multiCenterSortBtn) {
@@ -609,9 +632,6 @@ if (multiCenterSortBtn) {
                 }
             });
 
-            // Save updated positions to storage
-            localStorage.setItem('fiber_node_positions', JSON.stringify(nodePositions));
-            
             // Re-render
             renderMap();
         }
@@ -680,17 +700,22 @@ if (refreshMapBtn) {
     });
 }
 
-if (resetMapBtn) {
-    resetMapBtn.addEventListener('click', () => {
-        if (!isAdminLoggedIn) {
-            alert('權限不足：僅管理員可執行排序變更');
-            return;
-        }
-
-        if (confirm('確定要重置所有站點位置嗎？\n這將會清除您手動拖曳的排版。')) {
-            nodePositions = {};
-            localStorage.removeItem('fiber_node_positions');
-            renderMap();
+if (saveMapBtn) {
+    saveMapBtn.addEventListener('click', async () => {
+        if (!isAdminLoggedIn) return;
+        
+        try {
+            saveMapBtn.disabled = true;
+            saveMapBtn.textContent = '儲存中...';
+            
+            await setAppSettings('fiber_node_positions', JSON.stringify(nodePositions));
+            
+            alert('佈局儲存成功！所有使用者將看到此畫面。');
+        } catch (e) {
+            alert('儲存失敗：' + e.message);
+        } finally {
+            saveMapBtn.disabled = false;
+            saveMapBtn.textContent = '💾 儲存佈局';
         }
     });
 }
@@ -1083,14 +1108,23 @@ function renderMap() {
         hitLine.setAttribute("data-source", source.name);
         hitLine.setAttribute("data-target", target.name);
 
-        if (isEditMode) {
-            hitLine.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                await handleConnectionClick(source.name, target.name);
-            });
-            hitLine.addEventListener('mouseenter', () => line.setAttribute("stroke", "#ef4444"));
-            hitLine.addEventListener('mouseleave', () => line.setAttribute("stroke", "#3b82f6"));
-        }
+        // Make hitLine interactive for everyone
+        hitLine.style.pointerEvents = 'all'; 
+        hitLine.style.cursor = 'pointer';
+
+        hitLine.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            await handleConnectionClick(source.name, target.name);
+        });
+
+        // Hover effect
+        hitLine.addEventListener('mouseenter', () => {
+            line.setAttribute("stroke", "#ef4444"); // Red highlight
+            // If strictly read-only, maybe blue? But red shows selection well.
+        });
+        hitLine.addEventListener('mouseleave', () => {
+            line.setAttribute("stroke", "#3b82f6"); // Back to blue
+        });
         
         const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
         title.textContent = `${source.name} -> ${target.name}`;
@@ -1111,12 +1145,21 @@ async function handleConnectionClick(sourceName, targetName) {
     const data = getData();
     const records = data.filter(d => d.station_name === sourceName && d.destination === targetName);
     
-    if (records.length === 0) return;
+    if (records.length === 0) {
+        alert(`連線: ${sourceName} -> ${targetName}\n暫無詳細資料。`);
+        return;
+    }
 
     let msg = `連線: ${sourceName} -> ${targetName}\n找到 ${records.length} 條光纜資料:\n`;
     records.forEach((r, idx) => {
         msg += `${idx + 1}. 名稱: ${r.fiber_name || '無'}, 芯數: ${r.core_count || '?'}\n`;
     });
+
+    if (!isEditMode) {
+        alert(msg);
+        return;
+    }
+
     msg += `\n請輸入:\n- 數字 (1-${records.length}): 編輯該光纜\n- 'd': 刪除此連線所有資料\n- 取消: 關閉視窗`;
 
     const input = prompt(msg);
@@ -1286,7 +1329,7 @@ function makeDraggable(el, nodeData) {
 
         // Save position to memory
         nodePositions[nodeData.name] = { x: nodeData.xPct, y: nodeData.yPct };
-        localStorage.setItem('fiber_node_positions', JSON.stringify(nodePositions));
+        // localStorage.setItem('fiber_node_positions', JSON.stringify(nodePositions)); // Disabled: Only save via Admin button
 
         // Fix for Mobile: touchstart preventDefault() kills the click event.
         // If it was a touch event and NOT a drag, manually trigger the click.
