@@ -1390,9 +1390,14 @@ function openSiteDetails(siteName) {
         const btnText = isMain ? "取消中心 (重整)" : "設為中心 (重整)";
         const btnColor = isMain ? "#ef4444" : "#3b82f6";
 
+        // Check if admin is logged in
+        const adminBtnHtml = isAdminLoggedIn 
+            ? `<button id="btn-set-main" style="padding: 6px 12px; background: ${btnColor}; color: white; border: none; border-radius: 4px; cursor: pointer;">${btnText}</button>`
+            : '';
+
         modalSiteStats.innerHTML = `
             <div style="display: flex; gap: 10px; margin-bottom: 1rem;">
-                <button id="btn-set-main" style="padding: 6px 12px; background: ${btnColor}; color: white; border: none; border-radius: 4px; cursor: pointer;">${btnText}</button>
+                ${adminBtnHtml}
             </div>
             <div style="display: flex; gap: 1rem; margin-bottom: 1rem; align-items: center;">
                 <div class="stat-box">總數: <b>${stats.total}</b></div>
