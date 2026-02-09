@@ -273,6 +273,8 @@ try {
 
 // Node Positions Memory
 let nodePositions = {};
+let hasAutoFitted = false; // Track if we have auto-fitted the map
+
 // try {
 //     const savedNodes = localStorage.getItem('fiber_node_positions');
 //     if (savedNodes) {
@@ -282,6 +284,91 @@ let nodePositions = {};
 
 let currentPage = 1;
 const ITEMS_PER_PAGE = 20;
+
+// Auto Fit Map Logic
+function fitMapToView() {
+    const mapWrapper = document.querySelector('.map-container');
+    const mapInner = document.getElementById('fiber-map');
+    const nodes = document.querySelectorAll('.site-node');
+    
+    if (!mapWrapper || !mapInner || nodes.length === 0) return false;
+
+    // Get Dimensions
+    const wrapperRect = mapWrapper.getBoundingClientRect();
+    // Use offsetWidth for inner content to get unscaled size
+    const innerW = mapInner.offsetWidth; 
+    const innerH = mapInner.offsetHeight;
+
+    if (wrapperRect.width === 0 || wrapperRect.height === 0 || innerW === 0 || innerH === 0) return false;
+
+    // Calculate Bounding Box of Nodes (in pixels relative to mapInner)
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    
+    nodes.forEach(node => {
+        // Parse left/top percentages
+        const leftPct = parseFloat(node.style.left);
+        const topPct = parseFloat(node.style.top);
+        
+        if (isNaN(leftPct) || isNaN(topPct)) return;
+
+        const x = (leftPct / 100) * innerW;
+        const y = (topPct / 100) * innerH;
+        
+        // Approximate node size (half-width/height for center offset + margin)
+        // Nodes are centered (translate -50%), so x,y is the center.
+        // Assume max node size ~150x80 px
+        const halfW = 80;
+        const halfH = 40;
+        
+        minX = Math.min(minX, x - halfW);
+        maxX = Math.max(maxX, x + halfW);
+        minY = Math.min(minY, y - halfH);
+        maxY = Math.max(maxY, y + halfH);
+    });
+
+    if (minX === Infinity) return false;
+
+    // Add Padding
+    const padding = 40; // px
+    const contentW = (maxX - minX) + (padding * 2);
+    const contentH = (maxY - minY) + (padding * 2);
+    
+    // Calculate Scale
+    const availW = wrapperRect.width;
+    const availH = wrapperRect.height;
+    
+    const scaleX = availW / contentW;
+    const scaleY = availH / contentH;
+    
+    // Choose smaller scale to fit both dimensions
+    let newScale = Math.min(scaleX, scaleY);
+    
+    // Clamp Scale
+    // Allow zooming out significantly for large maps, but cap zooming in
+    newScale = Math.min(Math.max(newScale, 0.1), 1.5); 
+
+    // Calculate Center
+    const contentCenterX = (minX + maxX) / 2;
+    const contentCenterY = (minY + maxY) / 2;
+    
+    // We want contentCenterX * newScale + tx = availW / 2
+    // tx = (availW / 2) - (contentCenterX * newScale)
+    const newTx = (availW / 2) - (contentCenterX * newScale);
+    const newTy = (availH / 2) - (contentCenterY * newScale);
+    
+    // Apply
+    mapState.scale = newScale;
+    mapState.tx = newTx;
+    mapState.ty = newTy;
+    
+    // Update DOM
+    const updateTransform = () => {
+        mapInner.style.transform = `translate(${mapState.tx}px, ${mapState.ty}px) scale(${mapState.scale})`;
+    };
+    updateTransform();
+    
+    return true;
+}
 
 // Map Panning & Zooming Logic
 function initMapPanning() {
@@ -1190,6 +1277,15 @@ function renderMap() {
 
         svgContainer.appendChild(line);
         svgContainer.appendChild(hitLine);
+    }
+
+    // Auto-fit on first load or whenever renderMap is called without user interaction override?
+    // User requested "Original display to fit all sites".
+    // We try to fit. If map is hidden, it fails and hasAutoFitted remains false.
+    if (!hasAutoFitted) {
+        if (fitMapToView()) {
+            hasAutoFitted = true;
+        }
     }
 
     if (mapContainer && mapState) {
