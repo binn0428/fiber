@@ -778,14 +778,51 @@ function renderMap() {
     // Identify Backbone Nodes
     const backboneNodes = [];
     backboneSequence.forEach((key, idx) => {
-        const nodeName = Object.keys(nodes).find(n => {
+        // Find ALL matching nodes
+        const matches = Object.keys(nodes).filter(n => {
             const normN = n.toUpperCase().replace('#', '');
             const normK = key.toUpperCase().replace('#', '');
-            return normN.includes(normK) || normK.includes(normN);
+            // Exact match preferred, then partial
+            return normN === normK || normN.includes(normK) || normK.includes(normN);
         });
+        
+        // Pick the best match:
+        // 1. If 'o2 #2O2' exists and key is '2O2', prefer 'o2 #2O2' over '#2O2' if user wants.
+        // Actually, user said: "Highlight is at 'o2 #2O2' not '#2O2'". 
+        // This implies they prefer the longer/more descriptive name if it contains the key.
+        // Let's sort matches by length (descending) so 'o2 #2O2' comes before '#2O2' ?
+        // Or if both exist, pick the one that is NOT just the key with a hash.
+        
+        let bestMatch = null;
+        if (matches.length > 0) {
+            // Refined Sorting Logic:
+            // 1. Penalize names where the key appears multiple times (redundant/stuttering, e.g. "1ph #1ph").
+            // 2. Prefer longer names (e.g. "o2 #2O2" over "#2O2").
+            
+            matches.sort((a, b) => {
+                const normK = key.toUpperCase().replace('#', '');
+                
+                // Count occurrences of the key in the name (simple check)
+                const countA = (a.toUpperCase().split(normK).length - 1);
+                const countB = (b.toUpperCase().split(normK).length - 1);
+                
+                // If one has fewer occurrences (but at least 1), prefer it?
+                // Actually, "1ph #1ph" has 2. "#1PH" has 1. We want #1PH. So prefer Lower Count.
+                // "o2 #2O2" has 1 (o2 != 2O2). "#2O2" has 1. Count is same.
+                
+                if (countA !== countB) {
+                    return countA - countB; // Ascending count (1 is better than 2)
+                }
+                
+                // If counts are same, prefer longer length
+                return b.length - a.length;
+            });
+            
+            bestMatch = matches[0];
+        }
 
-        if (nodeName && nodes[nodeName]) {
-            const node = nodes[nodeName];
+        if (bestMatch && nodes[bestMatch]) {
+            const node = nodes[bestMatch];
             const angle = idx * angleStep - (Math.PI / 2);
             // Center is 50, 50. 
             // If we want infinite, we can still use 50,50 as origin, but allow coords like -50 or 150.
@@ -951,6 +988,8 @@ function renderMap() {
         hitLine.setAttribute("y2", `${target.yPct}%`);
         hitLine.setAttribute("stroke", "transparent");
         hitLine.setAttribute("stroke-width", "15"); // Easy to click
+        hitLine.setAttribute("pointer-events", "stroke"); // Ensure it captures clicks even if parent is none
+        hitLine.style.pointerEvents = "stroke"; // CSS backup
         hitLine.style.cursor = isEditMode ? "pointer" : "default";
 
         // Add Data Attributes for Update
