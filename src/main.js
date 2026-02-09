@@ -748,11 +748,30 @@ function renderMap() {
     // 4. Render Layout
     const levelCount = maxLevel + 1;
     
+    // Infinite Canvas Settings
+    // Instead of using percentages (0-100), we use a virtual coordinate system.
+    // The center is (0,0).
+    const centerX = 0; 
+    const centerY = 0; 
+    
+    // Scale factor for rendering to CSS pixels/percentages
+    // We will still use %, but allow them to go beyond 0-100 and rely on the pan/zoom transform.
+    // However, to "break the frame", we should position elements in pixels or relative units that aren't constrained.
+    // But existing code uses %.
+    // Let's stick to % but scale down the "world" so it fits, OR just allow >100% and let user pan.
+    // The user complains about "restricted frame". 
+    // If we use % and the container is 100% width/height, then 120% is off screen.
+    // But our pan/zoom logic transforms the CONTAINER.
+    // Wait, the pan logic transforms `mapInner` (`#fiber-map`).
+    // `#fiber-map` contains the nodes.
+    // If nodes are at 120%, and we pan, they should come into view.
+    // The issue might be that the layout algorithm constrains them to 5-95%.
+    
     // Backbone Sequence
     const backboneSequence = ['ROOM', 'UDC', '1PH', '2PH', 'DKB', 'MS2', 'MS3', 'MS4', '5KB', '2O2'];
-    const radius = 35; 
-    const centerX = 50; 
-    const centerY = 50; 
+    
+    // Increase radius to spread out more
+    const radius = 35; // Keep relative radius
     const angleStep = (2 * Math.PI) / backboneSequence.length;
     
     // Identify Backbone Nodes
@@ -767,8 +786,10 @@ function renderMap() {
         if (nodeName && nodes[nodeName]) {
             const node = nodes[nodeName];
             const angle = idx * angleStep - (Math.PI / 2);
-            node.xPct = centerX + radius * Math.cos(angle);
-            node.yPct = centerY + radius * Math.sin(angle);
+            // Center is 50, 50. 
+            // If we want infinite, we can still use 50,50 as origin, but allow coords like -50 or 150.
+            node.xPct = 50 + radius * Math.cos(angle);
+            node.yPct = 50 + radius * Math.sin(angle);
             node.isBackbone = true;
             node.level = -1; 
             backboneNodes.push(node);
@@ -809,8 +830,8 @@ function renderMap() {
         const bx = backboneNode.xPct;
         const by = backboneNode.yPct;
         
-        // Calculate angle of backbone node from center
-        const angleFromCenter = Math.atan2(by - centerY, bx - centerX);
+        // Calculate angle of backbone node from center (50,50)
+        const angleFromCenter = Math.atan2(by - 50, bx - 50);
         
         // Dynamic settings based on count
         let satelliteRadius = 15; 
@@ -831,9 +852,9 @@ function renderMap() {
             node.xPct = bx + satelliteRadius * Math.cos(offsetAngle);
             node.yPct = by + satelliteRadius * Math.sin(offsetAngle);
             
-            // Boundary checks (5-95)
-            node.xPct = Math.max(5, Math.min(95, node.xPct));
-            node.yPct = Math.max(5, Math.min(95, node.yPct));
+            // REMOVED Boundary checks (5-95) to allow infinite expansion
+            // node.xPct = Math.max(5, Math.min(95, node.xPct));
+            // node.yPct = Math.max(5, Math.min(95, node.yPct));
         });
     });
 
