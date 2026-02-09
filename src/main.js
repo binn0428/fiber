@@ -532,6 +532,7 @@ if (searchBtn && globalSearchInput) {
 // Map Edit Controls
 const editMapBtn = document.getElementById('edit-map-btn');
 const refreshMapBtn = document.getElementById('refresh-map-btn');
+const resetMapBtn = document.getElementById('reset-map-btn');
 const addLinkBtn = document.getElementById('add-link-btn');
 
 if (editMapBtn) {
@@ -592,8 +593,17 @@ if (addLinkBtn) {
 
 if (refreshMapBtn) {
     refreshMapBtn.addEventListener('click', () => {
-        // Clear saved positions to reset layout? No, just re-render
         renderMap();
+    });
+}
+
+if (resetMapBtn) {
+    resetMapBtn.addEventListener('click', () => {
+        if (confirm('確定要重置所有站點位置嗎？\n這將會清除您手動拖曳的排版。')) {
+            nodePositions = {};
+            localStorage.removeItem('fiber_node_positions');
+            renderMap();
+        }
     });
 }
 
@@ -802,25 +812,26 @@ function renderMap() {
         // Calculate angle of backbone node from center
         const angleFromCenter = Math.atan2(by - centerY, bx - centerX);
         
-        // Place satellites in an arc *outside* the backbone ring
-        // Arc span: 60 degrees?
-        const satelliteRadius = 12; // Distance from backbone node
-        const totalArc = Math.PI / 2; // 90 degrees
+        // Dynamic settings based on count
+        let satelliteRadius = 15; 
+        if (group.length > 5) satelliteRadius = 22;
+        if (group.length > 10) satelliteRadius = 28;
+        
+        // Spread satellites in an arc outward
+        // If many, use wider arc
+        const totalArc = group.length > 4 ? (Math.PI * 0.9) : (Math.PI / 1.5);
         const startAngle = angleFromCenter - (totalArc / 2);
         
         group.forEach((node, idx) => {
-            // Distribute evenly
-            let offsetAngle = 0;
+            let offsetAngle = angleFromCenter;
             if (group.length > 1) {
                 offsetAngle = startAngle + (idx / (group.length - 1)) * totalArc;
-            } else {
-                offsetAngle = angleFromCenter;
             }
             
             node.xPct = bx + satelliteRadius * Math.cos(offsetAngle);
             node.yPct = by + satelliteRadius * Math.sin(offsetAngle);
             
-            // Boundary checks (0-100)
+            // Boundary checks (5-95)
             node.xPct = Math.max(5, Math.min(95, node.xPct));
             node.yPct = Math.max(5, Math.min(95, node.yPct));
         });
@@ -860,16 +871,18 @@ function renderMap() {
         
         makeDraggable(el, node);
 
+        let clickTimeout;
         el.addEventListener('click', (e) => {
             if (el.getAttribute('data-dragging') === 'true') return;
-            if (isEditMode) {
-                 // Double click handles rename
-            } else {
-                 openSiteDetails(node.name);
-            }
+            
+            if (clickTimeout) clearTimeout(clickTimeout);
+            clickTimeout = setTimeout(() => {
+                openSiteDetails(node.name);
+            }, 250);
         });
 
         el.addEventListener('dblclick', async (e) => {
+            if (clickTimeout) clearTimeout(clickTimeout);
             if (!isEditMode) return;
             e.stopPropagation();
             const newName = prompt(`請輸入站點 "${node.name}" 的新名稱：`, node.name);
@@ -903,6 +916,10 @@ function renderMap() {
         line.setAttribute("stroke-width", "2"); 
         line.setAttribute("marker-end", "url(#arrow)");
         
+        // Add Data Attributes for Update
+        line.setAttribute("data-source", source.name);
+        line.setAttribute("data-target", target.name);
+
         // 2. Invisible Hit Area (Thicker)
         const hitLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
         hitLine.setAttribute("x1", `${source.xPct}%`);
@@ -912,6 +929,10 @@ function renderMap() {
         hitLine.setAttribute("stroke", "transparent");
         hitLine.setAttribute("stroke-width", "15"); // Easy to click
         hitLine.style.cursor = isEditMode ? "pointer" : "default";
+
+        // Add Data Attributes for Update
+        hitLine.setAttribute("data-source", source.name);
+        hitLine.setAttribute("data-target", target.name);
 
         if (isEditMode) {
             hitLine.addEventListener('click', async (e) => {
