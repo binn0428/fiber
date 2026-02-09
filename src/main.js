@@ -771,7 +771,7 @@ function renderMap() {
     const backboneSequence = ['ROOM', 'UDC', '1PH', '2PH', 'DKB', 'MS2', 'MS3', 'MS4', '5KB', '2O2'];
     
     // Increase radius to spread out more
-    const radius = 35; // Keep relative radius
+    const radius = 45; // Keep relative radius
     const angleStep = (2 * Math.PI) / backboneSequence.length;
     
     // Identify Backbone Nodes
@@ -833,10 +833,10 @@ function renderMap() {
         // Calculate angle of backbone node from center (50,50)
         const angleFromCenter = Math.atan2(by - 50, bx - 50);
         
-        // Dynamic settings based on count
-        let satelliteRadius = 15; 
-        if (group.length > 5) satelliteRadius = 22;
-        if (group.length > 10) satelliteRadius = 28;
+        // Dynamic settings based on count - Increased to prevent overlap
+        let satelliteRadius = 25; 
+        if (group.length > 5) satelliteRadius = 35;
+        if (group.length > 10) satelliteRadius = 45;
         
         // Spread satellites in an arc outward
         // If many, use wider arc
@@ -880,6 +880,7 @@ function renderMap() {
     Object.values(nodes).forEach(node => {
         const el = document.createElement('div');
         el.className = 'site-node';
+        if (node.isBackbone) el.classList.add('backbone');
         if (isEditMode) el.classList.add('edit-mode');
         
         el.innerHTML = `
@@ -1123,8 +1124,8 @@ function makeDraggable(el, nodeData) {
         const deltaY = ((clientY - startY) / containerRect.height) * 100;
         
         // Apply to Initial Position (Absolute Delta method avoids accumulation errors/jitter)
-        const newLeft = Math.max(0, Math.min(100, initialLeft + deltaX));
-        const newTop = Math.max(0, Math.min(100, initialTop + deltaY));
+        const newLeft = initialLeft + deltaX;
+        const newTop = initialTop + deltaY;
         
         el.style.left = `${newLeft}%`;
         el.style.top = `${newTop}%`;
