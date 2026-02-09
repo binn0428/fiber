@@ -228,6 +228,416 @@ if (saveConfigBtn) {
     });
 }
 
+// --- Auto Add & Path Management Logic ---
+
+window.switchAutoTab = function(tab) {
+    document.querySelectorAll('#auto-add .tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('#auto-add .tab-content-panel').forEach(p => p.style.display = 'none');
+    
+    const activeBtn = document.querySelector(`#auto-add .tab-btn[onclick*="${tab}"]`);
+    if(activeBtn) activeBtn.classList.add('active');
+    
+    const panel = document.getElementById(`tab-auto-${tab}`);
+    if(panel) panel.style.display = 'block';
+    
+    if(tab === 'mgmt') loadPathMgmtList();
+};
+
+window.initAutoAddView = function() {
+    const data = getData();
+    const stations = new Set();
+    data.forEach(d => {
+        if(d.station_name) stations.add(d.station_name);
+        if(d.destination) stations.add(d.destination);
+    });
+    
+    const datalist = document.getElementById('station-list');
+    if(datalist) {
+        datalist.innerHTML = Array.from(stations).sort().map(s => `<option value="${s}">`).join('');
+    }
+}
+
+// Global variable to store current generated paths
+let currentGeneratedPaths = [];
+let selectedPathIndex = -1;
+
+// Event Listeners
+const generatePathBtn = document.getElementById('generate-path-btn');
+if (generatePathBtn) {
+    generatePathBtn.addEventListener('click', () => {
+        const start = document.getElementById('auto-start-node').value.trim();
+        const end = document.getElementById('auto-end-node').value.trim();
+        if(!start || !end) {
+            alert("請輸入起點和終點");
+            return;
+        }
+        if(start === end) {
+            alert("起點和終點不能相同");
+            return;
+        }
+        
+        generatePaths(start, end);
+    });
+}
+
+const confirmAutoAddBtn = document.getElementById('confirm-auto-add-btn');
+if (confirmAutoAddBtn) {
+    confirmAutoAddBtn.addEventListener('click', confirmAutoAdd);
+}
+
+const pathSearchBtn = document.getElementById('path-search-btn');
+if (pathSearchBtn) {
+    pathSearchBtn.addEventListener('click', loadPathMgmtList);
+}
+
+// ... Path Finding Logic ...
+function generatePaths(start, end) {
+    const data = getData();
+    // Build Graph: Adjacency List
+    // We want to find a sequence of stations.
+    // Graph nodes: Station Names
+    // Graph edges: Existing rows where usage is empty.
+    
+    const graph = {};
+    
+    data.forEach(row => {
+        if(!row.station_name || !row.destination) return;
+        const u = row.station_name;
+        const v = row.destination;
+        
+        // Check availability
+        const isAvailable = !row.usage || row.usage.trim() === '';
+        
+        if(!graph[u]) graph[u] = {};
+        
+        if(isAvailable) {
+            if(!graph[u][v]) graph[u][v] = [];
+            graph[u][v].push(row);
+        }
+    });
+    
+    // BFS to find paths (limit 5)
+    const paths = [];
+    const queue = [ { current: start, path: [start], records: [] } ];
+    
+    // To find multiple paths, we can use a modified BFS or DFS.
+    // Since we need "at least 1, max 5", standard BFS is good for shortest paths.
+    // We need to keep searching until we have 5 or queue empty.
+    
+    // Loop limit to prevent infinite loops in complex graphs
+    let iterations = 0;
+    const maxIterations = 5000;
+    
+    while(queue.length > 0 && paths.length < 5 && iterations < maxIterations) {
+        iterations++;
+        const state = queue.shift();
+        const { current, path, records } = state;
+        
+        if(current === end) {
+            paths.push({ nodes: path, records: records });
+            continue;
+        }
+        
+        if(path.length >= 10) continue; // Max depth
+        
+        if(graph[current]) {
+            for(const neighbor in graph[current]) {
+                if(path.includes(neighbor)) continue; // Avoid cycles
+                
+                // We have a connection.
+                // We track the neighbor.
+                // Note: We don't pick the specific record yet, just the edge existence.
+                
+                queue.push({
+                    current: neighbor,
+                    path: [...path, neighbor],
+                    records: [...records, { from: current, to: neighbor }]
+                });
+            }
+        }
+    }
+    
+    currentGeneratedPaths = paths;
+    renderPaths(paths);
+}
+
+function renderPaths(paths) {
+    const container = document.getElementById('path-list');
+    const resultsArea = document.getElementById('path-results');
+    const formArea = document.getElementById('path-details-form');
+    
+    if(!container) return;
+
+    container.innerHTML = '';
+    if(formArea) formArea.style.display = 'none';
+    
+    if(paths.length === 0) {
+        if(resultsArea) resultsArea.style.display = 'block';
+        container.innerHTML = '<div class="no-data" style="padding:10px; color:#aaa;">找不到符合條件的可用路徑 (或無可用芯線)</div>';
+        return;
+    }
+    
+    if(resultsArea) resultsArea.style.display = 'block';
+    
+    paths.forEach((path, index) => {
+        const div = document.createElement('div');
+        div.className = 'path-option';
+        div.style.padding = '15px';
+        div.style.border = '1px solid #555';
+        div.style.borderRadius = '5px';
+        div.style.cursor = 'pointer';
+        div.style.marginBottom = '8px';
+        div.style.backgroundColor = 'var(--bg-secondary)';
+        div.style.transition = 'all 0.2s';
+        
+        const pathStr = path.nodes.join(' <span style="color:var(--primary-color)">➝</span> ');
+        div.innerHTML = `<strong style="display:block; margin-bottom:5px;">路徑 ${index + 1}</strong> <span style="font-size:1.1em;">${pathStr}</span>`;
+        
+        div.onmouseover = () => { if(selectedPathIndex !== index) div.style.borderColor = 'var(--primary-color)'; };
+        div.onmouseout = () => { if(selectedPathIndex !== index) div.style.borderColor = '#555'; };
+        
+        div.onclick = () => selectPath(index);
+        container.appendChild(div);
+    });
+}
+
+function selectPath(index) {
+    selectedPathIndex = index;
+    const path = currentGeneratedPaths[index];
+    
+    // Highlight UI
+    const options = document.querySelectorAll('.path-option');
+    options.forEach((opt, i) => {
+        if(i === index) {
+            opt.style.backgroundColor = 'rgba(16, 185, 129, 0.2)';
+            opt.style.borderColor = 'var(--success-color)';
+        } else {
+            opt.style.backgroundColor = 'var(--bg-secondary)';
+            opt.style.borderColor = '#555';
+        }
+    });
+    
+    const formArea = document.getElementById('path-details-form');
+    if(formArea) formArea.style.display = 'block';
+    
+    const info = document.getElementById('selected-path-info');
+    if(info) info.innerHTML = `已選擇: ${path.nodes.join(' ➝ ')} (共 ${path.records.length} 段)`;
+    
+    // Auto fill hint
+    const noteInput = document.getElementById('auto-notes');
+    if(noteInput && !noteInput.value) {
+        noteInput.placeholder = "自動填入路徑資訊...";
+    }
+}
+
+async function confirmAutoAdd() {
+    if(selectedPathIndex === -1) return;
+    
+    const path = currentGeneratedPaths[selectedPathIndex];
+    const updates = {
+        usage: document.getElementById('auto-usage').value.trim(),
+        department: document.getElementById('auto-department').value.trim(),
+        contact: document.getElementById('auto-contact').value.trim(),
+        notes: document.getElementById('auto-notes').value.trim(),
+        core_count: document.getElementById('auto-core-count').value.trim(),
+        port: document.getElementById('auto-port').value.trim()
+    };
+    
+    // Validate
+    if(!updates.usage) {
+        alert("請輸入用途");
+        return;
+    }
+
+    if(!confirm(`確定要將此路徑 (${path.nodes.join('->')}) 設為已使用？`)) return;
+
+    // Add Path ID to notes
+    const pathId = 'PATH-' + Date.now();
+    const noteWithId = (updates.notes ? updates.notes + ' ' : '') + `[PathID:${pathId}]`;
+
+    try {
+        // For each segment (from->to), find ONE available record and update it.
+        const data = getData();
+        const recordsToUpdate = [];
+        
+        for(const segment of path.records) {
+            // Find available core between segment.from and segment.to
+            // Sort by fiber_name to pick nicely?
+            const candidates = data.filter(d => 
+                d.station_name === segment.from && 
+                d.destination === segment.to && 
+                (!d.usage || d.usage.trim() === '')
+            ).sort((a, b) => {
+                // Try to sort by fiber_name
+                if(a.fiber_name && b.fiber_name) return a.fiber_name.localeCompare(b.fiber_name, undefined, {numeric: true});
+                return 0;
+            });
+            
+            if(candidates.length === 0) {
+                throw new Error(`路徑段 ${segment.from} -> ${segment.to} 已無可用芯線！(可能已被搶占)`);
+            }
+            
+            // Pick the first one
+            recordsToUpdate.push(candidates[0]);
+        }
+        
+        // Execute Updates
+        document.getElementById('confirm-auto-add-btn').disabled = true;
+        document.getElementById('confirm-auto-add-btn').innerText = "處理中...";
+        
+        for(const record of recordsToUpdate) {
+            await updateRecord(record.id, {
+                ...updates,
+                notes: noteWithId
+            });
+        }
+        
+        alert("新增成功！路徑 ID: " + pathId);
+        
+        // Clear Form
+        document.getElementById('auto-usage').value = '';
+        document.getElementById('auto-notes').value = '';
+        document.getElementById('path-details-form').style.display = 'none';
+        document.getElementById('path-list').innerHTML = '';
+        document.getElementById('path-results').style.display = 'none';
+        selectedPathIndex = -1;
+        
+        // Refresh Data
+        // updateRecord calls notify() which updates UI, but let's be sure
+        renderDataTable(); 
+        
+    } catch(e) {
+        console.error(e);
+        alert("錯誤: " + e.message);
+    } finally {
+        const btn = document.getElementById('confirm-auto-add-btn');
+        if(btn) {
+            btn.disabled = false;
+            btn.innerText = "確認新增並佔用線路";
+        }
+    }
+}
+
+// Path Management (Delete/Restore)
+function loadPathMgmtList() {
+    const queryInput = document.getElementById('path-search');
+    const query = queryInput ? queryInput.value.toLowerCase().trim() : '';
+    const container = document.getElementById('mgmt-path-list');
+    if(!container) return;
+    
+    const data = getData();
+    // Group by PathID
+    const paths = {};
+    
+    data.forEach(d => {
+        if(d.notes && d.notes.includes('[PathID:')) {
+            const match = d.notes.match(/\[PathID:([^\]]+)\]/);
+            if(match) {
+                const pid = match[1];
+                if(!paths[pid]) paths[pid] = { id: pid, records: [], usage: d.usage, time: 0 };
+                paths[pid].records.push(d);
+                // Extract time from ID if possible
+                const ts = parseInt(pid.split('-')[1]);
+                if(!isNaN(ts)) paths[pid].time = ts;
+            }
+        }
+    });
+    
+    const sortedPaths = Object.values(paths).sort((a, b) => b.time - a.time);
+    
+    container.innerHTML = '';
+    
+    if(sortedPaths.length === 0) {
+        container.innerHTML = '<p style="padding:10px; color:#aaa;">尚無自動生成的路徑紀錄。</p>';
+        return;
+    }
+    
+    let count = 0;
+    sortedPaths.forEach(p => {
+        if(query && !p.usage.toLowerCase().includes(query) && !p.id.toLowerCase().includes(query)) {
+             // Check stations too
+             const stationStr = p.records.map(r => r.station_name + r.destination).join('');
+             if(!stationStr.toLowerCase().includes(query)) return;
+        }
+        
+        count++;
+        const div = document.createElement('div');
+        div.className = 'path-mgmt-item';
+        div.style.border = '1px solid #444';
+        div.style.borderRadius = '5px';
+        div.style.padding = '15px';
+        div.style.marginBottom = '10px';
+        div.style.backgroundColor = 'var(--bg-secondary)';
+        
+        const dateStr = p.time ? new Date(p.time).toLocaleString() : '未知時間';
+        
+        // Construct Path Flow
+        // We have records, but they might be out of order.
+        // We can try to chain them.
+        const recs = [...p.records];
+        // Simple display: list segments
+        const segments = recs.map(r => `<span class="badge">${r.station_name} ➝ ${r.destination}</span>`).join(' ');
+        
+        div.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px;">
+                <div>
+                    <h4 style="margin:0; color:var(--primary-color);">${p.usage || '無用途'}</h4>
+                    <small style="color:#888;">${dateStr} | ID: ${p.id}</small>
+                </div>
+                <button class="action-btn" style="background-color:var(--danger-color); font-size:0.9em; padding:5px 10px;" onclick="deletePath('${p.id}')">刪除/復原</button>
+            </div>
+            <div style="font-size:0.9em; color:#ccc;">
+                <div><strong>備註:</strong> ${p.records[0].notes.replace(`[PathID:${p.id}]`, '') || '-'}</div>
+                <div style="margin-top:5px;"><strong>經過路徑 (${p.records.length}段):</strong></div>
+                <div style="margin-top:5px; display:flex; flex-wrap:wrap; gap:5px;">${segments}</div>
+            </div>
+        `;
+        container.appendChild(div);
+    });
+    
+    if(count === 0) {
+        container.innerHTML = '<p style="padding:10px; color:#aaa;">無符合搜尋條件的紀錄。</p>';
+    }
+}
+
+window.deletePath = async function(pathId) {
+    if(!confirm('確定要刪除此路徑並釋放所有相關芯線嗎？\n(這將清除用途、芯數、Port等資料並恢復為可用狀態)')) return;
+    
+    const data = getData();
+    const records = data.filter(d => d.notes && d.notes.includes(`[PathID:${pathId}]`));
+    
+    if(records.length === 0) {
+        alert("找不到相關紀錄，可能已被刪除。");
+        loadPathMgmtList();
+        return;
+    }
+    
+    try {
+        for(const r of records) {
+            // Remove PathID from notes
+            let newNotes = r.notes.replace(`[PathID:${pathId}]`, '').trim();
+            // Clean up double spaces if any
+            newNotes = newNotes.replace(/\s+/g, ' ');
+            
+            await updateRecord(r.id, {
+                usage: null, // Set to null/empty to mark as available
+                department: null,
+                contact: null,
+                phone: null, 
+                notes: newNotes,
+                core_count: null, // Reset core info if it was filled by auto add
+                port: null
+            });
+        }
+        alert(`已成功刪除路徑並釋放 ${records.length} 筆芯線資料。`);
+        loadPathMgmtList(); // Refresh list
+        renderDataTable(); // Refresh main table
+    } catch(e) {
+        console.error(e);
+        alert('刪除失敗: ' + e.message);
+    }
+};
+
 // Global State
 let isAdminLoggedIn = false;
 let currentMainSites = []; // Stores the user-selected main sites for layout (Array)
@@ -520,17 +930,29 @@ function initMapPanning() {
 if (navBtns.length > 0) {
     navBtns.forEach(btn => {
         btn.addEventListener('click', () => {
-            console.log("Nav clicked:", btn.getAttribute('data-target'));
+            const targetId = btn.getAttribute('data-target');
+            console.log("Nav clicked:", targetId);
+
+            // Admin Permission Check for Auto Add
+            if (targetId === 'auto-add' && !isAdminLoggedIn) {
+                alert('權限不足：此功能僅供管理員使用。請先登入。');
+                const loginModal = document.getElementById('login-modal');
+                if (loginModal) openModal(loginModal);
+                return;
+            }
+
             navBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            const targetId = btn.getAttribute('data-target');
+            
             viewSections.forEach(section => {
                 section.classList.remove('active');
                 if (section.id === targetId) section.classList.add('active');
             });
+            
             if (targetId === 'dashboard') renderDashboard();
             if (targetId === 'map-view') renderMap();
             if (targetId === 'data-mgmt') renderDataTable();
+            if (targetId === 'auto-add') initAutoAddView();
         });
     });
 } else {
