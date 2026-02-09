@@ -334,12 +334,15 @@ export function getSiteData(siteName) {
 export function getStats() {
     const sites = {};
     const siteFibers = {};
+    // Map to track destinations for each (Source, Fiber) pair
+    // Structure: { [sourceName]: { [fiberName]: Set(destinationNames) } }
+    const fiberDestinations = {}; 
     
     currentData.forEach(d => {
         const sName = d.station_name || 'Unknown';
-        // Group by Fiber Name to determine cable capacity
         const fName = d.fiber_name || 'Unclassified';
         
+        // Initialize Source Site
         if (!sites[sName]) {
             sites[sName] = { name: sName, total: 0, used: 0, free: 0 };
         }
@@ -351,14 +354,22 @@ export function getStats() {
                 explicitCapacity: 0, 
                 usedCount: 0, 
                 rowCount: 0,
-                validCoreCount: 0 // New counter
+                validCoreCount: 0 
             };
+        }
+        
+        // Initialize Destination Tracking
+        if (!fiberDestinations[sName]) {
+            fiberDestinations[sName] = {};
+        }
+        if (!fiberDestinations[sName][fName]) {
+            fiberDestinations[sName][fName] = new Set();
         }
         
         const group = siteFibers[sName][fName];
         group.rowCount++;
 
-        // Determine Usage: Usage field OR Destination/NetEnd OR Department has content
+        // Determine Usage
         const usage = d.usage ? String(d.usage).trim() : '';
         const destination = d.destination ? String(d.destination).trim() : '';
         const netEnd = d.net_end ? String(d.net_end).trim() : '';
@@ -369,37 +380,74 @@ export function getStats() {
         if (isUsed) {
             group.usedCount++;
         }
+
+        // Track Destination
+        if (destination && destination !== sName) {
+            fiberDestinations[sName][fName].add(destination);
+        }
         
-        // Track Max Explicit Core Count seen for this cable (Legacy, but kept for ref)
+        // Track Max Explicit Core Count
         let cores = parseInt(d.core_count);
         if (!isNaN(cores) && cores > 0) {
             if (cores > group.explicitCapacity) {
                 group.explicitCapacity = cores;
             }
-            // Count valid core rows for Total Capacity calculation
             group.validCoreCount++;
         }
     });
+
+    // Post-Processing: Propagate Stats to Destination Sites
+    // For every (Source, Fiber) group, if it connects to Destination(s),
+    // those Destinations inherit the Source's stats for that Fiber.
+    for (const sName in fiberDestinations) {
+        for (const fName in fiberDestinations[sName]) {
+            const dests = fiberDestinations[sName][fName];
+            const sourceGroup = siteFibers[sName][fName];
+            
+            dests.forEach(dest => {
+                // Initialize Destination Site if missing
+                if (!sites[dest]) {
+                    sites[dest] = { name: dest, total: 0, used: 0, free: 0 };
+                }
+                if (!siteFibers[dest]) {
+                    siteFibers[dest] = {};
+                }
+                
+                // Create or Get Destination Group
+                // We assume the Source is the "Authority" for this Fiber's stats.
+                // We overwrite/sync the stats to the destination.
+                // This ensures Branch Station sees "48 cores" even if it only has 1 incoming connection row.
+                if (!siteFibers[dest][fName]) {
+                    siteFibers[dest][fName] = { ...sourceGroup };
+                } else {
+                    // If destination already has stats (e.g. mixed data), 
+                    // we prioritize the Source's "Global View" (usually larger/more complete).
+                    // Or we can take the Maximum.
+                    const destGroup = siteFibers[dest][fName];
+                    destGroup.rowCount = Math.max(destGroup.rowCount, sourceGroup.rowCount);
+                    destGroup.usedCount = Math.max(destGroup.usedCount, sourceGroup.usedCount);
+                    destGroup.explicitCapacity = Math.max(destGroup.explicitCapacity, sourceGroup.explicitCapacity);
+                    destGroup.validCoreCount = Math.max(destGroup.validCoreCount, sourceGroup.validCoreCount);
+                }
+            });
+        }
+    }
     
     // Aggregate Stats per Site
     for (const sName in siteFibers) {
         const fibers = siteFibers[sName];
+        
+        // Expose the fiber groups in the result so UI can use them
+        sites[sName].groups = fibers;
+        
         for (const fName in fibers) {
             const group = fibers[fName];
             
-            // Capacity Logic:
-            // User feedback: "Total core count calculation error, just columns are 728".
-            // This implies the Total should match the total number of rows (fibers) uploaded.
-            // Previous logic counted only rows with valid numeric core_count. 
-            // We switch to counting ALL rows in the group to ensure we match the "728 columns" expectation.
-            // We assume every row represents a core/fiber strand.
-            let capacity = group.rowCount;
-            
-            // Legacy check (kept for reference, but not used for capacity unless rowCount is suspicious?)
-            // No, strictly use rowCount as it represents physical entries.
+            // Capacity Logic: Max of RowCount or ExplicitCapacity
+            // This handles the "1 row with core_count=48" scenario.
+            let capacity = Math.max(group.rowCount, group.explicitCapacity);
             
             const used = group.usedCount;
-            // Free is remaining capacity. Ensure non-negative.
             const free = Math.max(0, capacity - used);
             
             sites[sName].total += capacity;

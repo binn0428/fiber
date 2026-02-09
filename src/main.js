@@ -308,11 +308,17 @@ function generatePaths(start, end) {
         // Check availability
         const isAvailable = !row.usage || row.usage.trim() === '';
         
-        if(!graph[u]) graph[u] = {};
-        
         if(isAvailable) {
+            // Forward Direction (u -> v)
+            if(!graph[u]) graph[u] = {};
             if(!graph[u][v]) graph[u][v] = [];
             graph[u][v].push(row);
+
+            // Reverse Direction (v -> u) - Allow bidirectional usage of fiber
+            // This ensures branch stations (which may not have own rows) can use the incoming fiber from Main Station
+            if(!graph[v]) graph[v] = {};
+            if(!graph[v][u]) graph[v][u] = [];
+            graph[v][u].push(row);
         }
     });
     
@@ -463,18 +469,30 @@ async function confirmAutoAdd() {
         for(const segment of path.records) {
             // Find available core between segment.from and segment.to
             // Sort by fiber_name to pick nicely?
-            const candidates = data.filter(d => 
+            // First try finding direct forward connection
+            let candidates = data.filter(d => 
                 d.station_name === segment.from && 
                 d.destination === segment.to && 
                 (!d.usage || d.usage.trim() === '')
-            ).sort((a, b) => {
+            );
+
+            // If no direct connection found, look for reverse connection (using shared fiber)
+            if (candidates.length === 0) {
+                candidates = data.filter(d => 
+                    d.station_name === segment.to && 
+                    d.destination === segment.from && 
+                    (!d.usage || d.usage.trim() === '')
+                );
+            }
+
+            candidates.sort((a, b) => {
                 // Try to sort by fiber_name
                 if(a.fiber_name && b.fiber_name) return a.fiber_name.localeCompare(b.fiber_name, undefined, {numeric: true});
                 return 0;
             });
             
             if(candidates.length === 0) {
-                throw new Error(`路徑段 ${segment.from} -> ${segment.to} 已無可用芯線！(可能已被搶占)`);
+                throw new Error(`路徑段 ${segment.from} -> ${segment.to} 已無可用芯線！(可能已被搶占或無反向線路)`);
             }
             
             // Pick the first one
@@ -1941,22 +1959,12 @@ function openSiteDetails(siteName) {
     if (modalSiteTitle) modalSiteTitle.textContent = `站點詳情: ${siteName}`;
     const data = getSiteData(siteName);
     
-    // Calculate stats locally to include incoming connections
-    let total = data.length;
-    let used = 0;
+    // Calculate stats using global getStats() to ensure sync with Main Station
+    const allStats = getStats();
+    const siteStats = allStats.find(s => s.name === siteName) || { total: 0, used: 0, free: 0, groups: {} };
     
-    const isRowUsedCalc = (row) => {
-        return (row.usage && String(row.usage).trim().length > 0) || 
-               (row.destination && String(row.destination).trim().length > 0) || 
-               (row.net_end && String(row.net_end).trim().length > 0) || 
-               (row.department && String(row.department).trim().length > 0);
-    };
-
-    data.forEach(row => {
-        if (isRowUsedCalc(row)) used++;
-    });
-    
-    const free = total - used;
+    const { total, used, free } = siteStats;
+    // Calculate usage rate based on the synced stats
     const usageRate = total > 0 ? Math.round((used / total) * 100) : 0;
     const stats = { total, used, free };
 
@@ -2022,6 +2030,7 @@ function openSiteDetails(siteName) {
         accordionContainer.innerHTML = '';
         
         // Group data by fiber_name
+        // Group data by fiber_name (Local Data)
         const groups = {};
         data.forEach(row => {
             const key = row.fiber_name || '未分類';
@@ -2029,13 +2038,12 @@ function openSiteDetails(siteName) {
             groups[key].push(row);
         });
         
-        // Sort keys based on user request:
-        // 1. Numbers first (Descending)
-        // 2. Non-numbers last (Descending)
+        // Merge keys from Local Data and Synced Stats to ensure all fibers are shown
         const keys = new Set();
-        data.forEach(row => {
-            keys.add(row.fiber_name || '未分類');
-        });
+        data.forEach(row => keys.add(row.fiber_name || '未分類'));
+        if (siteStats.groups) {
+            Object.keys(siteStats.groups).forEach(k => keys.add(k));
+        }
 
         const sortedKeys = Array.from(keys).sort((a, b) => {
             const aIsNum = /^\d/.test(a);
@@ -2058,11 +2066,19 @@ function openSiteDetails(siteName) {
             return b.localeCompare(a);
         });
         
-        if (sortedKeys.length === 0 && data.length === 0) {
+        if (sortedKeys.length === 0) {
             accordionContainer.innerHTML = '<div style="text-align:center; padding: 2rem;">無資料</div>';
         } else {
+            // Define local usage check helper
+            const isRowUsed = (row) => {
+                return (row.usage && String(row.usage).trim().length > 0) || 
+                       (row.destination && String(row.destination).trim().length > 0) || 
+                       (row.net_end && String(row.net_end).trim().length > 0) || 
+                       (row.department && String(row.department).trim().length > 0);
+            };
+
             sortedKeys.forEach(key => {
-                const groupRows = groups[key].sort((a, b) => {
+                const groupRows = (groups[key] || []).sort((a, b) => {
                     const valA = String(a.core_count || '');
                     const valB = String(b.core_count || '');
                     // Use numeric sort to handle 1, 2, 10 correctly
@@ -2070,16 +2086,21 @@ function openSiteDetails(siteName) {
                 });
 
                 // Calculate stats for this group
-                const isRowUsed = (row) => {
-                    return (row.usage && String(row.usage).trim().length > 0) || 
-                           (row.destination && String(row.destination).trim().length > 0) || 
-                           (row.net_end && String(row.net_end).trim().length > 0) || 
-                           (row.department && String(row.department).trim().length > 0);
-                };
-                
-                const total = groupRows.length;
-                const used = groupRows.filter(isRowUsed).length;
-                const free = total - used;
+                // Prefer Synced Stats from Main Station if available (Authoritative)
+                let total, used, free;
+                const syncedGroup = siteStats.groups ? siteStats.groups[key] : null;
+
+                if (syncedGroup) {
+                    // Use synced stats logic (Max of RowCount or Explicit Capacity)
+                    total = Math.max(syncedGroup.rowCount, syncedGroup.explicitCapacity);
+                    used = syncedGroup.usedCount;
+                    free = Math.max(0, total - used);
+                } else {
+                    // Fallback to local calculation for purely local fibers
+                    total = groupRows.length;
+                    used = groupRows.filter(isRowUsed).length;
+                    free = total - used;
+                }
                 
                 // Create Accordion Item
                 const item = document.createElement('div');
