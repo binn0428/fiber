@@ -546,8 +546,72 @@ if (searchBtn && globalSearchInput) {
 // Map Edit Controls
 const editMapBtn = document.getElementById('edit-map-btn');
 const refreshMapBtn = document.getElementById('refresh-map-btn');
+const multiCenterSortBtn = document.getElementById('multi-center-sort-btn');
 const resetMapBtn = document.getElementById('reset-map-btn');
 const addLinkBtn = document.getElementById('add-link-btn');
+
+if (multiCenterSortBtn) {
+    multiCenterSortBtn.addEventListener('click', () => {
+        if (currentMainSites.length === 0) {
+            alert('請先在站點詳情中設定至少一個中心站點！');
+            return;
+        }
+
+        if (confirm('確定要依據目前的中心點重新排列相關站點嗎？\n這將會清除相關站點的手動位置設定。')) {
+            // We need to identify which nodes are in the cluster to clear their saved positions
+            const data = getData();
+            const nodes = {};
+            const links = [];
+            
+            // Rebuild graph structure (simplified)
+            data.forEach(row => {
+                if (row.station_name) nodes[row.station_name] = { name: row.station_name };
+                if (row.station_name && row.destination) {
+                    if (row.station_name !== row.destination) {
+                        links.push({ source: row.station_name, target: row.destination });
+                    }
+                }
+            });
+
+            const queue = [...currentMainSites];
+            const visited = new Set(currentMainSites);
+            
+            // BFS to find all connected nodes
+            while (queue.length > 0) {
+                const currentName = queue.shift();
+                
+                // Find neighbors
+                // Outgoing
+                links.filter(l => l.source === currentName).forEach(l => {
+                    if (!visited.has(l.target)) {
+                        visited.add(l.target);
+                        queue.push(l.target);
+                    }
+                });
+                // Incoming
+                links.filter(l => l.target === currentName).forEach(l => {
+                    if (!visited.has(l.source)) {
+                        visited.add(l.source);
+                        queue.push(l.source);
+                    }
+                });
+            }
+
+            // Clear saved positions for these nodes (EXCEPT the roots themselves, so they stay anchored)
+            visited.forEach(name => {
+                if (!currentMainSites.includes(name)) {
+                    delete nodePositions[name];
+                }
+            });
+
+            // Save updated positions to storage
+            localStorage.setItem('fiber_node_positions', JSON.stringify(nodePositions));
+            
+            // Re-render
+            renderMap();
+        }
+    });
+}
 
 if (editMapBtn) {
     editMapBtn.addEventListener('click', () => {
@@ -762,14 +826,33 @@ function renderMap() {
     svg.appendChild(defs);
     mapContainer.appendChild(svg);
 
-    const centerX = 50; 
-    const centerY = 50; 
+    // Default Center
+    let centerX = 50; 
+    let centerY = 50; 
 
     if (activeRoots.length > 0) {
         // --- Custom Main Site Layout (Radial Tree) ---
+        
+        // 1. Determine Center from Active Roots (User Request: Layout around selected nodes)
+        let sumX = 0, sumY = 0, count = 0;
+        activeRoots.forEach(root => {
+            // Check saved position first, otherwise fallback to default logic (which might be 50,50 effectively if not set)
+            // But we need the *visual* center. If the node has a saved position, use it.
+            if (nodePositions[root.name]) {
+                sumX += nodePositions[root.name].x;
+                sumY += nodePositions[root.name].y;
+                count++;
+            }
+        });
+
+        if (count > 0) {
+            centerX = sumX / count;
+            centerY = sumY / count;
+        }
+
         // Only layout visited nodes. Unvisited nodes retain previous/saved positions.
         
-        // 1. Place Roots
+        // 2. Place Roots
         // If multi-center, they form a polygon (radius 15).
         // If single-center, it's at (50,50).
         const rootRadius = activeRoots.length > 1 ? 15 : 0;
