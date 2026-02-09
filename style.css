@@ -822,34 +822,98 @@ tr:hover {
     z-index: 10;
 }
 
+/* Map Header Styling */
+.map-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    position: relative;
+}
+
+/* Icon Button (Hamburger) - Hidden on desktop */
+.icon-btn {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--text-color);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0.5rem;
+    transition: color 0.2s;
+}
+
+.icon-btn:hover {
+    color: var(--primary-color);
+}
+
+/* Desktop Map Controls */
+.map-controls {
+    display: flex;
+    gap: 0.5rem;
+}
+
 /* Mobile Map View Header Optimization */
 @media (max-width: 768px) {
-    #map-view > div:first-child {
+    .map-header {
+        margin-bottom: 0.25rem;
+        justify-content: flex-start;
+        height: 40px; /* Fixed height for header */
+        background-color: rgba(0,0,0,0.2); /* Slight background to distinguish */
+        border-radius: 4px;
+        padding: 0 0.5rem;
+    }
+
+    #map-controls-toggle {
+        display: block;
+        padding: 0;
+        z-index: 101;
+    }
+
+    #map-title {
+        font-size: 0.9rem; /* Minimized font */
+        margin: 0;
+        border: none;
+        padding: 0;
+        position: absolute;
+        width: 100%;
+        left: 0;
+        text-align: center;
+        z-index: 100;
+        pointer-events: none; /* Allow clicks to pass through if overlapping */
+    }
+
+    /* Map Controls - Collapsible Menu */
+    .map-controls {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        background-color: var(--sidebar-bg); /* Use sidebar bg for better contrast */
+        border: 1px solid var(--border-color);
+        border-radius: 0 0 0.5rem 0.5rem;
+        padding: 0.5rem;
         flex-direction: column;
-        align-items: stretch;
-        gap: 0.5rem;
-        margin-bottom: 0.5rem !important;
+        z-index: 200; /* Higher than map nodes */
+        box-shadow: 0 4px 6px rgba(0,0,0,0.5);
+        width: 180px;
+        margin-top: 4px; /* Small gap */
+    }
+
+    .map-controls.active {
+        display: flex;
+        animation: fadeIn 0.2s ease-out;
+    }
+
+    .map-controls .action-btn {
+        width: 100%;
+        text-align: left;
+        margin-bottom: 0.5rem;
+        padding: 0.5rem;
+        font-size: 0.9rem;
     }
     
-    #map-view h2 {
-        font-size: 1rem;
-        margin: 0;
-        text-align: center;
-        order: -1; 
-        padding: 4px;
-        background: rgba(0,0,0,0.2);
-        border-radius: 4px;
-    }
-
-    .map-controls {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 4px;
-    }
-
-    .map-controls button {
-        font-size: 0.8rem;
-        padding: 4px 8px;
+    .map-controls .action-btn:last-child {
+        margin-bottom: 0;
     }
 }
