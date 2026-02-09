@@ -811,3 +811,44 @@ tr:hover {
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
     outline: none;
 }
+
+/* Backbone Node Highlighting */
+.site-node.backbone {
+    background-color: #f97316; /* Orange-500 */
+    border-color: #ea580c; /* Orange-600 */
+    color: white;
+    box-shadow: 0 0 15px rgba(249, 115, 22, 0.4);
+    z-index: 10;
+}
+
+/* Mobile Map View Header Optimization */
+@media (max-width: 768px) {
+    #map-view > div:first-child {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem !important;
+    }
+    
+    #map-view h2 {
+        font-size: 1rem;
+        margin: 0;
+        text-align: center;
+        order: -1; 
+        padding: 4px;
+        background: rgba(0,0,0,0.2);
+        border-radius: 4px;
+    }
+
+    .map-controls {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 4px;
+    }
+
+    .map-controls button {
+        font-size: 0.8rem;
+        padding: 4px 8px;
+    }
+}
