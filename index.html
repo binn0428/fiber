@@ -73,6 +73,8 @@
                     <h2>光纖架構圖</h2>
                     <div class="map-controls">
                          <button id="refresh-map-btn" class="action-btn">🔄 重新整理</button>
+                         <button id="map-config-btn" class="action-btn" style="background-color: #8b5cf6;">⚙️ 設定</button>
+                         <button id="save-map-btn" class="action-btn" style="background-color: #2563eb;">💾 儲存</button>
                          <button id="reset-map-btn" class="action-btn" style="background-color: var(--danger-color);">⚠️ 重置佈局</button>
                          <button id="add-link-btn" class="action-btn" style="background-color: var(--primary-color); display: none;">➕ 新增連線</button>
                          <button id="edit-map-btn" class="action-btn" style="background-color: var(--warning-color);">✏️ 編輯架構</button>
@@ -262,6 +264,22 @@
                 </div>
                 <button type="submit">儲存</button>
             </form>
+        </div>
+    </div>
+
+    <!-- Map Config Modal -->
+    <div id="config-modal" class="modal hidden">
+        <div class="modal-content sm">
+            <span class="close-modal">&times;</span>
+            <h3>架構圖設定</h3>
+            <p>請設定 10 大骨幹站點 (Backbone Ring) 的順序：</p>
+            <div id="config-inputs-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                <!-- Inputs will be injected via JS -->
+            </div>
+            <div class="modal-actions" style="margin-top: 1rem; display: flex; justify-content: flex-end; gap: 0.5rem;">
+                 <button type="button" id="reset-config-btn" class="action-btn" style="background-color: var(--danger-color);">恢復預設</button>
+                 <button type="button" id="submit-config-btn" class="action-btn" style="background-color: var(--success-color);">儲存並套用</button>
+            </div>
         </div>
     </div>
 
