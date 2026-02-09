@@ -507,7 +507,7 @@ async function confirmAutoAdd() {
             await updateRecord(record.id, {
                 ...updates,
                 notes: noteWithId
-            });
+            }, record._table);
         }
         
         alert("新增成功！路徑 ID: " + pathId);
@@ -645,7 +645,7 @@ window.deletePath = async function(pathId) {
                 notes: newNotes,
                 core_count: null, // Reset core info if it was filled by auto add
                 port: null
-            });
+            }, r._table);
         }
         alert(`已成功刪除路徑並釋放 ${records.length} 筆芯線資料。`);
         loadPathMgmtList(); // Refresh list

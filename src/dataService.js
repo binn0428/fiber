@@ -144,11 +144,13 @@ export async function addRecord(record) {
     }
 }
 
-export async function updateRecord(id, updates) {
+export async function updateRecord(id, updates, tableHint = null) {
     const sb = getSupabase();
     
     // Optimistic update
-    const idx = currentData.findIndex(d => d.id === id);
+    // If tableHint is provided, ensure we match the correct record (avoid ID collisions across tables)
+    const idx = currentData.findIndex(d => d.id === id && (!tableHint || d._table === tableHint));
+    
     if (idx !== -1) {
         const tableName = currentData[idx]._table;
         currentData[idx] = { ...currentData[idx], ...updates };
@@ -162,6 +164,8 @@ export async function updateRecord(id, updates) {
                 throw error;
             }
         }
+    } else {
+        console.warn(`updateRecord: Record with id ${id} ${tableHint ? `in table ${tableHint}` : ''} not found.`);
     }
 }
 
