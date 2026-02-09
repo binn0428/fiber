@@ -232,6 +232,25 @@ if (saveConfigBtn) {
 let isAdminLoggedIn = false;
 let currentMainSites = []; // Stores the user-selected main sites for layout (Array)
 let isEditMode = false; // New Edit Mode State
+
+// Connection Creation State
+let connectionCreationState = {
+    active: false,
+    step: 0, // 0: inactive, 1: select source, 2: select target
+    source: null,
+    target: null
+};
+
+function showToast(message, duration = 3000) {
+    const toast = document.createElement('div');
+    toast.className = 'toast-notification';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+        toast.remove();
+    }, duration);
+}
+
 let mapState = {
     panning: false,
     startX: 0,
@@ -661,38 +680,45 @@ if (editMapBtn) {
 
 if (addLinkBtn) {
     addLinkBtn.addEventListener('click', async () => {
-        const source = prompt("請輸入起點站點名稱：");
-        if (!source) return;
+        // Start Connection Creation Mode
+        connectionCreationState = {
+            active: true,
+            step: 1,
+            source: null,
+            target: null
+        };
         
-        const target = prompt("請輸入終點站點名稱：");
-        if (!target) return;
+        showToast("請點選【起點】站點", 5000);
         
-        if (source === target) {
-            alert("起點與終點不能相同！");
-            return;
-        }
-
-        const fiberName = prompt("請輸入光纜名稱 (例如: 96C)：", "96C");
-        const coreCount = prompt("請輸入芯數：", "96");
-        
-        try {
-            // Create a new record representing this connection
-            await addRecord({
-                station_name: source,
-                destination: target,
-                fiber_name: fiberName,
-                core_count: coreCount,
-                usage: '預留',
-                notes: '架構圖手動新增'
-            });
-            alert("連線建立成功！");
-            renderMap(); // Will re-fetch data implicitly via listener? No, addRecord notifies.
-        } catch (e) {
-            console.error(e);
-            alert("建立失敗：" + e.message);
-        }
+        if (mapContainer) mapContainer.style.cursor = 'crosshair';
     });
 }
+
+async function finishConnectionCreation(source, target) {
+    const fiberName = prompt(`建立連線: ${source} -> ${target}\n請輸入光纜名稱 (例如: 96C)：`, "96C");
+    if (fiberName === null) return; // User cancelled
+    
+    const coreCount = prompt("請輸入芯數：", "96");
+    if (coreCount === null) return;
+    
+    try {
+        // Create a new record representing this connection
+        await addRecord({
+            station_name: source,
+            destination: target,
+            fiber_name: fiberName,
+            core_count: coreCount,
+            usage: '預留',
+            notes: '架構圖手動新增'
+        });
+        alert("連線建立成功！");
+        renderMap(); 
+    } catch (e) {
+        console.error(e);
+        alert("建立失敗：" + e.message);
+    }
+}
+
 
 if (refreshMapBtn) {
     refreshMapBtn.addEventListener('click', () => {
@@ -1035,6 +1061,37 @@ function renderMap() {
         el.addEventListener('click', (e) => {
             if (el.getAttribute('data-dragging') === 'true') return;
             
+            // Connection Creation Logic
+            if (connectionCreationState.active) {
+                e.stopPropagation();
+                
+                if (connectionCreationState.step === 1) {
+                    connectionCreationState.source = node.name;
+                    connectionCreationState.step = 2;
+                    showToast(`已選擇起點: ${node.name}。請點選【終點】站點`, 5000);
+                    el.style.border = "3px solid #ef4444"; // Visual feedback
+                    return;
+                } else if (connectionCreationState.step === 2) {
+                     if (node.name === connectionCreationState.source) {
+                         alert("起點與終點不能相同！");
+                         return;
+                     }
+                     
+                    connectionCreationState.target = node.name;
+                    const source = connectionCreationState.source;
+                    const target = connectionCreationState.target;
+                    
+                    // Reset state
+                    connectionCreationState = { active: false, step: 0, source: null, target: null };
+                    if (mapContainer) mapContainer.style.cursor = '';
+                    renderMap(); // Clear highlights
+                    
+                    // Delay slightly to allow render to clear
+                    setTimeout(() => finishConnectionCreation(source, target), 100);
+                    return;
+                }
+            }
+
             // Check if Manual Add tab is active for "Click to Select"
             const manualAddSection = document.getElementById('manual-add');
             if (manualAddSection && manualAddSection.classList.contains('active')) {
