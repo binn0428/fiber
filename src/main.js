@@ -194,6 +194,7 @@ if (saveConfigBtn) {
 
 // Global State
 let isAdminLoggedIn = false;
+let isEditMode = false; // New Edit Mode State
 let mapState = {
     panning: false,
     startX: 0,
@@ -528,6 +529,74 @@ if (searchBtn && globalSearchInput) {
     });
 }
 
+// Map Edit Controls
+const editMapBtn = document.getElementById('edit-map-btn');
+const refreshMapBtn = document.getElementById('refresh-map-btn');
+const addLinkBtn = document.getElementById('add-link-btn');
+
+if (editMapBtn) {
+    editMapBtn.addEventListener('click', () => {
+        if (!isAdminLoggedIn) {
+            alert('請先登入管理員模式！');
+            return;
+        }
+        isEditMode = !isEditMode;
+        editMapBtn.textContent = isEditMode ? '💾 完成編輯' : '✏️ 編輯架構';
+        editMapBtn.style.backgroundColor = isEditMode ? 'var(--success-color)' : 'var(--warning-color)';
+        
+        if (addLinkBtn) addLinkBtn.style.display = isEditMode ? 'inline-block' : 'none';
+
+        // Re-render map to show/hide edit handles
+        renderMap();
+        
+        if (isEditMode) {
+            alert('進入編輯模式：\n1. 拖曳節點可移動位置\n2. 雙擊節點可重新命名\n3. 點擊連線可刪除\n4. 點擊「新增連線」按鈕可建立新連接');
+        }
+    });
+}
+
+if (addLinkBtn) {
+    addLinkBtn.addEventListener('click', async () => {
+        const source = prompt("請輸入起點站點名稱：");
+        if (!source) return;
+        
+        const target = prompt("請輸入終點站點名稱：");
+        if (!target) return;
+        
+        if (source === target) {
+            alert("起點與終點不能相同！");
+            return;
+        }
+
+        const fiberName = prompt("請輸入光纜名稱 (例如: 96C)：", "96C");
+        const coreCount = prompt("請輸入芯數：", "96");
+        
+        try {
+            // Create a new record representing this connection
+            await addRecord({
+                station_name: source,
+                destination: target,
+                fiber_name: fiberName,
+                core_count: coreCount,
+                usage: '預留',
+                notes: '架構圖手動新增'
+            });
+            alert("連線建立成功！");
+            renderMap(); // Will re-fetch data implicitly via listener? No, addRecord notifies.
+        } catch (e) {
+            console.error(e);
+            alert("建立失敗：" + e.message);
+        }
+    });
+}
+
+if (refreshMapBtn) {
+    refreshMapBtn.addEventListener('click', () => {
+        // Clear saved positions to reset layout? No, just re-render
+        renderMap();
+    });
+}
+
 // Modals
     function openModal(modal) {
         if (modal) modal.classList.remove('hidden');
@@ -557,57 +626,56 @@ window.addEventListener('click', (e) => {
 // Map Rendering
 function renderMap() {
     const data = getData();
-    const stats = getStats();
     if (!mapContainer) return;
     mapContainer.innerHTML = ''; // Clear
     
-    if (stats.length === 0) {
-        mapContainer.innerHTML = '<div class="map-placeholder">暫無資料</div>';
-        return;
-    }
-
-    // 1. Build Graph
+    // 1. Build Graph from ALL data
     const nodes = {}; 
-    // Init nodes
-    stats.forEach(s => {
-        nodes[s.name] = { name: s.name, level: 0, inputs: 0, outputs: 0 };
-    });
-
     const links = [];
     const createdLinks = new Set();
 
-    data.forEach(row => {
-        if (row.station_name && row.destination) {
-            const source = row.station_name;
-            const target = row.destination;
-            
-            // Fuzzy match target to a known site
-            let targetNodeName = null;
-            if (nodes[target]) {
-                targetNodeName = target;
-            } else {
-                 const found = stats.find(s => target.includes(s.name));
-                 if (found) targetNodeName = found.name;
-            }
+    // Helper to ensure node exists
+    const ensureNode = (name) => {
+        if (!name) return null;
+        const key = name.trim();
+        if (!nodes[key]) {
+            nodes[key] = { name: key, level: 0, inputs: 0, outputs: 0 };
+        }
+        return nodes[key];
+    };
 
-            if (targetNodeName && source !== targetNodeName) {
-                const linkKey = `${source}->${targetNodeName}`;
+    // Initialize nodes from data
+    data.forEach(row => {
+        // Add Source
+        if (row.station_name) ensureNode(row.station_name);
+        
+        // Add Destination and Link
+        if (row.station_name && row.destination) {
+            const source = ensureNode(row.station_name);
+            const target = ensureNode(row.destination);
+            
+            if (source && target && source.name !== target.name) {
+                const linkKey = `${source.name}->${target.name}`;
                 if (!createdLinks.has(linkKey)) {
                     createdLinks.add(linkKey);
-                    links.push({ source, target: targetNodeName });
-                    if (nodes[source]) nodes[source].outputs++;
-                    if (nodes[targetNodeName]) nodes[targetNodeName].inputs++;
+                    links.push({ source: source.name, target: target.name });
+                    source.outputs++;
+                    target.inputs++;
                 }
             }
         }
     });
 
+    if (Object.keys(nodes).length === 0) {
+        mapContainer.innerHTML = '<div class="map-placeholder">暫無資料</div>';
+        return;
+    }
+
     // 2. Calculate Levels (BFS)
     // Find roots (0 inputs)
     let queue = Object.values(nodes).filter(n => n.inputs === 0);
-    // Fallback if circular or no clear root (e.g., ring topology)
-    if (queue.length === 0 && stats.length > 0) {
-        // Prefer UDC or first available
+    // Fallback if circular or no clear root
+    if (queue.length === 0 && Object.keys(nodes).length > 0) {
         const root = nodes['UDC'] || Object.values(nodes)[0];
         if (root) queue.push(root);
     }
@@ -618,8 +686,7 @@ function renderMap() {
         visited.add(n.name);
     });
 
-    // Add remaining nodes to queue if disconnected
-    let maxIterations = stats.length * 2;
+    let maxIterations = Object.keys(nodes).length * 2;
     while (queue.length > 0 && maxIterations > 0) {
         maxIterations--;
         const current = queue.shift();
@@ -635,7 +702,7 @@ function renderMap() {
         });
     }
 
-    // Handle any unvisited nodes (islands)
+    // Handle islands
     Object.values(nodes).forEach(n => {
         if (!visited.has(n.name)) n.level = 0;
     });
@@ -661,24 +728,25 @@ function renderMap() {
         <marker id="arrow" markerWidth="10" markerHeight="10" refX="55" refY="3" orient="auto" markerUnits="strokeWidth">
           <path d="M0,0 L0,6 L9,3 z" fill="#3b82f6" />
         </marker>
+        <marker id="arrow-red" markerWidth="10" markerHeight="10" refX="55" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L0,6 L9,3 z" fill="#ef4444" />
+        </marker>
     `;
     svg.appendChild(defs);
     mapContainer.appendChild(svg);
 
-    // 4. Render
-    // Calculate coordinates (Percentages)
+    // 4. Render Layout
     const levelCount = maxLevel + 1;
     
-    // Backbone Sequence (User Request)
+    // Backbone Sequence
     const backboneSequence = ['ROOM', 'UDC', '1PH', '2PH', 'DKB', 'MS2', 'MS3', 'MS4', '2O2'];
-    const radius = 35; // %
-    const centerX = 50; // %
-    const centerY = 50; // %
+    const radius = 35; 
+    const centerX = 50; 
+    const centerY = 50; 
     const angleStep = (2 * Math.PI) / backboneSequence.length;
 
-    // Identify and Position Backbone Nodes
+    // Position Backbone
     backboneSequence.forEach((key, idx) => {
-        // Find matching node (loose match)
         const nodeName = Object.keys(nodes).find(n => {
             const normN = n.toUpperCase().replace('#', '');
             const normK = key.toUpperCase().replace('#', '');
@@ -687,12 +755,10 @@ function renderMap() {
 
         if (nodeName && nodes[nodeName]) {
             const node = nodes[nodeName];
-            // Start from -90deg (Top) and go clockwise
             const angle = idx * angleStep - (Math.PI / 2);
             node.xPct = centerX + radius * Math.cos(angle);
             node.yPct = centerY + radius * Math.sin(angle);
             node.isBackbone = true;
-            // Override level to avoid layout overwrite
             node.level = -1; 
         }
     });
@@ -700,22 +766,17 @@ function renderMap() {
     Object.keys(levels).forEach(lvlStr => {
         const lvl = parseInt(lvlStr);
         const levelNodes = levels[lvl];
-        
-        // Filter out nodes already positioned (Backbone)
         const nodesToPosition = levelNodes.filter(n => !n.isBackbone);
         
         nodesToPosition.forEach((node, idx) => {
-            // X: Distribute evenly based on level
-            // Y: Distribute evenly within level
             const xPct = ((lvl + 0.5) / levelCount) * 100; 
             const yPct = ((idx + 1) / (nodesToPosition.length + 1)) * 100;
-            
             node.xPct = xPct;
             node.yPct = yPct;
         });
     });
 
-    // Override with memory positions
+    // Override with saved positions
     Object.values(nodes).forEach(node => {
         if (nodePositions[node.name]) {
             node.xPct = nodePositions[node.name].x;
@@ -723,11 +784,12 @@ function renderMap() {
         }
     });
 
-    // Create Elements (All nodes)
+    // Create Elements
     Object.values(nodes).forEach(node => {
-        // Create Node Element
         const el = document.createElement('div');
         el.className = 'site-node';
+        if (isEditMode) el.classList.add('edit-mode');
+        
         el.innerHTML = `
             <div>${node.name}</div>
             ${node.isBackbone ? '' : `<div style="font-size: 0.7em; opacity: 0.8">L${node.level}</div>`}
@@ -736,56 +798,34 @@ function renderMap() {
         el.style.top = `${node.yPct}%`;
         el.setAttribute('data-site', node.name);
         
-        // Make Draggable (User Request)
         makeDraggable(el, node);
 
-        // Click to open details
         el.addEventListener('click', (e) => {
             if (el.getAttribute('data-dragging') === 'true') return;
-            openSiteDetails(node.name);
+            if (isEditMode) {
+                 // Double click handles rename
+            } else {
+                 openSiteDetails(node.name);
+            }
+        });
+
+        el.addEventListener('dblclick', async (e) => {
+            if (!isEditMode) return;
+            e.stopPropagation();
+            const newName = prompt(`請輸入站點 "${node.name}" 的新名稱：`, node.name);
+            if (newName && newName !== node.name) {
+                if (confirm(`確定要將 "${node.name}" 改名為 "${newName}" 嗎？\n這將會同步修改所有相關的線路資料。`)) {
+                    await renameStation(node.name, newName);
+                }
+            }
         });
         
         mapContainer.appendChild(el);
     });
 
     // Draw Lines
-    
-    // 1. Explicit Backbone Connections
-    const backboneLinks = [];
-    for (let i = 0; i < backboneSequence.length; i++) {
-        const currentKey = backboneSequence[i];
-        const nextKey = backboneSequence[(i + 1) % backboneSequence.length]; // Loop back to start
-        
-        const sourceName = Object.keys(nodes).find(n => n.toUpperCase().replace('#','').includes(currentKey.replace('#','')));
-        const targetName = Object.keys(nodes).find(n => n.toUpperCase().replace('#','').includes(nextKey.replace('#','')));
-        
-        if (sourceName && targetName && nodes[sourceName] && nodes[targetName]) {
-             backboneLinks.push({ 
-                 source: sourceName, 
-                 target: targetName, 
-                 type: 'backbone' 
-             });
-        }
-    }
-
-    // 2. Data-driven links (exclude if already in backbone)
     links.forEach(l => {
-        // Check if this link is already covered by backbone (bidirectional check?)
-        // Or just draw everything. Backbone lines might be styled differently.
-        // Let's draw everything but prioritize backbone style if matching.
-        const isBackbone = backboneLinks.some(bl => 
-            (bl.source === l.source && bl.target === l.target) || 
-            (bl.source === l.target && bl.target === l.source)
-        );
-        
-        if (!isBackbone) {
-            drawLink(nodes[l.source], nodes[l.target], svg, 'normal');
-        }
-    });
-
-    // Draw Backbone Links (on top or distinct)
-    backboneLinks.forEach(l => {
-        drawLink(nodes[l.source], nodes[l.target], svg, 'backbone');
+        drawLink(nodes[l.source], nodes[l.target], svg, 'normal');
     });
 
     // Helper to draw link
@@ -798,20 +838,22 @@ function renderMap() {
         line.setAttribute("x2", `${target.xPct}%`);
         line.setAttribute("y2", `${target.yPct}%`);
         
-        if (type === 'backbone') {
-            line.setAttribute("stroke", "#ef4444"); // Red for backbone
-            line.setAttribute("stroke-width", "3");
-        } else {
-            line.setAttribute("stroke", "#3b82f6");
-            line.setAttribute("stroke-width", "2");
-        }
-        
+        line.setAttribute("stroke", "#3b82f6");
+        line.setAttribute("stroke-width", isEditMode ? "4" : "2"); 
         line.setAttribute("marker-end", "url(#arrow)");
         
-        // Add identifiers
-        line.setAttribute("data-source", source.name);
-        line.setAttribute("data-target", target.name);
-
+        if (isEditMode) {
+            line.style.cursor = "pointer";
+            line.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                if (confirm(`確定要刪除從 "${source.name}" 到 "${target.name}" 的連線嗎？\n這將會清除相關線路資料的「線路目的」欄位。`)) {
+                    await deleteConnection(source.name, target.name);
+                }
+            });
+            line.addEventListener('mouseenter', () => line.setAttribute("stroke", "#ef4444"));
+            line.addEventListener('mouseleave', () => line.setAttribute("stroke", "#3b82f6"));
+        }
+        
         const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
         title.textContent = `${source.name} -> ${target.name}`;
         line.appendChild(title);
@@ -819,9 +861,53 @@ function renderMap() {
         svgContainer.appendChild(line);
     }
 
-    // Restore Transform from Global State (Memory)
     if (mapContainer && mapState) {
         mapContainer.style.transform = `translate(${mapState.tx}px, ${mapState.ty}px) scale(${mapState.scale})`;
+    }
+}
+
+// Edit Mode Helpers
+async function renameStation(oldName, newName) {
+    const data = getData();
+    const updates = [];
+    
+    // 1. Update station_name
+    const sourceRecords = data.filter(d => d.station_name === oldName);
+    sourceRecords.forEach(r => {
+        updates.push(updateRecord(r.id, { station_name: newName }));
+    });
+    
+    // 2. Update destination
+    const destRecords = data.filter(d => d.destination === oldName);
+    destRecords.forEach(r => {
+        updates.push(updateRecord(r.id, { destination: newName }));
+    });
+    
+    try {
+        await Promise.all(updates);
+        alert(`已更新 ${updates.length} 筆資料。`);
+        location.reload(); 
+    } catch (e) {
+        console.error("Renaming failed", e);
+        alert("更名失敗：" + e.message);
+    }
+}
+
+async function deleteConnection(sourceName, targetName) {
+    const data = getData();
+    const records = data.filter(d => d.station_name === sourceName && d.destination === targetName);
+    
+    if (records.length === 0) return;
+    
+    const updates = records.map(r => updateRecord(r.id, { destination: "" }));
+    
+    try {
+        await Promise.all(updates);
+        alert(`已移除 ${updates.length} 筆連線資料。`);
+        renderMap();
+    } catch (e) {
+        console.error("Delete failed", e);
+        alert("刪除失敗：" + e.message);
     }
 }
 
