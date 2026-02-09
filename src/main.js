@@ -535,6 +535,135 @@ const refreshMapBtn = document.getElementById('refresh-map-btn');
 const resetMapBtn = document.getElementById('reset-map-btn');
 const addLinkBtn = document.getElementById('add-link-btn');
 
+// Map Config & Save Logic
+const mapConfigBtn = document.getElementById('map-config-btn');
+const saveMapBtn = document.getElementById('save-map-btn');
+const configModal = document.getElementById('config-modal');
+const configInputsContainer = document.getElementById('config-inputs-container');
+const submitConfigBtn = document.getElementById('submit-config-btn');
+const resetConfigBtn = document.getElementById('reset-config-btn');
+
+if (saveMapBtn) {
+    saveMapBtn.addEventListener('click', () => {
+        // Force save current state
+        localStorage.setItem('fiber_map_state', JSON.stringify({
+            tx: mapState.tx,
+            ty: mapState.ty,
+            scale: mapState.scale
+        }));
+        
+        // Node positions are already saved on drag end, but we can resave if we had them in memory
+        if (Object.keys(nodePositions).length > 0) {
+             localStorage.setItem('fiber_node_positions', JSON.stringify(nodePositions));
+        }
+        
+        alert('架構圖設定與位置已儲存！');
+    });
+}
+
+if (mapConfigBtn && configModal) {
+    mapConfigBtn.addEventListener('click', () => {
+        openModal(configModal);
+        renderConfigInputs();
+    });
+}
+
+function renderConfigInputs() {
+    if (!configInputsContainer) return;
+    configInputsContainer.innerHTML = '';
+    
+    // Get current sequence
+    let currentSeq = [];
+    const saved = localStorage.getItem('custom_backbone_sequence');
+    if (saved) {
+        try { currentSeq = JSON.parse(saved); } catch(e){}
+    }
+    
+    // Default fallback if empty
+    if (!currentSeq || currentSeq.length !== 10) {
+        currentSeq = Array(10).fill('');
+    }
+    
+    // Create inputs
+    currentSeq.forEach((name, idx) => {
+        const wrapper = document.createElement('div');
+        wrapper.style.display = 'flex';
+        wrapper.style.flexDirection = 'column';
+        
+        const label = document.createElement('label');
+        label.textContent = `站點 ${idx + 1}`;
+        label.style.fontSize = '0.8em';
+        label.style.color = 'var(--text-muted)';
+        
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'config-station-input';
+        input.value = name;
+        input.placeholder = '輸入站點名稱';
+        input.style.padding = '5px';
+        input.style.border = '1px solid #4b5563';
+        input.style.borderRadius = '4px';
+        input.style.background = 'var(--bg-primary)';
+        input.style.color = 'var(--text-primary)';
+        input.setAttribute('list', 'station-list'); // Autocomplete
+        
+        wrapper.appendChild(label);
+        wrapper.appendChild(input);
+        configInputsContainer.appendChild(wrapper);
+    });
+    
+    // Add datalist for autocomplete
+    if (!document.getElementById('station-list')) {
+        const datalist = document.createElement('datalist');
+        datalist.id = 'station-list';
+        const data = getData();
+        const names = new Set();
+        data.forEach(d => {
+            if (d.station_name) names.add(d.station_name);
+            if (d.destination) names.add(d.destination);
+        });
+        names.forEach(n => {
+            const opt = document.createElement('option');
+            opt.value = n;
+            datalist.appendChild(opt);
+        });
+        document.body.appendChild(datalist);
+    }
+}
+
+if (submitConfigBtn) {
+    submitConfigBtn.addEventListener('click', () => {
+        const inputs = document.querySelectorAll('.config-station-input');
+        const newSeq = [];
+        inputs.forEach(input => {
+            if (input.value.trim()) {
+                newSeq.push(input.value.trim());
+            }
+        });
+        
+        if (newSeq.length !== 10) {
+            alert(`請設定剛好 10 個站點！(目前: ${newSeq.length})`);
+            return;
+        }
+        
+        localStorage.setItem('custom_backbone_sequence', JSON.stringify(newSeq));
+        alert('設定已儲存，正在重新整理架構圖...');
+        closeModal(configModal);
+        renderMap();
+    });
+}
+
+if (resetConfigBtn) {
+    resetConfigBtn.addEventListener('click', () => {
+        if (confirm('確定要恢復預設設定嗎？這將會使用系統預設的 10 大站點。')) {
+            localStorage.removeItem('custom_backbone_sequence');
+            alert('已恢復預設設定。');
+            closeModal(configModal);
+            renderMap();
+        }
+    });
+}
+
 if (editMapBtn) {
     editMapBtn.addEventListener('click', () => {
         if (!isAdminLoggedIn) {
@@ -768,59 +897,76 @@ function renderMap() {
     // If nodes are at 120%, and we pan, they should come into view.
     // The issue might be that the layout algorithm constrains them to 5-95%.
     
-    // Backbone Sequence
-    // Dynamic binding to 10 Dashboard Sites
-    const topologyMap = [
-        { key: 'ROOM', table: 'room' },
-        { key: 'UDC', table: 'udc' },
-        { key: '1PH', table: 'station_1ph' },
-        { key: '2PH', table: 'station_2ph' },
-        { key: 'DKB', table: 'dkb' },
-        { key: 'MS2', table: 'ms2' },
-        { key: 'MS3', table: 'ms3' },
-        { key: 'MS4', table: 'ms4' },
-        { key: '5KB', table: 'station_5kb' },
-        { key: 'O2', table: 'o2' }
-    ];
-
-    const stationNamesByTable = {};
-    const stationNameCounts = {}; // { tableName: { stationName: count } }
-
-    data.forEach(d => {
-        if (d._table && d.station_name) {
-            const t = d._table;
-            const s = d.station_name.trim();
-            
-            if (!stationNameCounts[t]) stationNameCounts[t] = {};
-            if (!stationNameCounts[t][s]) stationNameCounts[t][s] = 0;
-            stationNameCounts[t][s]++;
+    // Backbone Sequence Logic
+    let backboneSequence = [];
+    const savedBackbone = localStorage.getItem('custom_backbone_sequence');
+    
+    if (savedBackbone) {
+        try {
+            backboneSequence = JSON.parse(savedBackbone);
+            if (!Array.isArray(backboneSequence) || backboneSequence.length !== 10) {
+                console.warn("Invalid custom backbone sequence, falling back to default.");
+                backboneSequence = [];
+            }
+        } catch (e) {
+            console.error("Error parsing custom backbone sequence:", e);
         }
-    });
+    }
 
-    // Determine the most frequent station name for each table
-    Object.keys(stationNameCounts).forEach(table => {
-        const counts = stationNameCounts[table];
-        let bestName = null;
-        let maxCount = -1;
-        
-        Object.entries(counts).forEach(([name, count]) => {
-            if (count > maxCount) {
-                maxCount = count;
-                bestName = name;
+    // Default Logic (if no custom or invalid)
+    if (backboneSequence.length === 0) {
+        const topologyMap = [
+            { key: 'ROOM', table: 'room' },
+            { key: 'UDC', table: 'udc' },
+            { key: '1PH', table: 'station_1ph' },
+            { key: '2PH', table: 'station_2ph' },
+            { key: 'DKB', table: 'dkb' },
+            { key: 'MS2', table: 'ms2' },
+            { key: 'MS3', table: 'ms3' },
+            { key: 'MS4', table: 'ms4' },
+            { key: '5KB', table: 'station_5kb' },
+            { key: 'O2', table: 'o2' }
+        ];
+
+        const stationNamesByTable = {};
+        const stationNameCounts = {}; // { tableName: { stationName: count } }
+
+        data.forEach(d => {
+            if (d._table && d.station_name) {
+                const t = d._table;
+                const s = d.station_name.trim();
+                
+                if (!stationNameCounts[t]) stationNameCounts[t] = {};
+                if (!stationNameCounts[t][s]) stationNameCounts[t][s] = 0;
+                stationNameCounts[t][s]++;
             }
         });
-        
-        if (bestName) {
-            stationNamesByTable[table] = bestName;
-        }
-    });
 
-    const backboneSequence = topologyMap.map(item => {
-        // Find the actual station name for this table
-        // If the station was renamed, we find the new name via the table
-        // We use the MOST FREQUENT name to avoid outliers
-        return stationNamesByTable[item.table] || item.key;
-    });
+        // Determine the most frequent station name for each table
+        Object.keys(stationNameCounts).forEach(table => {
+            const counts = stationNameCounts[table];
+            let bestName = null;
+            let maxCount = -1;
+            
+            Object.entries(counts).forEach(([name, count]) => {
+                if (count > maxCount) {
+                    maxCount = count;
+                    bestName = name;
+                }
+            });
+            
+            if (bestName) {
+                stationNamesByTable[table] = bestName;
+            }
+        });
+
+        backboneSequence = topologyMap.map(item => {
+            // Find the actual station name for this table
+            // If the station was renamed, we find the new name via the table
+            // We use the MOST FREQUENT name to avoid outliers
+            return stationNamesByTable[item.table] || item.key;
+        });
+    }
     
     // Increase radius to spread out more
     const radius = 45; // Keep relative radius

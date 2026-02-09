@@ -310,18 +310,24 @@ export function getStats() {
         // Group by Fiber Name to determine cable capacity
         const fName = d.fiber_name || 'Unclassified';
         
-        if (!sites[sName]) {
-            sites[sName] = { name: sName, total: 0, used: 0, free: 0 };
-        }
-        if (!siteFibers[sName]) {
-            siteFibers[sName] = {};
-        }
+        // Helper to ensure site exists
+        const ensureSite = (name) => {
+            if (!sites[name]) {
+                sites[name] = { name: name, total: 0, used: 0, free: 0 };
+            }
+            if (!siteFibers[name]) {
+                siteFibers[name] = {};
+            }
+        };
+
+        ensureSite(sName);
+        
         if (!siteFibers[sName][fName]) {
             siteFibers[sName][fName] = { 
                 explicitCapacity: 0, 
                 usedCount: 0, 
                 rowCount: 0,
-                validCoreCount: 0 // New counter
+                validCoreCount: 0 
             };
         }
         
@@ -338,6 +344,25 @@ export function getStats() {
         
         if (isUsed) {
             group.usedCount++;
+        }
+        
+        // Handle Incoming Connections (Destination)
+        // If this fiber goes TO a station, that station should also see it as a fiber "at" the station
+        // For the destination, it is always "Used" because it's a connection.
+        if (destination && destination !== sName) {
+            ensureSite(destination);
+            // We create a special group for incoming fibers or just add to stats directly?
+            // To be consistent with openSiteDetails, we should track it.
+            // But getStats structure is sites[name].total/used/free.
+            // We can just increment the counters for the destination site directly.
+            
+            // Note: In openSiteDetails, Total = Source Rows + Dest Rows.
+            // Used = Source Used + Dest Used.
+            // Free = Source Free + Dest Free (which is 0 for Dest).
+            
+            sites[destination].total++;
+            sites[destination].used++;
+            // free stays same (0 added)
         }
         
         // Track Max Explicit Core Count seen for this cable (Legacy, but kept for ref)
