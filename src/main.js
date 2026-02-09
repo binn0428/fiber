@@ -67,9 +67,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         // Load App Settings (Main Site)
         const mainSiteSetting = await getAppSettings('main_site');
-        if (mainSiteSetting && mainSiteSetting.name) {
-            currentMainSite = mainSiteSetting.name;
-            console.log("Loaded Main Site preference:", currentMainSite);
+        if (mainSiteSetting) {
+            if (Array.isArray(mainSiteSetting.names)) {
+                currentMainSites = mainSiteSetting.names;
+            } else if (mainSiteSetting.name) {
+                // Legacy support
+                currentMainSites = [mainSiteSetting.name];
+            }
+            console.log("Loaded Main Sites preference:", currentMainSites);
         }
         
         if (window.logToScreen) window.logToScreen(`Loaded ${data.length} records.`);
@@ -202,7 +207,7 @@ if (saveConfigBtn) {
 
 // Global State
 let isAdminLoggedIn = false;
-let currentMainSite = null; // Stores the user-selected main site for layout
+let currentMainSites = []; // Stores the user-selected main sites for layout (Array)
 let isEditMode = false; // New Edit Mode State
 let mapState = {
     panning: false,
@@ -693,8 +698,10 @@ function renderMap() {
     const visited = new Set();
 
     // Determine Root(s) - Respect User Preference
-    if (currentMainSite && nodes[currentMainSite]) {
-        queue.push(nodes[currentMainSite]);
+    const roots = currentMainSites.map(name => nodes[name]).filter(n => n);
+    
+    if (roots.length > 0) {
+        queue.push(...roots);
     } else {
         queue = Object.values(nodes).filter(n => n.inputs === 0);
         if (queue.length === 0 && Object.keys(nodes).length > 0) {
@@ -750,18 +757,30 @@ function renderMap() {
     const centerX = 50; 
     const centerY = 50; 
 
-    if (currentMainSite && nodes[currentMainSite]) {
-        // --- Custom Main Site Layout (Radial Tree) ---
-        const root = nodes[currentMainSite];
-        root.xPct = centerX;
-        root.yPct = centerY;
-        root.isBackbone = true;
+    const activeRoots = currentMainSites.map(name => nodes[name]).filter(n => n);
 
-        // Group by level
+    if (activeRoots.length > 0) {
+        // --- Custom Main Site Layout (Radial Tree) ---
+        
+        // 1. Place Roots
+        const rootRadius = activeRoots.length > 1 ? 15 : 0;
+        const rootStep = (2 * Math.PI) / activeRoots.length;
+
+        activeRoots.forEach((root, idx) => {
+             const angle = idx * rootStep - (Math.PI / 2);
+             root.xPct = centerX + rootRadius * Math.cos(angle);
+             root.yPct = centerY + rootRadius * Math.sin(angle);
+             root.isBackbone = true;
+        });
+
+        // 2. Group others by level
         const levels = {};
         let maxLvl = 0;
+        const rootNames = new Set(activeRoots.map(r => r.name));
+
         Object.values(nodes).forEach(n => {
-            if (n.name === currentMainSite) return;
+            if (rootNames.has(n.name)) return;
+            
             if (!levels[n.level]) levels[n.level] = [];
             levels[n.level].push(n);
             if (n.level > maxLvl) maxLvl = n.level;
@@ -769,10 +788,12 @@ function renderMap() {
 
         Object.entries(levels).forEach(([lvl, group]) => {
             const levelIdx = parseInt(lvl);
-            // Treat unvisited (island) nodes (lvl 0) as outer layer if they exist
+            // Treat unvisited (island) nodes (lvl 0) as outer layer
             const effectiveLevel = (levelIdx === 0) ? maxLvl + 1 : levelIdx;
             
-            const radius = 25 * effectiveLevel; 
+            // Base radius + level spacing
+            const radius = rootRadius + (20 * effectiveLevel); 
+            
             const step = (2 * Math.PI) / group.length;
             
             group.forEach((node, idx) => {
@@ -1223,9 +1244,13 @@ function openSiteDetails(siteName) {
     const stats = { total, used, free };
 
     if (modalSiteStats) {
+        const isMain = currentMainSites.includes(siteName);
+        const btnText = isMain ? "取消中心 (重整)" : "設為中心 (重整)";
+        const btnColor = isMain ? "#ef4444" : "#3b82f6";
+
         modalSiteStats.innerHTML = `
             <div style="display: flex; gap: 10px; margin-bottom: 1rem;">
-                <button id="btn-set-main" style="padding: 6px 12px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer;">設為中心</button>
+                <button id="btn-set-main" style="padding: 6px 12px; background: ${btnColor}; color: white; border: none; border-radius: 4px; cursor: pointer;">${btnText}</button>
                 <button id="btn-connect-from" style="padding: 6px 12px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer;">從此連接...</button>
             </div>
             <div style="display: flex; gap: 1rem; margin-bottom: 1rem; align-items: center;">
@@ -1241,16 +1266,29 @@ function openSiteDetails(siteName) {
             const btnSetMain = document.getElementById('btn-set-main');
             if (btnSetMain) {
                 btnSetMain.onclick = async () => {
-                    if (confirm(`確定要將 "${siteName}" 設為中心站點並重新佈局嗎？`)) {
-                        try {
-                            await setAppSettings('main_site', { name: siteName });
-                            currentMainSite = siteName;
-                            renderMap();
-                            alert(`已將 "${siteName}" 設為中心站點`);
-                        } catch (e) {
-                            console.error(e);
-                            alert('儲存設定失敗');
-                        }
+                    const isNowMain = currentMainSites.includes(siteName);
+                    let newSites = [...currentMainSites];
+                    
+                    if (isNowMain) {
+                         newSites = newSites.filter(s => s !== siteName);
+                    } else {
+                         newSites.push(siteName);
+                    }
+                    
+                    // Optimistic update
+                    currentMainSites = newSites;
+                    renderMap();
+                    
+                    // Update Button UI
+                    const newIsMain = currentMainSites.includes(siteName);
+                    btnSetMain.textContent = newIsMain ? "取消中心 (重整)" : "設為中心 (重整)";
+                    btnSetMain.style.background = newIsMain ? "#ef4444" : "#3b82f6";
+
+                    try {
+                        await setAppSettings('main_site', { names: newSites });
+                    } catch (e) {
+                        console.error(e);
+                        alert('儲存設定失敗');
                     }
                 };
             }
