@@ -59,4 +59,35 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    // Map Controls Toggle Logic
+    const mapControlsToggle = document.getElementById('map-controls-toggle');
+    const mapControlsMenu = document.getElementById('map-controls-menu');
+
+    if (mapControlsToggle && mapControlsMenu) {
+        mapControlsToggle.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent document click from closing immediately
+            mapControlsMenu.classList.toggle('active');
+        });
+
+        // Close menu when clicking outside
+        document.addEventListener('click', (e) => {
+            if (window.innerWidth <= 768 && 
+                mapControlsMenu.classList.contains('active') && 
+                !mapControlsMenu.contains(e.target) && 
+                !mapControlsToggle.contains(e.target)) {
+                mapControlsMenu.classList.remove('active');
+            }
+        });
+        
+        // Close menu when clicking a button inside it
+        const actionBtns = mapControlsMenu.querySelectorAll('.action-btn');
+        actionBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (window.innerWidth <= 768) {
+                        mapControlsMenu.classList.remove('active');
+                }
+            });
+        });
+    }
 });
