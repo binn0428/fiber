@@ -739,13 +739,14 @@ function renderMap() {
     const levelCount = maxLevel + 1;
     
     // Backbone Sequence
-    const backboneSequence = ['ROOM', 'UDC', '1PH', '2PH', 'DKB', 'MS2', 'MS3', 'MS4', '2O2'];
+    const backboneSequence = ['ROOM', 'UDC', '1PH', '2PH', 'DKB', 'MS2', 'MS3', 'MS4', '5KB', '2O2'];
     const radius = 35; 
     const centerX = 50; 
     const centerY = 50; 
     const angleStep = (2 * Math.PI) / backboneSequence.length;
-
-    // Position Backbone
+    
+    // Identify Backbone Nodes
+    const backboneNodes = [];
     backboneSequence.forEach((key, idx) => {
         const nodeName = Object.keys(nodes).find(n => {
             const normN = n.toUpperCase().replace('#', '');
@@ -760,21 +761,80 @@ function renderMap() {
             node.yPct = centerY + radius * Math.sin(angle);
             node.isBackbone = true;
             node.level = -1; 
+            backboneNodes.push(node);
         }
     });
 
-    Object.keys(levels).forEach(lvlStr => {
-        const lvl = parseInt(lvlStr);
-        const levelNodes = levels[lvl];
-        const nodesToPosition = levelNodes.filter(n => !n.isBackbone);
+    // Satellite Layout for Non-Backbone Nodes
+    // Group non-backbone nodes by their connected backbone node
+    const satelliteGroups = {};
+    backboneNodes.forEach(bn => satelliteGroups[bn.name] = []);
+    const orphans = [];
+
+    const nonBackboneNodes = Object.values(nodes).filter(n => !n.isBackbone);
+    
+    nonBackboneNodes.forEach(node => {
+        // Find which backbone node this node is connected to
+        // We look at the links
+        const connectedBackbone = backboneNodes.find(bn => {
+            // Check if there is a direct link between node and bn
+            return links.some(l => 
+                (l.source === node.name && l.target === bn.name) || 
+                (l.source === bn.name && l.target === node.name)
+            );
+        });
+
+        if (connectedBackbone) {
+            satelliteGroups[connectedBackbone.name].push(node);
+        } else {
+            orphans.push(node);
+        }
+    });
+
+    // Position Satellites
+    Object.entries(satelliteGroups).forEach(([backboneName, group]) => {
+        if (group.length === 0) return;
         
-        nodesToPosition.forEach((node, idx) => {
-            const xPct = ((lvl + 0.5) / levelCount) * 100; 
-            const yPct = ((idx + 1) / (nodesToPosition.length + 1)) * 100;
-            node.xPct = xPct;
-            node.yPct = yPct;
+        const backboneNode = nodes[backboneName];
+        const bx = backboneNode.xPct;
+        const by = backboneNode.yPct;
+        
+        // Calculate angle of backbone node from center
+        const angleFromCenter = Math.atan2(by - centerY, bx - centerX);
+        
+        // Place satellites in an arc *outside* the backbone ring
+        // Arc span: 60 degrees?
+        const satelliteRadius = 12; // Distance from backbone node
+        const totalArc = Math.PI / 2; // 90 degrees
+        const startAngle = angleFromCenter - (totalArc / 2);
+        
+        group.forEach((node, idx) => {
+            // Distribute evenly
+            let offsetAngle = 0;
+            if (group.length > 1) {
+                offsetAngle = startAngle + (idx / (group.length - 1)) * totalArc;
+            } else {
+                offsetAngle = angleFromCenter;
+            }
+            
+            node.xPct = bx + satelliteRadius * Math.cos(offsetAngle);
+            node.yPct = by + satelliteRadius * Math.sin(offsetAngle);
+            
+            // Boundary checks (0-100)
+            node.xPct = Math.max(5, Math.min(95, node.xPct));
+            node.yPct = Math.max(5, Math.min(95, node.yPct));
         });
     });
+
+    // Position Orphans (if any, use Level Layout fallback or place in center)
+    if (orphans.length > 0) {
+        orphans.forEach((node, idx) => {
+            const angle = (idx / orphans.length) * 2 * Math.PI;
+            const r = 10;
+            node.xPct = centerX + r * Math.cos(angle);
+            node.yPct = centerY + r * Math.sin(angle);
+        });
+    }
 
     // Override with saved positions
     Object.values(nodes).forEach(node => {
@@ -832,6 +892,7 @@ function renderMap() {
     function drawLink(source, target, svgContainer, type) {
         if (!source || !target || source.xPct === undefined || target.xPct === undefined) return;
         
+        // 1. Visual Line
         const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
         line.setAttribute("x1", `${source.xPct}%`);
         line.setAttribute("y1", `${source.yPct}%`);
@@ -839,26 +900,35 @@ function renderMap() {
         line.setAttribute("y2", `${target.yPct}%`);
         
         line.setAttribute("stroke", "#3b82f6");
-        line.setAttribute("stroke-width", isEditMode ? "4" : "2"); 
+        line.setAttribute("stroke-width", "2"); 
         line.setAttribute("marker-end", "url(#arrow)");
         
+        // 2. Invisible Hit Area (Thicker)
+        const hitLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        hitLine.setAttribute("x1", `${source.xPct}%`);
+        hitLine.setAttribute("y1", `${source.yPct}%`);
+        hitLine.setAttribute("x2", `${target.xPct}%`);
+        hitLine.setAttribute("y2", `${target.yPct}%`);
+        hitLine.setAttribute("stroke", "transparent");
+        hitLine.setAttribute("stroke-width", "15"); // Easy to click
+        hitLine.style.cursor = isEditMode ? "pointer" : "default";
+
         if (isEditMode) {
-            line.style.cursor = "pointer";
-            line.addEventListener('click', async (e) => {
+            hitLine.addEventListener('click', async (e) => {
                 e.stopPropagation();
-                if (confirm(`確定要刪除從 "${source.name}" 到 "${target.name}" 的連線嗎？\n這將會清除相關線路資料的「線路目的」欄位。`)) {
-                    await deleteConnection(source.name, target.name);
-                }
+                await handleConnectionClick(source.name, target.name);
             });
-            line.addEventListener('mouseenter', () => line.setAttribute("stroke", "#ef4444"));
-            line.addEventListener('mouseleave', () => line.setAttribute("stroke", "#3b82f6"));
+            hitLine.addEventListener('mouseenter', () => line.setAttribute("stroke", "#ef4444"));
+            hitLine.addEventListener('mouseleave', () => line.setAttribute("stroke", "#3b82f6"));
         }
         
         const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
         title.textContent = `${source.name} -> ${target.name}`;
         line.appendChild(title);
+        hitLine.appendChild(title.cloneNode(true));
 
         svgContainer.appendChild(line);
+        svgContainer.appendChild(hitLine);
     }
 
     if (mapContainer && mapState) {
@@ -867,6 +937,53 @@ function renderMap() {
 }
 
 // Edit Mode Helpers
+async function handleConnectionClick(sourceName, targetName) {
+    const data = getData();
+    const records = data.filter(d => d.station_name === sourceName && d.destination === targetName);
+    
+    if (records.length === 0) return;
+
+    let msg = `連線: ${sourceName} -> ${targetName}\n找到 ${records.length} 條光纜資料:\n`;
+    records.forEach((r, idx) => {
+        msg += `${idx + 1}. 名稱: ${r.fiber_name || '無'}, 芯數: ${r.core_count || '?'}\n`;
+    });
+    msg += `\n請輸入:\n- 數字 (1-${records.length}): 編輯該光纜\n- 'd': 刪除此連線所有資料\n- 取消: 關閉視窗`;
+
+    const input = prompt(msg);
+    if (!input) return;
+
+    if (input.toLowerCase() === 'd') {
+        if (confirm(`確定要刪除從 "${sourceName}" 到 "${targetName}" 的所有連線嗎？`)) {
+            await deleteConnection(sourceName, targetName);
+        }
+        return;
+    }
+
+    const idx = parseInt(input) - 1;
+    if (idx >= 0 && idx < records.length) {
+        const record = records[idx];
+        const newName = prompt("請輸入新的光纜名稱 (Fiber Name):", record.fiber_name);
+        if (newName === null) return;
+        
+        const newCount = prompt("請輸入新的芯數 (Core Count):", record.core_count);
+        if (newCount === null) return;
+
+        try {
+            await updateRecord(record.id, {
+                fiber_name: newName,
+                core_count: newCount
+            });
+            alert("更新成功！");
+            renderMap(); // Refresh to reflect changes if visualized (though map mainly shows existence)
+        } catch (e) {
+            console.error(e);
+            alert("更新失敗: " + e.message);
+        }
+    } else {
+        alert("輸入無效！");
+    }
+}
+
 async function renameStation(oldName, newName) {
     const data = getData();
     const updates = [];
