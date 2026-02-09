@@ -552,6 +552,11 @@ const addLinkBtn = document.getElementById('add-link-btn');
 
 if (multiCenterSortBtn) {
     multiCenterSortBtn.addEventListener('click', () => {
+        if (!isAdminLoggedIn) {
+            alert('權限不足：僅管理員可執行排序變更');
+            return;
+        }
+
         if (currentMainSites.length === 0) {
             alert('請先在站點詳情中設定至少一個中心站點！');
             return;
@@ -677,6 +682,11 @@ if (refreshMapBtn) {
 
 if (resetMapBtn) {
     resetMapBtn.addEventListener('click', () => {
+        if (!isAdminLoggedIn) {
+            alert('權限不足：僅管理員可執行排序變更');
+            return;
+        }
+
         if (confirm('確定要重置所有站點位置嗎？\n這將會清除您手動拖曳的排版。')) {
             nodePositions = {};
             localStorage.removeItem('fiber_node_positions');
@@ -757,47 +767,46 @@ function renderMap() {
         return;
     }
 
-    // 2. Calculate Levels (BFS) - Only for Active Roots
+    // 2. Calculate Levels (BFS) - Multi-Cluster Logic
     const activeRoots = currentMainSites.map(name => nodes[name]).filter(n => n);
     const visited = new Set();
+    const clusters = {}; // { rootName: [nodes...] }
+    const nodeOwnership = {}; // { nodeName: rootName }
+
+    // Initialize Clusters
+    activeRoots.forEach(root => {
+        clusters[root.name] = [];
+        nodeOwnership[root.name] = root.name; // Root owns itself
+        visited.add(root.name);
+        root.level = 0;
+    });
     
     // Only run BFS if we have active roots
     if (activeRoots.length > 0) {
-        let queue = [...activeRoots];
+        // Multi-Source BFS
+        // Queue Item: { node, rootName }
+        let queue = activeRoots.map(root => ({ node: root, rootName: root.name }));
         
-        queue.forEach(n => {
-            n.level = 0;
-            visited.add(n.name);
-        });
-
         let maxIterations = Object.keys(nodes).length * 2;
         while (queue.length > 0 && maxIterations > 0) {
             maxIterations--;
-            const current = queue.shift();
+            const { node: current, rootName } = queue.shift();
             
-            // Find neighbors
-            const currentLinks = links.filter(l => l.source === current.name);
-            currentLinks.forEach(l => {
-                const neighbor = nodes[l.target];
+            // Collect neighbors (Both Outgoing and Incoming)
+            const neighbors = [];
+            links.filter(l => l.source === current.name).forEach(l => neighbors.push(nodes[l.target]));
+            links.filter(l => l.target === current.name).forEach(l => neighbors.push(nodes[l.source]));
+
+            neighbors.forEach(neighbor => {
                 if (neighbor && !visited.has(neighbor.name)) {
-                    neighbor.level = current.level + 1;
                     visited.add(neighbor.name);
-                    queue.push(neighbor);
-                }
-            });
-            
-            // Also check incoming links (undirected graph traversal for layout?)
-            // If the graph is directed (source->target), BFS only follows arrows.
-            // Assuming we want to show everything connected TO or FROM the center?
-            // Usually fiber maps are physical, so undirected makes sense for "connection".
-            // Let's check reverse links too if we want full connectivity.
-            const incomingLinks = links.filter(l => l.target === current.name);
-            incomingLinks.forEach(l => {
-                const neighbor = nodes[l.source];
-                if (neighbor && !visited.has(neighbor.name)) {
-                     neighbor.level = current.level + 1;
-                     visited.add(neighbor.name);
-                     queue.push(neighbor);
+                    neighbor.level = current.level + 1;
+                    
+                    // Assign Ownership
+                    nodeOwnership[neighbor.name] = rootName;
+                    clusters[rootName].push(neighbor);
+                    
+                    queue.push({ node: neighbor, rootName: rootName });
                 }
             });
         }
@@ -826,71 +835,70 @@ function renderMap() {
     svg.appendChild(defs);
     mapContainer.appendChild(svg);
 
-    // Default Center
-    let centerX = 50; 
-    let centerY = 50; 
-
     if (activeRoots.length > 0) {
-        // --- Custom Main Site Layout (Radial Tree) ---
+        // --- Custom Main Site Layout (Independent Clusters) ---
         
-        // 1. Determine Center from Active Roots (User Request: Layout around selected nodes)
-        let sumX = 0, sumY = 0, count = 0;
+        // Iterate through each root and layout its owned nodes
         activeRoots.forEach(root => {
-            // Check saved position first, otherwise fallback to default logic (which might be 50,50 effectively if not set)
-            // But we need the *visual* center. If the node has a saved position, use it.
+            // Determine Root Center (Default 50,50 or Saved Position)
+            let rootX = 50;
+            let rootY = 50;
+            
             if (nodePositions[root.name]) {
-                sumX += nodePositions[root.name].x;
-                sumY += nodePositions[root.name].y;
-                count++;
+                rootX = nodePositions[root.name].x;
+                rootY = nodePositions[root.name].y;
+            } else {
+                // If multiple roots have no position, maybe spread them initially? 
+                // But user says "drag to sort", so we assume they place the roots.
+                // If they are all at 50,50, it will overlap.
+                // Let's check if we have multiple roots without positions.
+                if (activeRoots.length > 1 && !nodePositions[root.name]) {
+                    // Spread them out in a circle if undefined
+                    // This is a fallback initialization
+                    const idx = activeRoots.indexOf(root);
+                    const angle = (idx / activeRoots.length) * 2 * Math.PI;
+                    rootX = 50 + 30 * Math.cos(angle);
+                    rootY = 50 + 30 * Math.sin(angle);
+                }
             }
-        });
 
-        if (count > 0) {
-            centerX = sumX / count;
-            centerY = sumY / count;
-        }
+            // Set Root Position (only if not saved, otherwise it's already set by loop end override)
+            // Actually, we set .xPct here for the calculation of children
+            root.xPct = rootX;
+            root.yPct = rootY;
+            root.isBackbone = true;
 
-        // Only layout visited nodes. Unvisited nodes retain previous/saved positions.
-        
-        // 2. Place Roots
-        // If multi-center, they form a polygon (radius 15).
-        // If single-center, it's at (50,50).
-        const rootRadius = activeRoots.length > 1 ? 15 : 0;
-        const rootStep = (2 * Math.PI) / activeRoots.length;
-
-        activeRoots.forEach((root, idx) => {
-             const angle = idx * rootStep - (Math.PI / 2);
-             root.xPct = centerX + rootRadius * Math.cos(angle);
-             root.yPct = centerY + rootRadius * Math.sin(angle);
-             root.isBackbone = true;
-        });
-
-        // 2. Group visited others by level
-        const levels = {};
-        let maxLvl = 0;
-        const rootNames = new Set(activeRoots.map(r => r.name));
-
-        visited.forEach(name => {
-            const n = nodes[name];
-            if (rootNames.has(n.name)) return;
+            // Get owned nodes for this cluster
+            const clusterNodes = clusters[root.name] || [];
             
-            if (!levels[n.level]) levels[n.level] = [];
-            levels[n.level].push(n);
-            if (n.level > maxLvl) maxLvl = n.level;
-        });
+            // Group by level
+            const levels = {};
+            let maxLvl = 0;
+            
+            clusterNodes.forEach(n => {
+                if (!levels[n.level]) levels[n.level] = [];
+                levels[n.level].push(n);
+                if (n.level > maxLvl) maxLvl = n.level;
+            });
 
-        Object.entries(levels).forEach(([lvl, group]) => {
-            const levelIdx = parseInt(lvl);
-            
-            // Base radius + level spacing
-            const radius = rootRadius + (20 * levelIdx); 
-            
-            const step = (2 * Math.PI) / group.length;
-            
-            group.forEach((node, idx) => {
-                const angle = idx * step;
-                node.xPct = centerX + radius * Math.cos(angle);
-                node.yPct = centerY + radius * Math.sin(angle);
+            // Layout Children Radially around THIS Root
+            Object.entries(levels).forEach(([lvl, group]) => {
+                const levelIdx = parseInt(lvl);
+                
+                // Radius increases with level
+                const radius = 20 * levelIdx; 
+                
+                // Angle Step
+                const step = (2 * Math.PI) / group.length;
+                
+                // Optional: Rotate each level slightly to avoid straight lines
+                const offsetAngle = levelIdx * 0.2; 
+
+                group.forEach((node, idx) => {
+                    const angle = idx * step + offsetAngle;
+                    node.xPct = rootX + radius * Math.cos(angle);
+                    node.yPct = rootY + radius * Math.sin(angle);
+                });
             });
         });
 
