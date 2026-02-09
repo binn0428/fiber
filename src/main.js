@@ -535,135 +535,6 @@ const refreshMapBtn = document.getElementById('refresh-map-btn');
 const resetMapBtn = document.getElementById('reset-map-btn');
 const addLinkBtn = document.getElementById('add-link-btn');
 
-// Map Config & Save Logic
-const mapConfigBtn = document.getElementById('map-config-btn');
-const saveMapBtn = document.getElementById('save-map-btn');
-const configModal = document.getElementById('config-modal');
-const configInputsContainer = document.getElementById('config-inputs-container');
-const submitConfigBtn = document.getElementById('submit-config-btn');
-const resetConfigBtn = document.getElementById('reset-config-btn');
-
-if (saveMapBtn) {
-    saveMapBtn.addEventListener('click', () => {
-        // Force save current state
-        localStorage.setItem('fiber_map_state', JSON.stringify({
-            tx: mapState.tx,
-            ty: mapState.ty,
-            scale: mapState.scale
-        }));
-        
-        // Node positions are already saved on drag end, but we can resave if we had them in memory
-        if (Object.keys(nodePositions).length > 0) {
-             localStorage.setItem('fiber_node_positions', JSON.stringify(nodePositions));
-        }
-        
-        alert('架構圖設定與位置已儲存！');
-    });
-}
-
-if (mapConfigBtn && configModal) {
-    mapConfigBtn.addEventListener('click', () => {
-        openModal(configModal);
-        renderConfigInputs();
-    });
-}
-
-function renderConfigInputs() {
-    if (!configInputsContainer) return;
-    configInputsContainer.innerHTML = '';
-    
-    // Get current sequence
-    let currentSeq = [];
-    const saved = localStorage.getItem('custom_backbone_sequence');
-    if (saved) {
-        try { currentSeq = JSON.parse(saved); } catch(e){}
-    }
-    
-    // Default fallback if empty
-    if (!currentSeq || currentSeq.length !== 10) {
-        currentSeq = Array(10).fill('');
-    }
-    
-    // Create inputs
-    currentSeq.forEach((name, idx) => {
-        const wrapper = document.createElement('div');
-        wrapper.style.display = 'flex';
-        wrapper.style.flexDirection = 'column';
-        
-        const label = document.createElement('label');
-        label.textContent = `站點 ${idx + 1}`;
-        label.style.fontSize = '0.8em';
-        label.style.color = 'var(--text-muted)';
-        
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.className = 'config-station-input';
-        input.value = name;
-        input.placeholder = '輸入站點名稱';
-        input.style.padding = '5px';
-        input.style.border = '1px solid #4b5563';
-        input.style.borderRadius = '4px';
-        input.style.background = 'var(--bg-primary)';
-        input.style.color = 'var(--text-primary)';
-        input.setAttribute('list', 'station-list'); // Autocomplete
-        
-        wrapper.appendChild(label);
-        wrapper.appendChild(input);
-        configInputsContainer.appendChild(wrapper);
-    });
-    
-    // Add datalist for autocomplete
-    if (!document.getElementById('station-list')) {
-        const datalist = document.createElement('datalist');
-        datalist.id = 'station-list';
-        const data = getData();
-        const names = new Set();
-        data.forEach(d => {
-            if (d.station_name) names.add(d.station_name);
-            if (d.destination) names.add(d.destination);
-        });
-        names.forEach(n => {
-            const opt = document.createElement('option');
-            opt.value = n;
-            datalist.appendChild(opt);
-        });
-        document.body.appendChild(datalist);
-    }
-}
-
-if (submitConfigBtn) {
-    submitConfigBtn.addEventListener('click', () => {
-        const inputs = document.querySelectorAll('.config-station-input');
-        const newSeq = [];
-        inputs.forEach(input => {
-            if (input.value.trim()) {
-                newSeq.push(input.value.trim());
-            }
-        });
-        
-        if (newSeq.length !== 10) {
-            alert(`請設定剛好 10 個站點！(目前: ${newSeq.length})`);
-            return;
-        }
-        
-        localStorage.setItem('custom_backbone_sequence', JSON.stringify(newSeq));
-        alert('設定已儲存，正在重新整理架構圖...');
-        closeModal(configModal);
-        renderMap();
-    });
-}
-
-if (resetConfigBtn) {
-    resetConfigBtn.addEventListener('click', () => {
-        if (confirm('確定要恢復預設設定嗎？這將會使用系統預設的 10 大站點。')) {
-            localStorage.removeItem('custom_backbone_sequence');
-            alert('已恢復預設設定。');
-            closeModal(configModal);
-            renderMap();
-        }
-    });
-}
-
 if (editMapBtn) {
     editMapBtn.addEventListener('click', () => {
         if (!isAdminLoggedIn) {
@@ -897,76 +768,8 @@ function renderMap() {
     // If nodes are at 120%, and we pan, they should come into view.
     // The issue might be that the layout algorithm constrains them to 5-95%.
     
-    // Backbone Sequence Logic
-    let backboneSequence = [];
-    const savedBackbone = localStorage.getItem('custom_backbone_sequence');
-    
-    if (savedBackbone) {
-        try {
-            backboneSequence = JSON.parse(savedBackbone);
-            if (!Array.isArray(backboneSequence) || backboneSequence.length !== 10) {
-                console.warn("Invalid custom backbone sequence, falling back to default.");
-                backboneSequence = [];
-            }
-        } catch (e) {
-            console.error("Error parsing custom backbone sequence:", e);
-        }
-    }
-
-    // Default Logic (if no custom or invalid)
-    if (backboneSequence.length === 0) {
-        const topologyMap = [
-            { key: 'ROOM', table: 'room' },
-            { key: 'UDC', table: 'udc' },
-            { key: '1PH', table: 'station_1ph' },
-            { key: '2PH', table: 'station_2ph' },
-            { key: 'DKB', table: 'dkb' },
-            { key: 'MS2', table: 'ms2' },
-            { key: 'MS3', table: 'ms3' },
-            { key: 'MS4', table: 'ms4' },
-            { key: '5KB', table: 'station_5kb' },
-            { key: 'O2', table: 'o2' }
-        ];
-
-        const stationNamesByTable = {};
-        const stationNameCounts = {}; // { tableName: { stationName: count } }
-
-        data.forEach(d => {
-            if (d._table && d.station_name) {
-                const t = d._table;
-                const s = d.station_name.trim();
-                
-                if (!stationNameCounts[t]) stationNameCounts[t] = {};
-                if (!stationNameCounts[t][s]) stationNameCounts[t][s] = 0;
-                stationNameCounts[t][s]++;
-            }
-        });
-
-        // Determine the most frequent station name for each table
-        Object.keys(stationNameCounts).forEach(table => {
-            const counts = stationNameCounts[table];
-            let bestName = null;
-            let maxCount = -1;
-            
-            Object.entries(counts).forEach(([name, count]) => {
-                if (count > maxCount) {
-                    maxCount = count;
-                    bestName = name;
-                }
-            });
-            
-            if (bestName) {
-                stationNamesByTable[table] = bestName;
-            }
-        });
-
-        backboneSequence = topologyMap.map(item => {
-            // Find the actual station name for this table
-            // If the station was renamed, we find the new name via the table
-            // We use the MOST FREQUENT name to avoid outliers
-            return stationNamesByTable[item.table] || item.key;
-        });
-    }
+    // Backbone Sequence
+    const backboneSequence = ['ROOM', 'UDC', '1PH', '2PH', 'DKB', 'MS2', 'MS3', 'MS4', '5KB', '2O2'];
     
     // Increase radius to spread out more
     const radius = 45; // Keep relative radius
@@ -975,51 +778,14 @@ function renderMap() {
     // Identify Backbone Nodes
     const backboneNodes = [];
     backboneSequence.forEach((key, idx) => {
-        // Find ALL matching nodes
-        const matches = Object.keys(nodes).filter(n => {
+        const nodeName = Object.keys(nodes).find(n => {
             const normN = n.toUpperCase().replace('#', '');
             const normK = key.toUpperCase().replace('#', '');
-            // Exact match preferred, then partial
-            return normN === normK || normN.includes(normK) || normK.includes(normN);
+            return normN.includes(normK) || normK.includes(normN);
         });
-        
-        // Pick the best match:
-        // 1. If 'o2 #2O2' exists and key is '2O2', prefer 'o2 #2O2' over '#2O2' if user wants.
-        // Actually, user said: "Highlight is at 'o2 #2O2' not '#2O2'". 
-        // This implies they prefer the longer/more descriptive name if it contains the key.
-        // Let's sort matches by length (descending) so 'o2 #2O2' comes before '#2O2' ?
-        // Or if both exist, pick the one that is NOT just the key with a hash.
-        
-        let bestMatch = null;
-        if (matches.length > 0) {
-            // Refined Sorting Logic:
-            // 1. Penalize names where the key appears multiple times (redundant/stuttering, e.g. "1ph #1ph").
-            // 2. Prefer longer names (e.g. "o2 #2O2" over "#2O2").
-            
-            matches.sort((a, b) => {
-                const normK = key.toUpperCase().replace('#', '');
-                
-                // Count occurrences of the key in the name (simple check)
-                const countA = (a.toUpperCase().split(normK).length - 1);
-                const countB = (b.toUpperCase().split(normK).length - 1);
-                
-                // If one has fewer occurrences (but at least 1), prefer it?
-                // Actually, "1ph #1ph" has 2. "#1PH" has 1. We want #1PH. So prefer Lower Count.
-                // "o2 #2O2" has 1 (o2 != 2O2). "#2O2" has 1. Count is same.
-                
-                if (countA !== countB) {
-                    return countA - countB; // Ascending count (1 is better than 2)
-                }
-                
-                // If counts are same, prefer longer length
-                return b.length - a.length;
-            });
-            
-            bestMatch = matches[0];
-        }
 
-        if (bestMatch && nodes[bestMatch]) {
-            const node = nodes[bestMatch];
+        if (nodeName && nodes[nodeName]) {
+            const node = nodes[nodeName];
             const angle = idx * angleStep - (Math.PI / 2);
             // Center is 50, 50. 
             // If we want infinite, we can still use 50,50 as origin, but allow coords like -50 or 150.
@@ -1185,8 +951,6 @@ function renderMap() {
         hitLine.setAttribute("y2", `${target.yPct}%`);
         hitLine.setAttribute("stroke", "transparent");
         hitLine.setAttribute("stroke-width", "15"); // Easy to click
-        hitLine.setAttribute("pointer-events", "stroke"); // Ensure it captures clicks even if parent is none
-        hitLine.style.pointerEvents = "stroke"; // CSS backup
         hitLine.style.cursor = isEditMode ? "pointer" : "default";
 
         // Add Data Attributes for Update
@@ -1591,7 +1355,6 @@ function openSiteDetails(siteName) {
                             <th style="padding:8px; text-align:left;">聯絡人</th>
                             <th style="padding:8px; text-align:left;">連絡電話</th>
                             <th style="padding:8px; text-align:left;">備註</th>
-                            <th style="padding:8px; text-align:left;">附件</th>
                             <th style="padding:8px; text-align:left;">操作</th>
                         </tr>
                     </thead>
@@ -1627,22 +1390,8 @@ function openSiteDetails(siteName) {
                         ${createEditableCell('contact', row.contact, row.id)}
                         ${createEditableCell('phone', row.phone, row.id)}
                         ${createEditableCell('notes', row.notes, row.id)}
-                        <td style="padding:8px; text-align:center;">
-                            <button class="attachment-btn" style="background:none;border:none;cursor:pointer;font-size:1.2em;" title="檢視附件與詳細資料">📎</button>
-                        </td>
                         <td style="padding:8px;"></td>
                      `;
-
-                     // Add attachment click handler
-                     const attachBtn = tr.querySelector('.attachment-btn');
-                     if (attachBtn) {
-                         attachBtn.addEventListener('click', (e) => {
-                             e.stopPropagation();
-                             const idStr = `${row.station_name || 'Unknown'}-${row.core_count || '?'}_${row.fiber_name || '?'}`;
-                             alert(`資料代碼: ${idStr}\n\n(目前尚無附件檔案)`);
-                         });
-                     }
-                     
                      tbody.appendChild(tr);
                 });
                 
