@@ -769,7 +769,35 @@ function renderMap() {
     // The issue might be that the layout algorithm constrains them to 5-95%.
     
     // Backbone Sequence
-    const backboneSequence = ['ROOM', 'UDC', '1PH', '2PH', 'DKB', 'MS2', 'MS3', 'MS4', '5KB', '2O2'];
+    // Dynamic binding to 10 Dashboard Sites
+    const topologyMap = [
+        { key: 'ROOM', table: 'room' },
+        { key: 'UDC', table: 'udc' },
+        { key: '1PH', table: 'station_1ph' },
+        { key: '2PH', table: 'station_2ph' },
+        { key: 'DKB', table: 'dkb' },
+        { key: 'MS2', table: 'ms2' },
+        { key: 'MS3', table: 'ms3' },
+        { key: 'MS4', table: 'ms4' },
+        { key: '5KB', table: 'station_5kb' },
+        { key: 'O2', table: 'o2' }
+    ];
+
+    const stationNamesByTable = {};
+    data.forEach(d => {
+        if (d._table && d.station_name) {
+            // Priority: Use the first one found
+            if (!stationNamesByTable[d._table]) {
+                stationNamesByTable[d._table] = d.station_name;
+            }
+        }
+    });
+
+    const backboneSequence = topologyMap.map(item => {
+        // Find the actual station name for this table
+        // If the station was renamed, we find the new name via the table
+        return stationNamesByTable[item.table] || item.key;
+    });
     
     // Increase radius to spread out more
     const radius = 45; // Keep relative radius
@@ -1394,6 +1422,7 @@ function openSiteDetails(siteName) {
                             <th style="padding:8px; text-align:left;">聯絡人</th>
                             <th style="padding:8px; text-align:left;">連絡電話</th>
                             <th style="padding:8px; text-align:left;">備註</th>
+                            <th style="padding:8px; text-align:left;">附件</th>
                             <th style="padding:8px; text-align:left;">操作</th>
                         </tr>
                     </thead>
@@ -1429,8 +1458,22 @@ function openSiteDetails(siteName) {
                         ${createEditableCell('contact', row.contact, row.id)}
                         ${createEditableCell('phone', row.phone, row.id)}
                         ${createEditableCell('notes', row.notes, row.id)}
+                        <td style="padding:8px; text-align:center;">
+                            <button class="attachment-btn" style="background:none;border:none;cursor:pointer;font-size:1.2em;" title="檢視附件與詳細資料">📎</button>
+                        </td>
                         <td style="padding:8px;"></td>
                      `;
+
+                     // Add attachment click handler
+                     const attachBtn = tr.querySelector('.attachment-btn');
+                     if (attachBtn) {
+                         attachBtn.addEventListener('click', (e) => {
+                             e.stopPropagation();
+                             const idStr = `${row.station_name || 'Unknown'}-${row.core_count || '?'}_${row.fiber_name || '?'}`;
+                             alert(`資料代碼: ${idStr}\n\n(目前尚無附件檔案)`);
+                         });
+                     }
+                     
                      tbody.appendChild(tr);
                 });
                 
