@@ -693,47 +693,55 @@ function renderMap() {
         return;
     }
 
-    // 2. Calculate Levels (BFS)
-    let queue = [];
+    // 2. Calculate Levels (BFS) - Only for Active Roots
+    const activeRoots = currentMainSites.map(name => nodes[name]).filter(n => n);
     const visited = new Set();
-
-    // Determine Root(s) - Respect User Preference
-    const roots = currentMainSites.map(name => nodes[name]).filter(n => n);
     
-    if (roots.length > 0) {
-        queue.push(...roots);
-    } else {
-        queue = Object.values(nodes).filter(n => n.inputs === 0);
-        if (queue.length === 0 && Object.keys(nodes).length > 0) {
-            const root = nodes['UDC'] || Object.values(nodes)[0];
-            if (root) queue.push(root);
-        }
-    }
-
-    queue.forEach(n => {
-        n.level = 0;
-        visited.add(n.name);
-    });
-
-    let maxIterations = Object.keys(nodes).length * 2;
-    while (queue.length > 0 && maxIterations > 0) {
-        maxIterations--;
-        const current = queue.shift();
+    // Only run BFS if we have active roots
+    if (activeRoots.length > 0) {
+        let queue = [...activeRoots];
         
-        const currentLinks = links.filter(l => l.source === current.name);
-        currentLinks.forEach(l => {
-            const neighbor = nodes[l.target];
-            if (neighbor && !visited.has(neighbor.name)) {
-                neighbor.level = current.level + 1;
-                visited.add(neighbor.name);
-                queue.push(neighbor);
-            }
+        queue.forEach(n => {
+            n.level = 0;
+            visited.add(n.name);
         });
-    }
 
-    Object.values(nodes).forEach(n => {
-        if (!visited.has(n.name)) n.level = 0;
-    });
+        let maxIterations = Object.keys(nodes).length * 2;
+        while (queue.length > 0 && maxIterations > 0) {
+            maxIterations--;
+            const current = queue.shift();
+            
+            // Find neighbors
+            const currentLinks = links.filter(l => l.source === current.name);
+            currentLinks.forEach(l => {
+                const neighbor = nodes[l.target];
+                if (neighbor && !visited.has(neighbor.name)) {
+                    neighbor.level = current.level + 1;
+                    visited.add(neighbor.name);
+                    queue.push(neighbor);
+                }
+            });
+            
+            // Also check incoming links (undirected graph traversal for layout?)
+            // If the graph is directed (source->target), BFS only follows arrows.
+            // Assuming we want to show everything connected TO or FROM the center?
+            // Usually fiber maps are physical, so undirected makes sense for "connection".
+            // Let's check reverse links too if we want full connectivity.
+            const incomingLinks = links.filter(l => l.target === current.name);
+            incomingLinks.forEach(l => {
+                const neighbor = nodes[l.source];
+                if (neighbor && !visited.has(neighbor.name)) {
+                     neighbor.level = current.level + 1;
+                     visited.add(neighbor.name);
+                     queue.push(neighbor);
+                }
+            });
+        }
+    } else {
+        // If no roots selected, we might fallback to original logic or do nothing special here
+        // The original logic calculated levels for everything starting from UDC.
+        // We will skip global BFS if no user-selected root, and rely on the "Original Backbone Layout" block later.
+    }
 
     // 3. Layout Strategy
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -757,12 +765,13 @@ function renderMap() {
     const centerX = 50; 
     const centerY = 50; 
 
-    const activeRoots = currentMainSites.map(name => nodes[name]).filter(n => n);
-
     if (activeRoots.length > 0) {
         // --- Custom Main Site Layout (Radial Tree) ---
+        // Only layout visited nodes. Unvisited nodes retain previous/saved positions.
         
         // 1. Place Roots
+        // If multi-center, they form a polygon (radius 15).
+        // If single-center, it's at (50,50).
         const rootRadius = activeRoots.length > 1 ? 15 : 0;
         const rootStep = (2 * Math.PI) / activeRoots.length;
 
@@ -773,12 +782,13 @@ function renderMap() {
              root.isBackbone = true;
         });
 
-        // 2. Group others by level
+        // 2. Group visited others by level
         const levels = {};
         let maxLvl = 0;
         const rootNames = new Set(activeRoots.map(r => r.name));
 
-        Object.values(nodes).forEach(n => {
+        visited.forEach(name => {
+            const n = nodes[name];
             if (rootNames.has(n.name)) return;
             
             if (!levels[n.level]) levels[n.level] = [];
@@ -788,11 +798,9 @@ function renderMap() {
 
         Object.entries(levels).forEach(([lvl, group]) => {
             const levelIdx = parseInt(lvl);
-            // Treat unvisited (island) nodes (lvl 0) as outer layer
-            const effectiveLevel = (levelIdx === 0) ? maxLvl + 1 : levelIdx;
             
             // Base radius + level spacing
-            const radius = rootRadius + (20 * effectiveLevel); 
+            const radius = rootRadius + (20 * levelIdx); 
             
             const step = (2 * Math.PI) / group.length;
             
@@ -1251,7 +1259,6 @@ function openSiteDetails(siteName) {
         modalSiteStats.innerHTML = `
             <div style="display: flex; gap: 10px; margin-bottom: 1rem;">
                 <button id="btn-set-main" style="padding: 6px 12px; background: ${btnColor}; color: white; border: none; border-radius: 4px; cursor: pointer;">${btnText}</button>
-                <button id="btn-connect-from" style="padding: 6px 12px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer;">從此連接...</button>
             </div>
             <div style="display: flex; gap: 1rem; margin-bottom: 1rem; align-items: center;">
                 <div class="stat-box">總數: <b>${stats.total}</b></div>
@@ -1290,26 +1297,6 @@ function openSiteDetails(siteName) {
                         console.error(e);
                         alert('儲存設定失敗');
                     }
-                };
-            }
-            
-            const btnConnect = document.getElementById('btn-connect-from');
-            if (btnConnect) {
-                btnConnect.onclick = () => {
-                    const modal = document.getElementById('site-modal');
-                    if (modal) modal.style.display = "none";
-                    
-                    const addTab = document.querySelector('button[data-tab="manual-add"]');
-                    if (addTab) addTab.click();
-                    
-                    setTimeout(() => {
-                         const sourceInput = document.querySelector('input[name="source"]');
-                         if (sourceInput) {
-                             sourceInput.value = siteName;
-                             sourceInput.focus();
-                             sourceInput.dispatchEvent(new Event('input'));
-                         }
-                    }, 100);
                 };
             }
         }, 0);
