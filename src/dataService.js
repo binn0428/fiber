@@ -13,6 +13,44 @@ function notify() {
 
 const TABLES = ['udc', 'station_1ph', 'station_2ph', 'dkb', 'station_5kb', 'ms2', 'ms3', 'ms4', 'o2', 'room'];
 
+export async function getAppSettings(key) {
+    const sb = getSupabase();
+    if (!sb) return null;
+    
+    try {
+        const { data, error } = await sb.from('app_settings').select('value').eq('key', key).single();
+        if (error) {
+            if (error.code !== 'PGRST116') { // Ignore 'row not found'
+                console.warn(`Error fetching setting ${key}:`, error);
+            }
+            return null;
+        }
+        return data?.value;
+    } catch (e) {
+        console.error(`Exception fetching setting ${key}:`, e);
+        return null;
+    }
+}
+
+export async function setAppSettings(key, value) {
+    const sb = getSupabase();
+    if (!sb) throw new Error("Supabase not configured");
+
+    try {
+        const { error } = await sb.from('app_settings').upsert({ 
+            key: key, 
+            value: value,
+            updated_at: new Date().toISOString()
+        });
+        
+        if (error) throw error;
+        return true;
+    } catch (e) {
+        console.error(`Error saving setting ${key}:`, e);
+        throw e;
+    }
+}
+
 export async function loadData() {
     console.log("dataService: loadData called");
     const sb = getSupabase();

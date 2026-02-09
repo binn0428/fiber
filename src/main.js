@@ -2,7 +2,7 @@
 console.log("Main script starting...");
 
 import { initSupabase, checkConnection, getSupabase } from './supabase.js';
-import { loadData, addRecord, updateRecord, getData, getStats, getSiteData, searchLine, getFiberPath, syncData, deleteStation } from './dataService.js';
+import { loadData, addRecord, updateRecord, getData, getStats, getSiteData, searchLine, getFiberPath, syncData, deleteStation, getAppSettings, setAppSettings } from './dataService.js';
 import { parseExcel, exportToExcel } from './excelService.js';
 import './mobile.js';
 
@@ -64,6 +64,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (window.logToScreen) window.logToScreen("Loading data from Supabase...");
         const data = await loadData();
+        
+        // Load App Settings (Main Site)
+        const mainSiteSetting = await getAppSettings('main_site');
+        if (mainSiteSetting && mainSiteSetting.name) {
+            currentMainSite = mainSiteSetting.name;
+            console.log("Loaded Main Site preference:", currentMainSite);
+        }
+        
         if (window.logToScreen) window.logToScreen(`Loaded ${data.length} records.`);
         console.log(`Loaded ${data.length} records.`);
         
@@ -194,6 +202,7 @@ if (saveConfigBtn) {
 
 // Global State
 let isAdminLoggedIn = false;
+let currentMainSite = null; // Stores the user-selected main site for layout
 let isEditMode = false; // New Edit Mode State
 let mapState = {
     panning: false,
@@ -656,10 +665,8 @@ function renderMap() {
 
     // Initialize nodes from data
     data.forEach(row => {
-        // Add Source
         if (row.station_name) ensureNode(row.station_name);
         
-        // Add Destination and Link
         if (row.station_name && row.destination) {
             const source = ensureNode(row.station_name);
             const target = ensureNode(row.destination);
@@ -682,15 +689,20 @@ function renderMap() {
     }
 
     // 2. Calculate Levels (BFS)
-    // Find roots (0 inputs)
-    let queue = Object.values(nodes).filter(n => n.inputs === 0);
-    // Fallback if circular or no clear root
-    if (queue.length === 0 && Object.keys(nodes).length > 0) {
-        const root = nodes['UDC'] || Object.values(nodes)[0];
-        if (root) queue.push(root);
+    let queue = [];
+    const visited = new Set();
+
+    // Determine Root(s) - Respect User Preference
+    if (currentMainSite && nodes[currentMainSite]) {
+        queue.push(nodes[currentMainSite]);
+    } else {
+        queue = Object.values(nodes).filter(n => n.inputs === 0);
+        if (queue.length === 0 && Object.keys(nodes).length > 0) {
+            const root = nodes['UDC'] || Object.values(nodes)[0];
+            if (root) queue.push(root);
+        }
     }
 
-    const visited = new Set();
     queue.forEach(n => {
         n.level = 0;
         visited.add(n.name);
@@ -712,28 +724,17 @@ function renderMap() {
         });
     }
 
-    // Handle islands
     Object.values(nodes).forEach(n => {
         if (!visited.has(n.name)) n.level = 0;
     });
 
-    // 3. Layout (Group by Level)
-    const levels = {};
-    let maxLevel = 0;
-    Object.values(nodes).forEach(n => {
-        if (!levels[n.level]) levels[n.level] = [];
-        levels[n.level].push(n);
-        if (n.level > maxLevel) maxLevel = n.level;
-    });
-
-    // SVG Container
+    // 3. Layout Strategy
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("class", "connections");
     svg.setAttribute("width", "100%");
     svg.setAttribute("height", "100%");
-    svg.style.overflow = "visible"; // Fix clipping for infinite canvas
+    svg.style.overflow = "visible"; 
     
-    // Arrow Marker
     const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
     defs.innerHTML = `
         <marker id="arrow" markerWidth="10" markerHeight="10" refX="55" refY="3" orient="auto" markerUnits="strokeWidth">
@@ -746,127 +747,118 @@ function renderMap() {
     svg.appendChild(defs);
     mapContainer.appendChild(svg);
 
-    // 4. Render Layout
-    const levelCount = maxLevel + 1;
-    
-    // Infinite Canvas Settings
-    // Instead of using percentages (0-100), we use a virtual coordinate system.
-    // The center is (0,0).
-    const centerX = 0; 
-    const centerY = 0; 
-    
-    // Scale factor for rendering to CSS pixels/percentages
-    // We will still use %, but allow them to go beyond 0-100 and rely on the pan/zoom transform.
-    // However, to "break the frame", we should position elements in pixels or relative units that aren't constrained.
-    // But existing code uses %.
-    // Let's stick to % but scale down the "world" so it fits, OR just allow >100% and let user pan.
-    // The user complains about "restricted frame". 
-    // If we use % and the container is 100% width/height, then 120% is off screen.
-    // But our pan/zoom logic transforms the CONTAINER.
-    // Wait, the pan logic transforms `mapInner` (`#fiber-map`).
-    // `#fiber-map` contains the nodes.
-    // If nodes are at 120%, and we pan, they should come into view.
-    // The issue might be that the layout algorithm constrains them to 5-95%.
-    
-    // Backbone Sequence
-    const backboneSequence = ['ROOM', 'UDC', '1PH', '2PH', 'DKB', 'MS2', 'MS3', 'MS4', '5KB', '2O2'];
-    
-    // Increase radius to spread out more
-    const radius = 45; // Keep relative radius
-    const angleStep = (2 * Math.PI) / backboneSequence.length;
-    
-    // Identify Backbone Nodes
-    const backboneNodes = [];
-    backboneSequence.forEach((key, idx) => {
-        const nodeName = Object.keys(nodes).find(n => {
-            const normN = n.toUpperCase().replace('#', '');
-            const normK = key.toUpperCase().replace('#', '');
-            return normN.includes(normK) || normK.includes(normN);
+    const centerX = 50; 
+    const centerY = 50; 
+
+    if (currentMainSite && nodes[currentMainSite]) {
+        // --- Custom Main Site Layout (Radial Tree) ---
+        const root = nodes[currentMainSite];
+        root.xPct = centerX;
+        root.yPct = centerY;
+        root.isBackbone = true;
+
+        // Group by level
+        const levels = {};
+        let maxLvl = 0;
+        Object.values(nodes).forEach(n => {
+            if (n.name === currentMainSite) return;
+            if (!levels[n.level]) levels[n.level] = [];
+            levels[n.level].push(n);
+            if (n.level > maxLvl) maxLvl = n.level;
         });
 
-        if (nodeName && nodes[nodeName]) {
-            const node = nodes[nodeName];
-            const angle = idx * angleStep - (Math.PI / 2);
-            // Center is 50, 50. 
-            // If we want infinite, we can still use 50,50 as origin, but allow coords like -50 or 150.
-            node.xPct = 50 + radius * Math.cos(angle);
-            node.yPct = 50 + radius * Math.sin(angle);
-            node.isBackbone = true;
-            node.level = -1; 
-            backboneNodes.push(node);
-        }
-    });
-
-    // Satellite Layout for Non-Backbone Nodes
-    // Group non-backbone nodes by their connected backbone node
-    const satelliteGroups = {};
-    backboneNodes.forEach(bn => satelliteGroups[bn.name] = []);
-    const orphans = [];
-
-    const nonBackboneNodes = Object.values(nodes).filter(n => !n.isBackbone);
-    
-    nonBackboneNodes.forEach(node => {
-        // Find which backbone node this node is connected to
-        // We look at the links
-        const connectedBackbone = backboneNodes.find(bn => {
-            // Check if there is a direct link between node and bn
-            return links.some(l => 
-                (l.source === node.name && l.target === bn.name) || 
-                (l.source === bn.name && l.target === node.name)
-            );
+        Object.entries(levels).forEach(([lvl, group]) => {
+            const levelIdx = parseInt(lvl);
+            // Treat unvisited (island) nodes (lvl 0) as outer layer if they exist
+            const effectiveLevel = (levelIdx === 0) ? maxLvl + 1 : levelIdx;
+            
+            const radius = 25 * effectiveLevel; 
+            const step = (2 * Math.PI) / group.length;
+            
+            group.forEach((node, idx) => {
+                const angle = idx * step;
+                node.xPct = centerX + radius * Math.cos(angle);
+                node.yPct = centerY + radius * Math.sin(angle);
+            });
         });
 
-        if (connectedBackbone) {
-            satelliteGroups[connectedBackbone.name].push(node);
-        } else {
-            orphans.push(node);
-        }
-    });
+    } else {
+        // --- Original Backbone Layout ---
+        const backboneSequence = ['ROOM', 'UDC', '1PH', '2PH', 'DKB', 'MS2', 'MS3', 'MS4', '5KB', '2O2'];
+        const radius = 45;
+        const angleStep = (2 * Math.PI) / backboneSequence.length;
+        
+        const backboneNodes = [];
+        backboneSequence.forEach((key, idx) => {
+            const nodeName = Object.keys(nodes).find(n => {
+                const normN = n.toUpperCase().replace('#', '');
+                const normK = key.toUpperCase().replace('#', '');
+                return normN.includes(normK) || normK.includes(normN);
+            });
 
-    // Position Satellites
-    Object.entries(satelliteGroups).forEach(([backboneName, group]) => {
-        if (group.length === 0) return;
-        
-        const backboneNode = nodes[backboneName];
-        const bx = backboneNode.xPct;
-        const by = backboneNode.yPct;
-        
-        // Calculate angle of backbone node from center (50,50)
-        const angleFromCenter = Math.atan2(by - 50, bx - 50);
-        
-        // Dynamic settings based on count - Increased to prevent overlap
-        let satelliteRadius = 25; 
-        if (group.length > 5) satelliteRadius = 35;
-        if (group.length > 10) satelliteRadius = 45;
-        
-        // Spread satellites in an arc outward
-        // If many, use wider arc
-        const totalArc = group.length > 4 ? (Math.PI * 0.9) : (Math.PI / 1.5);
-        const startAngle = angleFromCenter - (totalArc / 2);
-        
-        group.forEach((node, idx) => {
-            let offsetAngle = angleFromCenter;
-            if (group.length > 1) {
-                offsetAngle = startAngle + (idx / (group.length - 1)) * totalArc;
+            if (nodeName && nodes[nodeName]) {
+                const node = nodes[nodeName];
+                const angle = idx * angleStep - (Math.PI / 2);
+                node.xPct = 50 + radius * Math.cos(angle);
+                node.yPct = 50 + radius * Math.sin(angle);
+                node.isBackbone = true;
+                node.level = -1; 
+                backboneNodes.push(node);
             }
-            
-            node.xPct = bx + satelliteRadius * Math.cos(offsetAngle);
-            node.yPct = by + satelliteRadius * Math.sin(offsetAngle);
-            
-            // REMOVED Boundary checks (5-95) to allow infinite expansion
-            // node.xPct = Math.max(5, Math.min(95, node.xPct));
-            // node.yPct = Math.max(5, Math.min(95, node.yPct));
         });
-    });
 
-    // Position Orphans (if any, use Level Layout fallback or place in center)
-    if (orphans.length > 0) {
-        orphans.forEach((node, idx) => {
-            const angle = (idx / orphans.length) * 2 * Math.PI;
-            const r = 10;
-            node.xPct = centerX + r * Math.cos(angle);
-            node.yPct = centerY + r * Math.sin(angle);
+        const satelliteGroups = {};
+        backboneNodes.forEach(bn => satelliteGroups[bn.name] = []);
+        const orphans = [];
+        const nonBackboneNodes = Object.values(nodes).filter(n => !n.isBackbone);
+        
+        nonBackboneNodes.forEach(node => {
+            const connectedBackbone = backboneNodes.find(bn => {
+                return links.some(l => 
+                    (l.source === node.name && l.target === bn.name) || 
+                    (l.source === bn.name && l.target === node.name)
+                );
+            });
+
+            if (connectedBackbone) {
+                satelliteGroups[connectedBackbone.name].push(node);
+            } else {
+                orphans.push(node);
+            }
         });
+
+        Object.entries(satelliteGroups).forEach(([backboneName, group]) => {
+            if (group.length === 0) return;
+            const backboneNode = nodes[backboneName];
+            const bx = backboneNode.xPct;
+            const by = backboneNode.yPct;
+            const angleFromCenter = Math.atan2(by - 50, bx - 50);
+            
+            let satelliteRadius = 25; 
+            if (group.length > 5) satelliteRadius = 35;
+            if (group.length > 10) satelliteRadius = 45;
+            
+            const totalArc = group.length > 4 ? (Math.PI * 0.9) : (Math.PI / 1.5);
+            const startAngle = angleFromCenter - (totalArc / 2);
+            
+            group.forEach((node, idx) => {
+                let offsetAngle = angleFromCenter;
+                if (group.length > 1) {
+                    offsetAngle = startAngle + (idx / (group.length - 1)) * totalArc;
+                }
+                node.xPct = bx + satelliteRadius * Math.cos(offsetAngle);
+                node.yPct = by + satelliteRadius * Math.sin(offsetAngle);
+            });
+        });
+
+        if (orphans.length > 0) {
+            orphans.forEach((node, idx) => {
+                const angle = (idx / orphans.length) * 2 * Math.PI;
+                const r = 10;
+                node.xPct = centerX + r * Math.cos(angle);
+                node.yPct = centerY + r * Math.sin(angle);
+            });
+        }
     }
 
     // Override with saved positions
@@ -898,6 +890,20 @@ function renderMap() {
         el.addEventListener('click', (e) => {
             if (el.getAttribute('data-dragging') === 'true') return;
             
+            // Check if Manual Add tab is active for "Click to Select"
+            const manualAddSection = document.getElementById('manual-add');
+            if (manualAddSection && manualAddSection.classList.contains('active')) {
+                 const sourceInput = document.querySelector('input[name="source"]');
+                 if (sourceInput) {
+                     sourceInput.value = node.name;
+                     // Visual feedback
+                     sourceInput.style.transition = 'background-color 0.3s';
+                     sourceInput.style.backgroundColor = '#fef08a'; // Light yellow
+                     setTimeout(() => sourceInput.style.backgroundColor = '', 500);
+                     return; // Skip opening modal
+                 }
+            }
+
             if (clickTimeout) clearTimeout(clickTimeout);
             clickTimeout = setTimeout(() => {
                 openSiteDetails(node.name);
@@ -1218,6 +1224,10 @@ function openSiteDetails(siteName) {
 
     if (modalSiteStats) {
         modalSiteStats.innerHTML = `
+            <div style="display: flex; gap: 10px; margin-bottom: 1rem;">
+                <button id="btn-set-main" style="padding: 6px 12px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer;">設為中心</button>
+                <button id="btn-connect-from" style="padding: 6px 12px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer;">從此連接...</button>
+            </div>
             <div style="display: flex; gap: 1rem; margin-bottom: 1rem; align-items: center;">
                 <div class="stat-box">總數: <b>${stats.total}</b></div>
                 <div class="stat-box used">已用: <b>${stats.used}</b></div>
@@ -1225,6 +1235,46 @@ function openSiteDetails(siteName) {
                 <div class="stat-box">使用率: <b>${usageRate}%</b></div>
             </div>
         `;
+        
+        // Bind events immediately
+        setTimeout(() => {
+            const btnSetMain = document.getElementById('btn-set-main');
+            if (btnSetMain) {
+                btnSetMain.onclick = async () => {
+                    if (confirm(`確定要將 "${siteName}" 設為中心站點並重新佈局嗎？`)) {
+                        try {
+                            await setAppSettings('main_site', { name: siteName });
+                            currentMainSite = siteName;
+                            renderMap();
+                            alert(`已將 "${siteName}" 設為中心站點`);
+                        } catch (e) {
+                            console.error(e);
+                            alert('儲存設定失敗');
+                        }
+                    }
+                };
+            }
+            
+            const btnConnect = document.getElementById('btn-connect-from');
+            if (btnConnect) {
+                btnConnect.onclick = () => {
+                    const modal = document.getElementById('site-modal');
+                    if (modal) modal.style.display = "none";
+                    
+                    const addTab = document.querySelector('button[data-tab="manual-add"]');
+                    if (addTab) addTab.click();
+                    
+                    setTimeout(() => {
+                         const sourceInput = document.querySelector('input[name="source"]');
+                         if (sourceInput) {
+                             sourceInput.value = siteName;
+                             sourceInput.focus();
+                             sourceInput.dispatchEvent(new Event('input'));
+                         }
+                    }, 100);
+                };
+            }
+        }, 0);
     }
 
     // Render Accordion
