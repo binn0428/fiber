@@ -784,18 +784,41 @@ function renderMap() {
     ];
 
     const stationNamesByTable = {};
+    const stationNameCounts = {}; // { tableName: { stationName: count } }
+
     data.forEach(d => {
         if (d._table && d.station_name) {
-            // Priority: Use the first one found
-            if (!stationNamesByTable[d._table]) {
-                stationNamesByTable[d._table] = d.station_name;
+            const t = d._table;
+            const s = d.station_name.trim();
+            
+            if (!stationNameCounts[t]) stationNameCounts[t] = {};
+            if (!stationNameCounts[t][s]) stationNameCounts[t][s] = 0;
+            stationNameCounts[t][s]++;
+        }
+    });
+
+    // Determine the most frequent station name for each table
+    Object.keys(stationNameCounts).forEach(table => {
+        const counts = stationNameCounts[table];
+        let bestName = null;
+        let maxCount = -1;
+        
+        Object.entries(counts).forEach(([name, count]) => {
+            if (count > maxCount) {
+                maxCount = count;
+                bestName = name;
             }
+        });
+        
+        if (bestName) {
+            stationNamesByTable[table] = bestName;
         }
     });
 
     const backboneSequence = topologyMap.map(item => {
         // Find the actual station name for this table
         // If the station was renamed, we find the new name via the table
+        // We use the MOST FREQUENT name to avoid outliers
         return stationNamesByTable[item.table] || item.key;
     });
     

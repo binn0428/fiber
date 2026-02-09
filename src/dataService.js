@@ -284,7 +284,15 @@ export function getData() {
 }
 
 export function getSiteData(siteName) {
-    const data = currentData.filter(d => d.station_name === siteName || d.destination === siteName);
+    if (!siteName) return [];
+    const target = siteName.trim();
+    
+    const data = currentData.filter(d => {
+        const s = (d.station_name || '').trim();
+        const dest = (d.destination || '').trim();
+        return s === target || dest === target;
+    });
+
     // Sort by sequence if available
     return data.sort((a, b) => {
         const seqA = parseInt(a.sequence) || 999999;
