@@ -172,8 +172,9 @@ h2 {
     border-radius: 0.5rem;
     overflow: visible;
     margin-top: 1rem;
-    border: 1px solid var(--border-color);
-    box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+    /* border: 1px solid var(--border-color); */
+    /* box-shadow: inset 0 0 20px rgba(0,0,0,0.5); */
+    background-color: transparent;
     user-select: none;
     touch-action: none; /* Prevent browser handling of gestures */
 }
