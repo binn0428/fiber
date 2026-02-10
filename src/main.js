@@ -503,23 +503,47 @@ async function confirmAutoAdd() {
         // For each segment (from->to), find REQUIRED NUMBER of available records and update them.
         const data = getData();
         const recordsToUpdate = [];
+
+        // Pre-process: Infer Fiber Destinations (Same logic as generatePaths)
+        // Many spare cores might not have 'destination' set explicitly.
+        // We infer the destination if other cores in the same fiber (same station + fiber_name) have a destination.
+        const fiberDestinations = {}; // { station: { fiberName: destination } }
+        data.forEach(d => {
+            if(d.station_name && d.fiber_name && d.destination) {
+                if(!fiberDestinations[d.station_name]) fiberDestinations[d.station_name] = {};
+                // We assume one fiber name goes to one destination (topology constraint)
+                fiberDestinations[d.station_name][d.fiber_name] = d.destination;
+            }
+        });
         
         for(const segment of path.records) {
             // Find available core between segment.from and segment.to
             // First try finding direct forward connection
-            let candidates = data.filter(d => 
-                d.station_name === segment.from && 
-                d.destination === segment.to && 
-                (!d.usage || d.usage.trim() === '')
-            );
+            let candidates = data.filter(d => {
+                if(d.station_name !== segment.from) return false;
+                
+                // Check destination: Explicit OR Inferred
+                let dest = d.destination;
+                if(!dest && d.fiber_name && fiberDestinations[d.station_name] && fiberDestinations[d.station_name][d.fiber_name]) {
+                    dest = fiberDestinations[d.station_name][d.fiber_name];
+                }
+                
+                return dest === segment.to && (!d.usage || d.usage.trim() === '');
+            });
 
             // If no direct connection found, look for reverse connection (using shared fiber)
             if (candidates.length === 0) {
-                candidates = data.filter(d => 
-                    d.station_name === segment.to && 
-                    d.destination === segment.from && 
-                    (!d.usage || d.usage.trim() === '')
-                );
+                candidates = data.filter(d => {
+                     // Reverse: Station is 'to', Dest is 'from'
+                     if(d.station_name !== segment.to) return false;
+                     
+                     let dest = d.destination;
+                     if(!dest && d.fiber_name && fiberDestinations[d.station_name] && fiberDestinations[d.station_name][d.fiber_name]) {
+                        dest = fiberDestinations[d.station_name][d.fiber_name];
+                     }
+                     
+                     return dest === segment.from && (!d.usage || d.usage.trim() === '');
+                });
             }
 
             // DO NOT SORT BY FIBER NAME IF IT CAUSES ISSUES
