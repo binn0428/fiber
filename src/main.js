@@ -63,70 +63,44 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         if (window.logToScreen) window.logToScreen("Loading data from Supabase...");
+        const data = await loadData();
         
-        // Use a local variable for data to handle potential errors
-        let data = [];
-        try {
-             data = await loadData();
-        } catch (loadErr) {
-             console.error("Critical: loadData threw an error", loadErr);
-             alert("資料載入發生錯誤: " + loadErr.message);
+        // Load App Settings (Main Site)
+        const mainSiteSetting = await getAppSettings('main_site');
+        if (mainSiteSetting) {
+            if (Array.isArray(mainSiteSetting.names)) {
+                currentMainSites = mainSiteSetting.names;
+            } else if (mainSiteSetting.name) {
+                // Legacy support
+                currentMainSites = [mainSiteSetting.name];
+            }
+            console.log("Loaded Main Sites preference:", currentMainSites);
         }
-        
-        // Load App Settings (Main Site) - Non-blocking
-        try {
-            const mainSiteSetting = await getAppSettings('main_site');
-            if (mainSiteSetting) {
-                if (Array.isArray(mainSiteSetting.names)) {
-                    currentMainSites = mainSiteSetting.names;
-                } else if (mainSiteSetting.name) {
-                    // Legacy support
-                    currentMainSites = [mainSiteSetting.name];
-                }
-                console.log("Loaded Main Sites preference:", currentMainSites);
-            }
-        } catch (e) { console.warn("Main Site setting load failed", e); }
 
-        // Load App Settings (Node Positions) - Non-blocking
-        try {
-            const nodePositionsSetting = await getAppSettings('fiber_node_positions');
-            if (nodePositionsSetting) {
-                 if (typeof nodePositionsSetting === 'string') {
-                     try {
-                         nodePositions = JSON.parse(nodePositionsSetting);
-                     } catch (e) { console.error("Error parsing node positions", e); }
-                 } else {
-                     nodePositions = nodePositionsSetting;
-                 }
-                 console.log("Loaded Node Positions from Supabase:", Object.keys(nodePositions).length);
-            }
-        } catch (e) { console.warn("Node Positions setting load failed", e); }
+        // Load App Settings (Node Positions)
+        const nodePositionsSetting = await getAppSettings('fiber_node_positions');
+        if (nodePositionsSetting) {
+             if (typeof nodePositionsSetting === 'string') {
+                 try {
+                     nodePositions = JSON.parse(nodePositionsSetting);
+                 } catch (e) { console.error("Error parsing node positions", e); }
+             } else {
+                 nodePositions = nodePositionsSetting;
+             }
+             console.log("Loaded Node Positions from Supabase:", Object.keys(nodePositions).length);
+        }
         
         if (window.logToScreen) window.logToScreen(`Loaded ${data.length} records.`);
         console.log(`Loaded ${data.length} records.`);
         
-        try {
-            renderDashboard();
-        } catch (e) {
-            console.error("renderDashboard failed", e);
-            const c = document.getElementById('stats-container');
-            if(c) c.innerHTML = `<div style="color:red">儀表盤顯示錯誤: ${e.message}</div>`;
-        }
-
-        try {
-            renderMap();
-        } catch (e) { console.error("renderMap failed", e); }
-
-        try {
-            renderDataTable();
-        } catch (e) { console.error("renderDataTable failed", e); }
-
+        renderDashboard();
+        renderMap();
+        renderDataTable();
         populateSiteSelector();
         
     } catch (e) {
         if (window.logToScreen) window.logToScreen(`Init Error: ${e.message}`, "error");
         console.error("Error in initialization:", e);
-        alert("系統初始化失敗: " + e.message); // Add alert for visibility
         if (mapContainer) {
             mapContainer.innerHTML = `<div class="error-message">
                 <h3>載入失敗</h3>
@@ -316,212 +290,190 @@ if (pathSearchBtn) {
     pathSearchBtn.addEventListener('click', loadPathMgmtList);
 }
 
-// Helper: Normalize Station Name (Remove suffixes like (..), /.., #..)
-function normalizeStationName(name) {
-    if (!name) return "";
-    // 1. Remove suffixes starting with (, /, #
-    // 2. Trim whitespace
-    // 3. Convert to uppercase
-    return name.replace(/[(\/#].*$/, '').trim().toUpperCase();
-}
-
-// Helper: Bidirectional Destination Inference (Normalized Keys)
-function getInferredDestinations(data) {
-    const fiberDestinations = {}; // { NORM_STATION: { fiberName: DEST_RAW } }
-    
-    // Pass 1: Collect Explicit Destinations
-    data.forEach(d => {
-        if(d.station_name && d.fiber_name && d.destination) {
-            const normStation = normalizeStationName(d.station_name);
-            if(!fiberDestinations[normStation]) fiberDestinations[normStation] = {};
-            
-            // Store the destination. 
-            // Note: We store the 'best' available destination name, or just the raw one.
-            // Using raw destination allows us to normalize it later as needed.
-            fiberDestinations[normStation][d.fiber_name] = d.destination;
-        }
-    });
-
-    // Pass 2: Infer Reverse Destinations
-    // If Station A has fiber F going to Station B, 
-    // then Station B implicitly has fiber F going to Station A.
-    // We need to iterate carefully since keys are normalized.
-    
-    // We create a snapshot of keys to avoid infinite loops if we modify object while iterating
-    const stations = Object.keys(fiberDestinations);
-    
-    stations.forEach(srcNorm => {
-        const fibers = fiberDestinations[srcNorm];
-        for(const fiber in fibers) {
-            const dstRaw = fibers[fiber];
-            const dstNorm = normalizeStationName(dstRaw);
-            
-            // Ensure dst entry exists
-            if(!fiberDestinations[dstNorm]) fiberDestinations[dstNorm] = {};
-            
-            // Only set if not already set (respect explicit data)
-            if(!fiberDestinations[dstNorm][fiber]) {
-                // We need a raw name for the source. 
-                // Since we only have srcNorm here, we might not have the original raw name easily.
-                // But for the purpose of the graph, we only need the normalized name anyway.
-                // So we can store the normalized name as the destination.
-                fiberDestinations[dstNorm][fiber] = srcNorm;
-            }
-        }
-    });
-
-    return fiberDestinations;
-}
-
 // ... Path Finding Logic ...
 function generatePaths(start, end) {
     const data = getData();
+    // Get required core count from input, default to 1
     const requiredCores = parseInt(document.getElementById('auto-core-count').value) || 1;
 
-    // Pre-process: Infer Fiber Destinations (using Normalized Keys)
-    const fiberDestinations = getInferredDestinations(data);
-    
-    // Helper to get destination for a row
-    const getRowDestinationNorm = (row) => {
-        // 1. Explicit
-        if(row.destination) return normalizeStationName(row.destination);
-        // 2. Inferred
-        const uNorm = normalizeStationName(row.station_name);
-        if(row.fiber_name && fiberDestinations[uNorm] && fiberDestinations[uNorm][row.fiber_name]) {
-             return normalizeStationName(fiberDestinations[uNorm][row.fiber_name]);
+    // Pre-process: Infer Fiber Destinations
+    // Many spare cores might not have 'destination' set explicitly.
+    // We infer the destination if other cores in the same fiber (same station + fiber_name) have a destination.
+    const fiberDestinations = {}; // { station: { fiberName: destination } }
+    data.forEach(d => {
+        if(d.station_name && d.fiber_name && d.destination) {
+            if(!fiberDestinations[d.station_name]) fiberDestinations[d.station_name] = {};
+            // We assume one fiber name goes to one destination (topology constraint)
+            fiberDestinations[d.station_name][d.fiber_name] = d.destination;
         }
-        return null;
-    };
+    });
 
-    // Build Graph: Adjacency List using NORMALIZED names
+    // Build Graph: Adjacency List
+    // We want to find a sequence of stations.
+    // Graph nodes: Station Names
+    // Graph edges: Existing rows where usage is empty.
+    
     const graph = {};
-    const normToDisplay = {}; // Map normalized name to a display name (e.g. longest raw name)
-
+    
     data.forEach(row => {
         if(!row.station_name) return;
         
-        const uNorm = normalizeStationName(row.station_name);
-        const vNorm = getRowDestinationNorm(row);
-        
-        // Update Display Name Map (prefer longer names as they likely have more info)
-        if(!normToDisplay[uNorm] || row.station_name.length > normToDisplay[uNorm].length) {
-            normToDisplay[uNorm] = row.station_name;
-        }
-        if(vNorm && row.destination && (!normToDisplay[vNorm] || row.destination.length > normToDisplay[vNorm].length)) {
-            normToDisplay[vNorm] = row.destination;
+        let u = row.station_name;
+        let v = row.destination;
+
+        // Try to infer destination if missing
+        if (!v && row.fiber_name && fiberDestinations[u] && fiberDestinations[u][row.fiber_name]) {
+            v = fiberDestinations[u][row.fiber_name];
         }
 
-        if(!vNorm) return;
-        if(uNorm === vNorm) return; // Ignore self-loops
+        if(!v) return;
         
+        // Check availability
         const isAvailable = !row.usage || row.usage.trim() === '';
         
         if(isAvailable) {
-            // Forward (u -> v)
-            if(!graph[uNorm]) graph[uNorm] = {};
-            if(!graph[uNorm][vNorm]) graph[uNorm][vNorm] = [];
-            graph[uNorm][vNorm].push(row);
+            // Forward Direction (u -> v)
+            if(!graph[u]) graph[u] = {};
+            if(!graph[u][v]) graph[u][v] = [];
+            graph[u][v].push(row);
 
-            // Reverse (v -> u)
-            if(!graph[vNorm]) graph[vNorm] = {};
-            if(!graph[vNorm][uNorm]) graph[vNorm][uNorm] = [];
-            graph[vNorm][uNorm].push(row);
+            // Reverse Direction (v -> u) - Allow bidirectional usage of fiber
+            // This ensures branch stations (which may not have own rows) can use the incoming fiber from Main Station
+            if(!graph[v]) graph[v] = {};
+            if(!graph[v][u]) graph[v][u] = [];
+            graph[v][u].push(row);
         }
     });
     
-    const startNorm = normalizeStationName(start);
-    const endNorm = normalizeStationName(end);
-
-    // BFS
-    const queue = [[startNorm]];
-    const visited = new Set([startNorm]);
-    const foundPaths = [];
+    // BFS to find paths (limit 5)
+    const paths = [];
+    const queue = [ { current: start, path: [start], records: [] } ];
     
-    // Increased depth limit to 10 to handle complex topologies
-    while (queue.length > 0 && foundPaths.length < 5) {
-        const path = queue.shift();
-        const curr = path[path.length - 1];
+    // To find multiple paths, we can use a modified BFS or DFS.
+    // Since we need "at least 1, max 5", standard BFS is good for shortest paths.
+    // We need to keep searching until we have 5 or queue empty.
+    
+    // Loop limit to prevent infinite loops in complex graphs
+    let iterations = 0;
+    const maxIterations = 5000;
+    
+    while(queue.length > 0 && paths.length < 5 && iterations < maxIterations) {
+        iterations++;
+        const state = queue.shift();
+        const { current, path, records } = state;
         
-        if (curr === endNorm) {
-            // Found a candidate path (sequence of stations)
-            // Now we need to allocate specific cores
-            const detailedPath = allocateCoresForPath(path, graph, requiredCores, normToDisplay);
-            if (detailedPath) {
-                foundPaths.push(detailedPath);
-            }
+        if(current === end) {
+            paths.push({ nodes: path, records: records });
             continue;
         }
         
-        if (path.length >= 10) continue; // Max depth
+        if(path.length >= 10) continue; // Max depth
         
-        if (graph[curr]) {
-            for (const neighbor in graph[curr]) {
-                if (!path.includes(neighbor)) {
-                    // Basic check: do we have enough cores?
-                    // graph[curr][neighbor] contains all available rows connecting these two.
-                    if(graph[curr][neighbor].length >= requiredCores) {
-                        queue.push([...path, neighbor]);
-                    }
+        if(graph[current]) {
+            for(const neighbor in graph[current]) {
+                if(path.includes(neighbor)) continue; // Avoid cycles
+                
+                // Check if this connection has enough capacity
+                const availableRows = graph[current][neighbor];
+                if (availableRows.length < requiredCores) {
+                     // Debug log to understand why it was rejected
+                     console.log(`Rejected ${current}->${neighbor}: Need ${requiredCores}, Have ${availableRows.length}`);
+                     continue;
                 }
+
+                // We have a connection.
+                // We track the neighbor.
+                // Note: We don't pick the specific record yet, just the edge existence.
+                
+                queue.push({
+                    current: neighbor,
+                    path: [...path, neighbor],
+                    records: [...records, { from: current, to: neighbor }]
+                });
             }
         }
     }
     
-    currentGeneratedPaths = foundPaths;
-    renderPaths(foundPaths);
+    currentGeneratedPaths = paths;
+    renderPaths(paths);
 }
 
-function allocateCoresForPath(nodePath, graph, requiredCores, normToDisplay) {
-    const records = [];
-    const pathId = Date.now().toString() + Math.random().toString(36).substr(2, 5);
+function renderPaths(paths) {
+    const container = document.getElementById('path-list');
+    const resultsArea = document.getElementById('path-results');
+    const formArea = document.getElementById('path-details-form');
     
-    for (let i = 0; i < nodePath.length - 1; i++) {
-        const u = nodePath[i];
-        const v = nodePath[i+1];
-        
-        // Get available rows between u and v
-        const availableRows = graph[u][v] || [];
-        
-        if (availableRows.length < requiredCores) return null;
-        
-        // Select the first N rows
-        // Note: graph[u][v] contains rows from both Forward (u->v) and Reverse (v->u) origin.
-        // We prefer Forward rows if possible for clarity, but Reverse are fine too.
-        // The row object is the SAME reference from data.
-        
-        for (let k = 0; k < requiredCores; k++) {
-            const row = availableRows[k];
-            // Determine direction based on row content
-            const rowUNorm = normalizeStationName(row.station_name);
-            
-            // We want to record from u -> v
-            // Display names
-            const uDisplay = normToDisplay[u] || u;
-            const vDisplay = normToDisplay[v] || v;
+    if(!container) return;
 
-            records.push({
-                ...row,
-                from: uDisplay,
-                to: vDisplay,
-                pathId: pathId,
-                // If the row was defined as v->u, we are using it as u->v
-                isReverseUsage: rowUNorm !== u
-            });
-        }
+    container.innerHTML = '';
+    if(formArea) formArea.style.display = 'none';
+    
+    if(paths.length === 0) {
+        if(resultsArea) resultsArea.style.display = 'block';
+        container.innerHTML = '<div class="no-data" style="padding:10px; color:#aaa;">找不到符合條件的可用路徑 (或無可用芯線)</div>';
+        // Debug info if needed
+        console.log("No paths found. Check if start/end exist in graph and have enough available cores.");
+        return;
     }
     
-    return {
-        id: pathId,
-        nodes: nodePath.map(n => normToDisplay[n] || n),
-        records: records,
-        totalCapacity: records.length 
-    };
+    if(resultsArea) resultsArea.style.display = 'block';
+    
+    paths.forEach((path, index) => {
+        const div = document.createElement('div');
+        div.className = 'path-option';
+        div.style.padding = '15px';
+        div.style.border = '1px solid #555';
+        div.style.borderRadius = '5px';
+        div.style.cursor = 'pointer';
+        div.style.marginBottom = '8px';
+        div.style.backgroundColor = 'var(--bg-secondary)';
+        div.style.transition = 'all 0.2s';
+        
+        const pathStr = path.nodes.join(' <span style="color:var(--primary-color)">➝</span> ');
+        div.innerHTML = `<strong style="display:block; margin-bottom:5px;">路徑 ${index + 1}</strong> <span style="font-size:1.1em;">${pathStr}</span>`;
+        
+        div.onmouseover = () => { if(selectedPathIndex !== index) div.style.borderColor = 'var(--primary-color)'; };
+        div.onmouseout = () => { if(selectedPathIndex !== index) div.style.borderColor = '#555'; };
+        
+        div.onclick = () => selectPath(index);
+        container.appendChild(div);
+    });
+}
+
+function selectPath(index) {
+    selectedPathIndex = index;
+    const path = currentGeneratedPaths[index];
+    
+    // Highlight UI
+    const options = document.querySelectorAll('.path-option');
+    options.forEach((opt, i) => {
+        if(i === index) {
+            opt.style.backgroundColor = 'rgba(16, 185, 129, 0.2)';
+            opt.style.borderColor = 'var(--success-color)';
+        } else {
+            opt.style.backgroundColor = 'var(--bg-secondary)';
+            opt.style.borderColor = '#555';
+        }
+    });
+    
+    const formArea = document.getElementById('path-details-form');
+    if(formArea) formArea.style.display = 'block';
+    
+    const info = document.getElementById('selected-path-info');
+    if(info) info.innerHTML = `已選擇: ${path.nodes.join(' ➝ ')} (共 ${path.records.length} 段)`;
+    
+    // Auto fill hint
+    const noteInput = document.getElementById('auto-notes');
+    if(noteInput && !noteInput.value) {
+        noteInput.placeholder = "自動填入路徑資訊...";
+    }
 }
 
 async function confirmAutoAdd() {
     if(selectedPathIndex === -1) return;
     
     const path = currentGeneratedPaths[selectedPathIndex];
+    // Get required core count from input, default to 1
     const requiredCores = parseInt(document.getElementById('auto-core-count').value.trim()) || 1;
 
     const updates = {
@@ -529,8 +481,11 @@ async function confirmAutoAdd() {
         department: document.getElementById('auto-department').value.trim(),
         contact: document.getElementById('auto-contact').value.trim(),
         notes: document.getElementById('auto-notes').value.trim(),
+        // core_count: document.getElementById('auto-core-count').value.trim(), // DO NOT OVERWRITE
+        // port: document.getElementById('auto-port').value.trim() // DO NOT OVERWRITE
     };
     
+    // Validate
     if(!updates.usage) {
         alert("請輸入用途");
         return;
@@ -538,50 +493,121 @@ async function confirmAutoAdd() {
 
     if(!confirm(`確定要將此路徑 (${path.nodes.join('->')}) 設為已使用？\n(將佔用每個區段 ${requiredCores} 芯)`)) return;
 
+    // Add Path ID to notes
     const pathId = 'PATH-' + Date.now();
+    // Ensure existing notes is treated as string and not null/undefined
     const existingNotes = updates.notes ? String(updates.notes) : '';
     const noteWithId = (existingNotes ? existingNotes + ' ' : '') + `[PathID:${pathId}]`;
 
     try {
-        // Execute Updates using PRE-ALLOCATED records from generatePaths
-        const recordsToUpdate = path.records;
+        // For each segment (from->to), find REQUIRED NUMBER of available records and update them.
+        const data = getData();
+        const recordsToUpdate = [];
+
+        // Pre-process: Infer Fiber Destinations (Same logic as generatePaths)
+        // Many spare cores might not have 'destination' set explicitly.
+        // We infer the destination if other cores in the same fiber (same station + fiber_name) have a destination.
+        const fiberDestinations = {}; // { station: { fiberName: destination } }
+        data.forEach(d => {
+            if(d.station_name && d.fiber_name && d.destination) {
+                if(!fiberDestinations[d.station_name]) fiberDestinations[d.station_name] = {};
+                // We assume one fiber name goes to one destination (topology constraint)
+                fiberDestinations[d.station_name][d.fiber_name] = d.destination;
+            }
+        });
         
+        for(const segment of path.records) {
+            // Find available core between segment.from and segment.to
+            // First try finding direct forward connection
+            let candidates = data.filter(d => {
+                if(d.station_name !== segment.from) return false;
+                
+                // Check destination: Explicit OR Inferred
+                let dest = d.destination;
+                if(!dest && d.fiber_name && fiberDestinations[d.station_name] && fiberDestinations[d.station_name][d.fiber_name]) {
+                    dest = fiberDestinations[d.station_name][d.fiber_name];
+                }
+                
+                return dest === segment.to && (!d.usage || d.usage.trim() === '');
+            });
+
+            // If no direct connection found, look for reverse connection (using shared fiber)
+            if (candidates.length === 0) {
+                candidates = data.filter(d => {
+                     // Reverse: Station is 'to', Dest is 'from'
+                     if(d.station_name !== segment.to) return false;
+                     
+                     let dest = d.destination;
+                     if(!dest && d.fiber_name && fiberDestinations[d.station_name] && fiberDestinations[d.station_name][d.fiber_name]) {
+                        dest = fiberDestinations[d.station_name][d.fiber_name];
+                     }
+                     
+                     return dest === segment.from && (!d.usage || d.usage.trim() === '');
+                });
+            }
+
+            // DO NOT SORT BY FIBER NAME IF IT CAUSES ISSUES
+            // Just pick ANY available cores as requested.
+            // But sorting helps keep them somewhat contiguous if possible.
+            // Let's stick to simple sort or no sort.
+            
+            candidates.sort((a, b) => {
+                // Try to sort by fiber_name
+                if(a.fiber_name && b.fiber_name) return a.fiber_name.localeCompare(b.fiber_name, undefined, {numeric: true});
+                return 0;
+            });
+            
+            if(candidates.length < requiredCores) {
+                throw new Error(`路徑段 ${segment.from} -> ${segment.to} 可用芯線不足！(需要: ${requiredCores}, 可用: ${candidates.length})`);
+            }
+            
+            // Pick the first N records
+            for (let i = 0; i < requiredCores; i++) {
+                recordsToUpdate.push(candidates[i]);
+            }
+        }
+        
+        // Execute Updates
         document.getElementById('confirm-auto-add-btn').disabled = true;
         document.getElementById('confirm-auto-add-btn').innerText = "處理中...";
         
         for(const record of recordsToUpdate) {
+            // Append PathID to EXISTING record notes to preserve history if any
+            const currentRecordNotes = record.notes ? String(record.notes) : '';
+            // If the user provided new notes, we use that. If not, we just append PathID to existing notes?
+            // Actually, the requirement is usually to OVERWRITE usage but KEEP other technical details.
+            // But 'notes' is often user-input.
+            // Let's combine user input notes + PathID.
+            // Wait, if we overwrite 'notes' with user input, we lose old notes on that core.
+            // Let's append user input to old notes? No, user input usually describes the NEW usage.
+            
+            // Current Logic: noteWithId = (UserNotes) + [PathID]
+            // We should probably preserve old notes if they are technical info?
+            // Usually 'notes' field is for the current usage.
+            
             await updateRecord(record.id, {
                 ...updates,
-                usage: `Path: ${path.nodes[0]} -> ${path.nodes[path.nodes.length-1]}`,
-                path_id: pathId,
                 notes: noteWithId
             }, record._table);
         }
         
         alert("新增成功！路徑 ID: " + pathId);
         
-        // Clear Form & UI Reset
+        // Clear Form
         document.getElementById('auto-usage').value = '';
         document.getElementById('auto-notes').value = '';
         document.getElementById('path-details-form').style.display = 'none';
         document.getElementById('path-list').innerHTML = '';
         document.getElementById('path-results').style.display = 'none';
         selectedPathIndex = -1;
-        document.getElementById('confirm-auto-add-btn').disabled = false;
-        document.getElementById('confirm-auto-add-btn').innerText = "確認新增";
         
         // Refresh Data
+        // Reload data from Supabase to ensure consistency across devices
         await loadData(); 
         renderDataTable(); 
-        switchAutoTab('mgmt');
         
-    } catch (e) {
-        console.error(e);
-        document.getElementById('confirm-auto-add-btn').disabled = false;
-        document.getElementById('confirm-auto-add-btn').innerText = "確認新增";
-        showToast("Error creating path: " + e.message, "error");
-    }
-}
+        // Switch to Management Tab to show the new record
+        switchAutoTab('mgmt');
         
     } catch(e) {
         console.error(e);

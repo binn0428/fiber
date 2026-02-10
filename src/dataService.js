@@ -18,15 +18,7 @@ export async function getAppSettings(key) {
     if (!sb) return null;
     
     try {
-        // Add timeout for settings fetch
-        const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error(`Timeout fetching setting ${key}`)), 5000)
-        );
-
-        const fetchPromise = sb.from('app_settings').select('value').eq('key', key).single();
-
-        const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
-
+        const { data, error } = await sb.from('app_settings').select('value').eq('key', key).single();
         if (error) {
             if (error.code !== 'PGRST116') { // Ignore 'row not found'
                 console.warn(`Error fetching setting ${key}:`, error);
