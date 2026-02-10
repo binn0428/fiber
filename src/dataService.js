@@ -335,24 +335,6 @@ export function getSiteData(siteName) {
     });
 }
 
-function normalizeStationName(name) {
-    if (!name) return '';
-    // Remove ( , / and subsequent text. 
-    // Handle # only if it is NOT at the start (to allow names like #1CCB)
-    
-    // First split by ( and / and SPACE
-    let clean = name.split(/[(\/\s]/)[0];
-    
-    // Check for #
-    const hashIndex = clean.indexOf('#');
-    if (hashIndex > 0) {
-        // Only strip if # is not the first character
-        clean = clean.substring(0, hashIndex);
-    }
-    
-    return clean.trim().toUpperCase();
-}
-
 export function getStats() {
     const sites = {};
     const siteFibers = {};
@@ -361,9 +343,7 @@ export function getStats() {
     const fiberDestinations = {}; 
     
     currentData.forEach(d => {
-        // Use Normalized Names for aggregation to ensure consistency between "Station A" and "Station A "
-        const rawSName = d.station_name || 'Unknown';
-        const sName = normalizeStationName(rawSName) || rawSName; // Fallback to raw if empty
+        const sName = d.station_name || 'Unknown';
         const fName = d.fiber_name || 'Unclassified';
         
         // Initialize Source Site
@@ -405,12 +385,9 @@ export function getStats() {
             group.usedCount++;
         }
 
-        // Track Destination (Normalized)
-        if (destination) {
-            const destNorm = normalizeStationName(destination) || destination;
-            if (destNorm !== sName) {
-                fiberDestinations[sName][fName].add(destNorm);
-            }
+        // Track Destination
+        if (destination && destination !== sName) {
+            fiberDestinations[sName][fName].add(destination);
         }
         
         // Track Max Explicit Core Count
