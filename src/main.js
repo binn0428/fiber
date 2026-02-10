@@ -290,23 +290,56 @@ if (pathSearchBtn) {
     pathSearchBtn.addEventListener('click', loadPathMgmtList);
 }
 
+// Helper: Normalize Station Name (Remove suffixes like (..), /.., #..)
+function normalizeStationName(name) {
+    if (!name) return "";
+    return name.replace(/[(\/#].*$/, '').trim().toUpperCase();
+}
+
+// Helper: Resolve Destination to Real Station Name
+function resolveStationName(name, realStationNames, normalizedMap) {
+    if(!name) return null;
+    // 1. Exact match
+    if(realStationNames.has(name)) return name;
+    // 2. Normalized match
+    const norm = normalizeStationName(name);
+    if(normalizedMap[norm]) return normalizedMap[norm];
+    // 3. Fallback
+    return name;
+}
+
 // Helper: Bidirectional Destination Inference
 function getInferredDestinations(data) {
     const fiberDestinations = {}; 
+    
+    // Build Station Maps for Resolution
+    const realStationNames = new Set();
+    const normalizedMap = {};
+    
+    data.forEach(d => {
+        if(d.station_name) {
+            realStationNames.add(d.station_name);
+            const norm = normalizeStationName(d.station_name);
+            if(!normalizedMap[norm]) normalizedMap[norm] = d.station_name;
+        }
+    });
 
     // Pass 1: Collect Explicit Destinations
     data.forEach(d => {
         if(d.station_name && d.fiber_name && d.destination) {
             if(!fiberDestinations[d.station_name]) fiberDestinations[d.station_name] = {};
+            
+            // Resolve destination to real station name
+            const resolvedDest = resolveStationName(d.destination, realStationNames, normalizedMap);
+            
             // We assume one fiber name goes to one destination (topology constraint)
-            fiberDestinations[d.station_name][d.fiber_name] = d.destination;
+            fiberDestinations[d.station_name][d.fiber_name] = resolvedDest;
         }
     });
 
     // Pass 2: Infer Reverse Destinations
     // If Station A has fiber F going to Station B, 
     // then Station B implicitly has fiber F going to Station A.
-    // This solves the issue where downstream stations don't have explicit 'destination' set.
     for(const src in fiberDestinations) {
         for(const fiber in fiberDestinations[src]) {
             const dst = fiberDestinations[src][fiber];
@@ -322,7 +355,7 @@ function getInferredDestinations(data) {
         }
     }
 
-    return fiberDestinations;
+    return { fiberDestinations, realStationNames, normalizedMap };
 }
 
 // ... Path Finding Logic ...
@@ -331,8 +364,8 @@ function generatePaths(start, end) {
     // Get required core count from input, default to 1
     const requiredCores = parseInt(document.getElementById('auto-core-count').value) || 1;
 
-    // Pre-process: Infer Fiber Destinations (Bidirectional)
-    const fiberDestinations = getInferredDestinations(data);
+    // Pre-process: Infer Fiber Destinations (Bidirectional) & Maps
+    const { fiberDestinations, realStationNames, normalizedMap } = getInferredDestinations(data);
 
     // Build Graph: Adjacency List
     // We want to find a sequence of stations.
@@ -345,7 +378,8 @@ function generatePaths(start, end) {
         if(!row.station_name) return;
         
         let u = row.station_name;
-        let v = row.destination;
+        // Resolve explicit destination
+        let v = resolveStationName(row.destination, realStationNames, normalizedMap);
 
         // Try to infer destination if missing
         if (!v && row.fiber_name && fiberDestinations[u] && fiberDestinations[u][row.fiber_name]) {
@@ -530,8 +564,8 @@ async function confirmAutoAdd() {
         const data = getData();
         const recordsToUpdate = [];
 
-        // Pre-process: Infer Fiber Destinations (Bidirectional)
-        const fiberDestinations = getInferredDestinations(data);
+        // Pre-process: Infer Fiber Destinations (Bidirectional) & Maps
+        const { fiberDestinations, realStationNames, normalizedMap } = getInferredDestinations(data);
         
         for(const segment of path.records) {
             // Find available core between segment.from and segment.to
@@ -540,7 +574,7 @@ async function confirmAutoAdd() {
                 if(d.station_name !== segment.from) return false;
                 
                 // Check destination: Explicit OR Inferred
-                let dest = d.destination;
+                let dest = resolveStationName(d.destination, realStationNames, normalizedMap);
                 if(!dest && d.fiber_name && fiberDestinations[d.station_name] && fiberDestinations[d.station_name][d.fiber_name]) {
                     dest = fiberDestinations[d.station_name][d.fiber_name];
                 }
@@ -554,7 +588,7 @@ async function confirmAutoAdd() {
                      // Reverse: Station is 'to', Dest is 'from'
                      if(d.station_name !== segment.to) return false;
                      
-                     let dest = d.destination;
+                     let dest = resolveStationName(d.destination, realStationNames, normalizedMap);
                      if(!dest && d.fiber_name && fiberDestinations[d.station_name] && fiberDestinations[d.station_name][d.fiber_name]) {
                         dest = fiberDestinations[d.station_name][d.fiber_name];
                      }
