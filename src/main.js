@@ -293,6 +293,9 @@ if (pathSearchBtn) {
 // ... Path Finding Logic ...
 function generatePaths(start, end) {
     const data = getData();
+    // Get required core count from input, default to 1
+    const requiredCores = parseInt(document.getElementById('auto-core-count').value) || 1;
+
     // Build Graph: Adjacency List
     // We want to find a sequence of stations.
     // Graph nodes: Station Names
@@ -350,6 +353,10 @@ function generatePaths(start, end) {
             for(const neighbor in graph[current]) {
                 if(path.includes(neighbor)) continue; // Avoid cycles
                 
+                // Check if this connection has enough capacity
+                const availableRows = graph[current][neighbor];
+                if (availableRows.length < requiredCores) continue;
+
                 // We have a connection.
                 // We track the neighbor.
                 // Note: We don't pick the specific record yet, just the edge existence.
