@@ -324,31 +324,29 @@ function generatePaths(start, end) {
     // Get required core count from input, default to 1
     const requiredCores = parseInt(document.getElementById('auto-core-count').value) || 1;
 
-    // 1. Pre-process: Identify Physical Connections & Valid Fibers
-    const physicalLinks = new Set(); // Stores "U-V" keys
-    const validFiberMap = {}; // Stores "U-V" -> Set(fiber_name)
+    // 1. Pre-process: Identify Physical Connections (Topology) & Station Fibers
+    const physicalAdj = {}; // uNorm -> Set(vNorm)
+    const stationFibers = {}; // uNorm -> Set(fiber_name)
     
     data.forEach(d => {
-        if(d.station_name && d.destination) {
-            const uNorm = normalizeStationName(d.station_name);
-            const vNorm = normalizeStationName(d.destination);
-            if(uNorm && vNorm && uNorm !== vNorm) {
-                // Register Link
-                const key1 = `${uNorm}|${vNorm}`;
-                const key2 = `${vNorm}|${uNorm}`;
-                physicalLinks.add(key1);
-                physicalLinks.add(key2);
-                
-                // Register Fiber
-                if(d.fiber_name) {
-                    if(!validFiberMap[key1]) validFiberMap[key1] = new Set();
-                    validFiberMap[key1].add(d.fiber_name);
-                    
-                    // Assume bidirectional fiber name consistency
-                    if(!validFiberMap[key2]) validFiberMap[key2] = new Set();
-                    validFiberMap[key2].add(d.fiber_name);
-                }
-            }
+        const uNorm = normalizeStationName(d.station_name);
+        if(!uNorm) return;
+
+        // Register Fiber at Station
+        if(d.fiber_name) {
+            if(!stationFibers[uNorm]) stationFibers[uNorm] = new Set();
+            stationFibers[uNorm].add(d.fiber_name.trim());
+        }
+
+        // Register Physical Link (Topology)
+        const vNorm = normalizeStationName(d.destination);
+        if(vNorm && uNorm !== vNorm) {
+            // Bi-directional registration of the Physical Link
+            if(!physicalAdj[uNorm]) physicalAdj[uNorm] = new Set();
+            physicalAdj[uNorm].add(vNorm);
+            
+            if(!physicalAdj[vNorm]) physicalAdj[vNorm] = new Set();
+            physicalAdj[vNorm].add(uNorm);
         }
     });
 
@@ -369,18 +367,16 @@ function generatePaths(start, end) {
         if(row.destination) {
             potentialDests.push(normalizeStationName(row.destination));
         } else {
-            // 2. Inferred Destination based on Physical Link + Fiber Name
-            // Find all neighbors V where U-V is a physical link AND fiber_name exists in that link
-            if(row.fiber_name) {
-                for(const linkKey of physicalLinks) {
-                    const [p1, p2] = linkKey.split('|');
-                    if(p1 === uNorm) {
-                        // Check if this fiber belongs to this link
-                        if(validFiberMap[linkKey] && validFiberMap[linkKey].has(row.fiber_name)) {
-                            potentialDests.push(p2);
-                        }
+            // 2. Inferred Destination based on Physical Link + Fiber Name Match
+            // "First judge if there is a physical connection, then correspond fiber names"
+            if(row.fiber_name && physicalAdj[uNorm]) {
+                const fName = row.fiber_name.trim();
+                physicalAdj[uNorm].forEach(vNorm => {
+                    // Check if the neighbor V has the same fiber
+                    if(stationFibers[vNorm] && stationFibers[vNorm].has(fName)) {
+                        potentialDests.push(vNorm);
                     }
-                }
+                });
             }
         }
         
@@ -392,19 +388,7 @@ function generatePaths(start, end) {
              if(!graph[uNorm]) graph[uNorm] = {};
              if(!graph[uNorm][vNorm]) graph[uNorm][vNorm] = [];
              
-             // Crucial: We only push the row at 'u' to the graph at 'u'.
-             // We do NOT infer reverse edges by pushing 'u' rows to 'v'.
-             // The graph building must be symmetric by processing 'v's rows independently.
-             // HOWEVER, if 'v' has no rows (passive), we might need to allow u->v without v->u booking?
-             // But for "booking", we need to lock rows.
-             // If v has no row, we can't lock it.
-             // Let's assume we just lock 'u'.
              graph[uNorm][vNorm].push(row);
-             
-             // What about B->A?
-             // If we process a row at B with Dest: A, we add B->A.
-             // If B has a row with NO Dest, but Fiber matches A-B link, we add B->A.
-             // This covers the bidirectional requirement if both sides have data.
         });
     });
     
