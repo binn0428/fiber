@@ -697,6 +697,7 @@ async function confirmAutoAdd() {
     try {
         // Use PRE-LOCKED rows from path generation to avoid re-search errors
         const recordsToUpdate = [];
+        const recordsToCreate = []; // New list for virtual/passthrough rows
         
         const data = getData(); // Get fresh data for verification
 
@@ -711,6 +712,12 @@ async function confirmAutoAdd() {
             }
             
             for(const row of segment.rows) {
+                 if (row._generated) {
+                     // Passthrough/Virtual Row: No ID check needed, we will CREATE it.
+                     recordsToCreate.push(row);
+                     continue;
+                 }
+
                  // Verify row exists and is unused
                  const freshRow = data.find(d => d.id === row.id && d._table === row._table);
                  if(!freshRow) {
@@ -727,6 +734,21 @@ async function confirmAutoAdd() {
         document.getElementById('confirm-auto-add-btn').disabled = true;
         document.getElementById('confirm-auto-add-btn').innerText = "處理中...";
         
+        // 1. Create New Records for Passthrough Edges
+        for (const row of recordsToCreate) {
+             const newRecord = {
+                 station_name: row.station_name,
+                 destination: row.destination,
+                 fiber_name: row.fiber_name,
+                 usage: updates.usage,
+                 notes: noteWithId
+                 // core_number: ??? We leave it empty as it's a virtual inferred link
+             };
+             
+             await addRecord(newRecord);
+        }
+
+        // 2. Update Existing Records
         for(const record of recordsToUpdate) {
             // Append PathID to EXISTING record notes to preserve history if any
             const currentRecordNotes = record.notes ? String(record.notes) : '';
