@@ -63,44 +63,70 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         if (window.logToScreen) window.logToScreen("Loading data from Supabase...");
-        const data = await loadData();
         
-        // Load App Settings (Main Site)
-        const mainSiteSetting = await getAppSettings('main_site');
-        if (mainSiteSetting) {
-            if (Array.isArray(mainSiteSetting.names)) {
-                currentMainSites = mainSiteSetting.names;
-            } else if (mainSiteSetting.name) {
-                // Legacy support
-                currentMainSites = [mainSiteSetting.name];
+        // Use a local variable for data to handle potential errors
+        let data = [];
+        try {
+             data = await loadData();
+        } catch (loadErr) {
+             console.error("Critical: loadData threw an error", loadErr);
+             alert("資料載入發生錯誤: " + loadErr.message);
+        }
+        
+        // Load App Settings (Main Site) - Non-blocking
+        try {
+            const mainSiteSetting = await getAppSettings('main_site');
+            if (mainSiteSetting) {
+                if (Array.isArray(mainSiteSetting.names)) {
+                    currentMainSites = mainSiteSetting.names;
+                } else if (mainSiteSetting.name) {
+                    // Legacy support
+                    currentMainSites = [mainSiteSetting.name];
+                }
+                console.log("Loaded Main Sites preference:", currentMainSites);
             }
-            console.log("Loaded Main Sites preference:", currentMainSites);
-        }
+        } catch (e) { console.warn("Main Site setting load failed", e); }
 
-        // Load App Settings (Node Positions)
-        const nodePositionsSetting = await getAppSettings('fiber_node_positions');
-        if (nodePositionsSetting) {
-             if (typeof nodePositionsSetting === 'string') {
-                 try {
-                     nodePositions = JSON.parse(nodePositionsSetting);
-                 } catch (e) { console.error("Error parsing node positions", e); }
-             } else {
-                 nodePositions = nodePositionsSetting;
-             }
-             console.log("Loaded Node Positions from Supabase:", Object.keys(nodePositions).length);
-        }
+        // Load App Settings (Node Positions) - Non-blocking
+        try {
+            const nodePositionsSetting = await getAppSettings('fiber_node_positions');
+            if (nodePositionsSetting) {
+                 if (typeof nodePositionsSetting === 'string') {
+                     try {
+                         nodePositions = JSON.parse(nodePositionsSetting);
+                     } catch (e) { console.error("Error parsing node positions", e); }
+                 } else {
+                     nodePositions = nodePositionsSetting;
+                 }
+                 console.log("Loaded Node Positions from Supabase:", Object.keys(nodePositions).length);
+            }
+        } catch (e) { console.warn("Node Positions setting load failed", e); }
         
         if (window.logToScreen) window.logToScreen(`Loaded ${data.length} records.`);
         console.log(`Loaded ${data.length} records.`);
         
-        renderDashboard();
-        renderMap();
-        renderDataTable();
+        try {
+            renderDashboard();
+        } catch (e) {
+            console.error("renderDashboard failed", e);
+            const c = document.getElementById('stats-container');
+            if(c) c.innerHTML = `<div style="color:red">儀表盤顯示錯誤: ${e.message}</div>`;
+        }
+
+        try {
+            renderMap();
+        } catch (e) { console.error("renderMap failed", e); }
+
+        try {
+            renderDataTable();
+        } catch (e) { console.error("renderDataTable failed", e); }
+
         populateSiteSelector();
         
     } catch (e) {
         if (window.logToScreen) window.logToScreen(`Init Error: ${e.message}`, "error");
         console.error("Error in initialization:", e);
+        alert("系統初始化失敗: " + e.message); // Add alert for visibility
         if (mapContainer) {
             mapContainer.innerHTML = `<div class="error-message">
                 <h3>載入失敗</h3>
