@@ -314,8 +314,19 @@ if (pathRefreshBtn) {
 // Normalization Helper
 function normalizeStationName(name) {
     if (!name) return '';
-    // Remove ( , / , # and subsequent text, trim, uppercase
-    const clean = name.split(/[(\/#]/)[0];
+    // Remove ( , / and subsequent text. 
+    // Handle # only if it is NOT at the start (to allow names like #1CCB)
+    
+    // First split by ( and /
+    let clean = name.split(/[(\/]/)[0];
+    
+    // Check for #
+    const hashIndex = clean.indexOf('#');
+    if (hashIndex > 0) {
+        // Only strip if # is not the first character
+        clean = clean.substring(0, hashIndex);
+    }
+    
     return clean.trim().toUpperCase();
 }
 
