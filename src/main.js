@@ -579,7 +579,7 @@ async function confirmAutoAdd() {
         
         // Refresh Data
         // updateRecord calls notify() which updates UI, but let's be sure
-        await loadData(); // Force reload from Supabase to ensure consistency
+        // await loadData(); // Removed to preserve optimistic updates and avoid race conditions
         renderDataTable(); 
         loadPathMgmtList(); // Refresh the management list immediately
         
@@ -607,7 +607,7 @@ function loadPathMgmtList() {
     const paths = {};
     
     data.forEach(d => {
-        if(d.notes && d.notes.includes('[PathID:')) {
+        if(d.notes && typeof d.notes === 'string' && d.notes.includes('[PathID:')) {
             const match = d.notes.match(/\[PathID:([^\]]+)\]/);
             if(match) {
                 const pid = match[1];
@@ -1802,9 +1802,16 @@ async function handleConnectionClick(sourceName, targetName) {
         return;
     }
 
+    // Get synced fiber stats from getStats()
+    const stats = getStats();
+    const sourceSiteStats = stats.find(s => s.name === sourceName);
+    const fiberStats = sourceSiteStats?.groups || {};
+
     let msg = `連線: ${sourceName} -> ${targetName}\n找到 ${records.length} 條光纜資料:\n`;
     records.forEach((r, idx) => {
-        msg += `${idx + 1}. 名稱: ${r.fiber_name || '無'}, 芯數: ${r.core_count || '?'}\n`;
+        const fiberGroup = fiberStats[r.fiber_name || 'Unclassified'];
+        const capacity = fiberGroup ? Math.max(fiberGroup.rowCount, fiberGroup.explicitCapacity) : r.core_count || '?';
+        msg += `${idx + 1}. 名稱: ${r.fiber_name || '無'}, 芯數: ${capacity}\n`;
     });
 
     if (!isEditMode) {
