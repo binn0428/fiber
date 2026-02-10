@@ -159,6 +159,10 @@
                             <label>終點站點</label>
                             <input type="text" id="auto-end-node" list="station-list" placeholder="輸入終點">
                         </div>
+                        <div class="form-group" style="width: 100px;">
+                            <label>使用芯數</label>
+                            <input type="number" id="auto-core-count" placeholder="1" value="1" min="1" style="width: 100%;">
+                        </div>
                         <button id="generate-path-btn" class="btn-primary" style="height: 40px; margin-bottom: 2px;">生成路徑</button>
                     </div>
 
@@ -172,10 +176,6 @@
                         <p id="selected-path-info" style="color: var(--primary-color); margin-bottom: 10px; font-weight: bold;"></p>
                         
                         <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                            <div class="form-group">
-                                <label>使用芯數 (Core Count)</label>
-                                <input type="text" id="auto-core-count" placeholder="例如: 2">
-                            </div>
                             <div class="form-group">
                                 <label>Port</label>
                                 <input type="text" id="auto-port">
