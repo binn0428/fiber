@@ -150,20 +150,20 @@
 
                 <!-- Tab 1: Auto Generate -->
                 <div id="tab-auto-gen" class="tab-content-panel">
-                    <div class="form-inline" style="display: flex; gap: 10px; align-items: flex-end; margin-bottom: 20px;">
-                        <div class="form-group" style="flex: 1;">
+                    <div class="form-inline auto-gen-form" style="display: flex; gap: 10px; align-items: flex-end; margin-bottom: 20px;">
+                        <div class="form-group start-node-group" style="flex: 1;">
                             <label>起點站點</label>
                             <input type="text" id="auto-start-node" list="station-list" placeholder="輸入起點">
                         </div>
-                        <div class="form-group" style="flex: 1;">
+                        <div class="form-group end-node-group" style="flex: 1;">
                             <label>終點站點</label>
                             <input type="text" id="auto-end-node" list="station-list" placeholder="輸入終點">
                         </div>
-                        <div class="form-group" style="width: 100px;">
+                        <div class="form-group core-count-group" style="width: 100px;">
                             <label>使用芯數</label>
                             <input type="number" id="auto-core-count" placeholder="1" value="1" min="1" style="width: 100%;">
                         </div>
-                        <button id="generate-path-btn" class="btn-primary" style="height: 40px; margin-bottom: 2px;">生成路徑</button>
+                        <button id="generate-path-btn" class="btn-primary gen-btn" style="height: 40px; margin-bottom: 2px;">生成路徑</button>
                     </div>
 
                     <div id="path-results" class="path-results-container" style="display:none;">
@@ -207,6 +207,7 @@
                     <div class="search-box" style="margin-bottom: 15px;">
                          <input type="text" id="path-search" placeholder="搜尋用途、備註或站點..." style="width: 100%; padding: 8px;">
                          <button id="path-search-btn">🔍</button>
+                         <button id="path-refresh-btn" class="action-btn" style="background-color: var(--success-color); margin-left: 5px;">🔄 重新整理</button>
                     </div>
                     <div id="mgmt-path-list" class="path-list">
                         <!-- List of created paths/circuits -->

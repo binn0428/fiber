@@ -516,6 +516,40 @@ tr:hover {
         font-size: 0.7rem;
         flex-wrap: wrap;
     }
+
+    /* Auto Generate Form Mobile Optimization */
+    .auto-gen-form {
+        flex-direction: column;
+        align-items: stretch !important;
+        gap: 0.5rem !important;
+    }
+
+    .gen-btn {
+        order: -1;
+        width: 100%;
+        margin-bottom: 0.5rem !important;
+        font-size: 0.9rem;
+        height: 36px !important;
+    }
+
+    .start-node-group, .end-node-group {
+        width: 100%;
+        flex: none !important;
+    }
+
+    .core-count-group {
+        width: 80px !important; /* Minimized but usable */
+    }
+
+    .auto-gen-form label {
+        font-size: 0.85rem;
+        margin-bottom: 0.2rem;
+    }
+
+    .auto-gen-form input {
+        font-size: 0.9rem;
+        padding: 0.4rem;
+    }
 }
 
 /* Custom Enhancements */
