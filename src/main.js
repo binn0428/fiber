@@ -291,104 +291,117 @@ if (pathSearchBtn) {
 }
 
 // ... Path Finding Logic ...
+// Normalization Helper
+function normalizeStationName(name) {
+    if (!name) return '';
+    // Remove ( , / , # and subsequent text, trim, uppercase
+    const clean = name.split(/[(\/#]/)[0];
+    return clean.trim().toUpperCase();
+}
+
 function generatePaths(start, end) {
     const data = getData();
     // Get required core count from input, default to 1
     const requiredCores = parseInt(document.getElementById('auto-core-count').value) || 1;
 
-    // Pre-process: Infer Fiber Destinations
-    // Many spare cores might not have 'destination' set explicitly.
-    // We infer the destination if other cores in the same fiber (same station + fiber_name) have a destination.
-    const fiberDestinations = {}; // { station: { fiberName: destination } }
+    // 1. Pre-process: Infer Fiber Destinations (Normalized)
+    const fiberDestinations = {}; 
     data.forEach(d => {
         if(d.station_name && d.fiber_name && d.destination) {
-            if(!fiberDestinations[d.station_name]) fiberDestinations[d.station_name] = {};
-            // We assume one fiber name goes to one destination (topology constraint)
-            fiberDestinations[d.station_name][d.fiber_name] = d.destination;
+            const uNorm = normalizeStationName(d.station_name);
+            const vNorm = normalizeStationName(d.destination);
+            if(!fiberDestinations[uNorm]) fiberDestinations[uNorm] = {};
+            fiberDestinations[uNorm][d.fiber_name] = vNorm;
         }
     });
 
-    // Build Graph: Adjacency List
-    // We want to find a sequence of stations.
-    // Graph nodes: Station Names
-    // Graph edges: Existing rows where usage is empty.
-    
+    // 2. Build Graph: Adjacency List (Normalized Nodes)
     const graph = {};
     
     data.forEach(row => {
         if(!row.station_name) return;
         
-        let u = row.station_name;
-        let v = row.destination;
+        const uNorm = normalizeStationName(row.station_name);
+        let vNorm = row.destination ? normalizeStationName(row.destination) : null;
 
         // Try to infer destination if missing
-        if (!v && row.fiber_name && fiberDestinations[u] && fiberDestinations[u][row.fiber_name]) {
-            v = fiberDestinations[u][row.fiber_name];
+        if (!vNorm && row.fiber_name && fiberDestinations[uNorm] && fiberDestinations[uNorm][row.fiber_name]) {
+            vNorm = fiberDestinations[uNorm][row.fiber_name];
         }
-
-        if(!v) return;
         
+        if(!vNorm) return;
+        if(uNorm === vNorm) return; // Avoid self-loops
+
         // Check availability
         const isAvailable = !row.usage || row.usage.trim() === '';
         
         if(isAvailable) {
             // Forward Direction (u -> v)
-            if(!graph[u]) graph[u] = {};
-            if(!graph[u][v]) graph[u][v] = [];
-            graph[u][v].push(row);
+            if(!graph[uNorm]) graph[uNorm] = {};
+            if(!graph[uNorm][vNorm]) graph[uNorm][vNorm] = [];
+            graph[uNorm][vNorm].push(row);
 
-            // Reverse Direction (v -> u) - Allow bidirectional usage of fiber
-            // This ensures branch stations (which may not have own rows) can use the incoming fiber from Main Station
-            if(!graph[v]) graph[v] = {};
-            if(!graph[v][u]) graph[v][u] = [];
-            graph[v][u].push(row);
+            // Reverse Direction (v -> u) - Bidirectional
+            if(!graph[vNorm]) graph[vNorm] = {};
+            if(!graph[vNorm][uNorm]) graph[vNorm][uNorm] = [];
+            graph[vNorm][uNorm].push(row);
         }
     });
     
-    // BFS to find paths (limit 5)
+    // 3. BFS to find paths
+    const startNorm = normalizeStationName(start);
+    const endNorm = normalizeStationName(end);
+
     const paths = [];
-    const queue = [ { current: start, path: [start], records: [] } ];
+    // Queue stores: current (norm), path (norm list for cycle check), records (edges with LOCKED rows)
+    const queue = [ { current: startNorm, path: [startNorm], records: [] } ];
     
-    // To find multiple paths, we can use a modified BFS or DFS.
-    // Since we need "at least 1, max 5", standard BFS is good for shortest paths.
-    // We need to keep searching until we have 5 or queue empty.
-    
-    // Loop limit to prevent infinite loops in complex graphs
     let iterations = 0;
-    const maxIterations = 5000;
+    const maxIterations = 10000;
     
     while(queue.length > 0 && paths.length < 5 && iterations < maxIterations) {
         iterations++;
         const state = queue.shift();
         const { current, path, records } = state;
         
-        if(current === end) {
+        if(current === endNorm) {
             paths.push({ nodes: path, records: records });
             continue;
         }
         
-        if(path.length >= 10) continue; // Max depth
+        if(path.length >= 10) continue; // Max depth 10
         
         if(graph[current]) {
             for(const neighbor in graph[current]) {
                 if(path.includes(neighbor)) continue; // Avoid cycles
                 
-                // Check if this connection has enough capacity
-                const availableRows = graph[current][neighbor];
+                // Get available rows for this link
+                let availableRows = graph[current][neighbor];
+                
+                // Sorting: Numeric Descending, then Non-Numeric Descending
+                availableRows.sort((a, b) => {
+                     const fA = a.fiber_name || '';
+                     const fB = b.fiber_name || '';
+                     const isANum = /^\d/.test(fA);
+                     const isBNum = /^\d/.test(fB);
+                     
+                     if(isANum && !isBNum) return -1;
+                     if(!isANum && isBNum) return 1;
+                     
+                     return fB.localeCompare(fA, undefined, {numeric: true});
+                });
+
                 if (availableRows.length < requiredCores) {
-                     // Debug log to understand why it was rejected
-                     console.log(`Rejected ${current}->${neighbor}: Need ${requiredCores}, Have ${availableRows.length}`);
                      continue;
                 }
 
-                // We have a connection.
-                // We track the neighbor.
-                // Note: We don't pick the specific record yet, just the edge existence.
+                // LOCK ROWS: Pick the first N specific rows
+                const lockedRows = availableRows.slice(0, requiredCores);
                 
                 queue.push({
                     current: neighbor,
                     path: [...path, neighbor],
-                    records: [...records, { from: current, to: neighbor }]
+                    records: [...records, { from: current, to: neighbor, rows: lockedRows }]
                 });
             }
         }
@@ -500,70 +513,31 @@ async function confirmAutoAdd() {
     const noteWithId = (existingNotes ? existingNotes + ' ' : '') + `[PathID:${pathId}]`;
 
     try {
-        // For each segment (from->to), find REQUIRED NUMBER of available records and update them.
-        const data = getData();
+        // Use PRE-LOCKED rows from path generation to avoid re-search errors
         const recordsToUpdate = [];
-
-        // Pre-process: Infer Fiber Destinations (Same logic as generatePaths)
-        // Many spare cores might not have 'destination' set explicitly.
-        // We infer the destination if other cores in the same fiber (same station + fiber_name) have a destination.
-        const fiberDestinations = {}; // { station: { fiberName: destination } }
-        data.forEach(d => {
-            if(d.station_name && d.fiber_name && d.destination) {
-                if(!fiberDestinations[d.station_name]) fiberDestinations[d.station_name] = {};
-                // We assume one fiber name goes to one destination (topology constraint)
-                fiberDestinations[d.station_name][d.fiber_name] = d.destination;
-            }
-        });
         
+        const data = getData(); // Get fresh data for verification
+
         for(const segment of path.records) {
-            // Find available core between segment.from and segment.to
-            // First try finding direct forward connection
-            let candidates = data.filter(d => {
-                if(d.station_name !== segment.from) return false;
-                
-                // Check destination: Explicit OR Inferred
-                let dest = d.destination;
-                if(!dest && d.fiber_name && fiberDestinations[d.station_name] && fiberDestinations[d.station_name][d.fiber_name]) {
-                    dest = fiberDestinations[d.station_name][d.fiber_name];
-                }
-                
-                return dest === segment.to && (!d.usage || d.usage.trim() === '');
-            });
-
-            // If no direct connection found, look for reverse connection (using shared fiber)
-            if (candidates.length === 0) {
-                candidates = data.filter(d => {
-                     // Reverse: Station is 'to', Dest is 'from'
-                     if(d.station_name !== segment.to) return false;
-                     
-                     let dest = d.destination;
-                     if(!dest && d.fiber_name && fiberDestinations[d.station_name] && fiberDestinations[d.station_name][d.fiber_name]) {
-                        dest = fiberDestinations[d.station_name][d.fiber_name];
-                     }
-                     
-                     return dest === segment.from && (!d.usage || d.usage.trim() === '');
-                });
-            }
-
-            // DO NOT SORT BY FIBER NAME IF IT CAUSES ISSUES
-            // Just pick ANY available cores as requested.
-            // But sorting helps keep them somewhat contiguous if possible.
-            // Let's stick to simple sort or no sort.
-            
-            candidates.sort((a, b) => {
-                // Try to sort by fiber_name
-                if(a.fiber_name && b.fiber_name) return a.fiber_name.localeCompare(b.fiber_name, undefined, {numeric: true});
-                return 0;
-            });
-            
-            if(candidates.length < requiredCores) {
-                throw new Error(`路徑段 ${segment.from} -> ${segment.to} 可用芯線不足！(需要: ${requiredCores}, 可用: ${candidates.length})`);
+            if(!segment.records && segment.rows) { 
+                // Compatibility handle: my previous code used 'rows', but let's be safe. 
+                // In generatePaths I used: records: [...records, { from: current, to: neighbor, rows: lockedRows }]
             }
             
-            // Pick the first N records
-            for (let i = 0; i < requiredCores; i++) {
-                recordsToUpdate.push(candidates[i]);
+            if(!segment.rows || segment.rows.length < requiredCores) {
+                 throw new Error(`路徑段 ${segment.from} -> ${segment.to} 資料異常，無法鎖定芯線。請重新搜尋。`);
+            }
+            
+            for(const row of segment.rows) {
+                 // Verify row exists and is unused
+                 const freshRow = data.find(d => d.id === row.id && d._table === row._table);
+                 if(!freshRow) {
+                      throw new Error(`芯線資料過期 (ID: ${row.id})，請重新搜尋。`);
+                 }
+                 if(freshRow.usage && freshRow.usage.trim() !== '') {
+                      throw new Error(`芯線已被佔用 (${freshRow.station_name} ${freshRow.fiber_name})，請重新搜尋。`);
+                 }
+                 recordsToUpdate.push(freshRow);
             }
         }
         
