@@ -727,6 +727,36 @@ async function confirmAutoAdd() {
                       throw new Error(`芯線已被佔用 (${freshRow.station_name} ${freshRow.fiber_name})，請重新搜尋。`);
                  }
                  recordsToUpdate.push(freshRow);
+
+                 // NEW: Check and Lock Reverse Direction (Bidirectional Consistency)
+                 // If we lock A->B, we must also lock B->A if it exists as a separate record.
+                 if (freshRow.destination) {
+                     const u = normalizeStationName(freshRow.station_name);
+                     const v = normalizeStationName(freshRow.destination);
+                     const fName = freshRow.fiber_name;
+                     
+                     // Find B->A
+                     const reverseRow = data.find(d => 
+                         normalizeStationName(d.station_name) === v && 
+                         normalizeStationName(d.destination) === u && 
+                         d.fiber_name === fName
+                     );
+                     
+                     if (reverseRow) {
+                         if (reverseRow.usage && reverseRow.usage.trim() !== '') {
+                             // Reverse is already used. 
+                             // We don't throw error to avoid blocking if data is slightly messy, 
+                             // but ideally this shouldn't happen if graph was built correctly.
+                             console.warn(`Reverse row ${v}->${u} (${fName}) is already used: ${reverseRow.usage}`);
+                         } else {
+                             // It is free. Add to update list.
+                             // Check if already in list to avoid duplicates
+                             if (!recordsToUpdate.find(r => r.id === reverseRow.id && r._table === reverseRow._table)) {
+                                 recordsToUpdate.push(reverseRow);
+                             }
+                         }
+                     }
+                 }
             }
         }
         
