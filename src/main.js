@@ -290,16 +290,11 @@ if (pathSearchBtn) {
     pathSearchBtn.addEventListener('click', loadPathMgmtList);
 }
 
-// ... Path Finding Logic ...
-function generatePaths(start, end) {
-    const data = getData();
-    // Get required core count from input, default to 1
-    const requiredCores = parseInt(document.getElementById('auto-core-count').value) || 1;
+// Helper: Bidirectional Destination Inference
+function getInferredDestinations(data) {
+    const fiberDestinations = {}; 
 
-    // Pre-process: Infer Fiber Destinations
-    // Many spare cores might not have 'destination' set explicitly.
-    // We infer the destination if other cores in the same fiber (same station + fiber_name) have a destination.
-    const fiberDestinations = {}; // { station: { fiberName: destination } }
+    // Pass 1: Collect Explicit Destinations
     data.forEach(d => {
         if(d.station_name && d.fiber_name && d.destination) {
             if(!fiberDestinations[d.station_name]) fiberDestinations[d.station_name] = {};
@@ -307,6 +302,37 @@ function generatePaths(start, end) {
             fiberDestinations[d.station_name][d.fiber_name] = d.destination;
         }
     });
+
+    // Pass 2: Infer Reverse Destinations
+    // If Station A has fiber F going to Station B, 
+    // then Station B implicitly has fiber F going to Station A.
+    // This solves the issue where downstream stations don't have explicit 'destination' set.
+    for(const src in fiberDestinations) {
+        for(const fiber in fiberDestinations[src]) {
+            const dst = fiberDestinations[src][fiber];
+            
+            // Ensure dst entry exists
+            if(!fiberDestinations[dst]) fiberDestinations[dst] = {};
+            
+            // Only set if not already set (respect explicit data)
+            if(!fiberDestinations[dst][fiber]) {
+                fiberDestinations[dst][fiber] = src;
+                // console.log(`Inferred: ${dst} -> ${src} via ${fiber}`);
+            }
+        }
+    }
+
+    return fiberDestinations;
+}
+
+// ... Path Finding Logic ...
+function generatePaths(start, end) {
+    const data = getData();
+    // Get required core count from input, default to 1
+    const requiredCores = parseInt(document.getElementById('auto-core-count').value) || 1;
+
+    // Pre-process: Infer Fiber Destinations (Bidirectional)
+    const fiberDestinations = getInferredDestinations(data);
 
     // Build Graph: Adjacency List
     // We want to find a sequence of stations.
@@ -504,17 +530,8 @@ async function confirmAutoAdd() {
         const data = getData();
         const recordsToUpdate = [];
 
-        // Pre-process: Infer Fiber Destinations (Same logic as generatePaths)
-        // Many spare cores might not have 'destination' set explicitly.
-        // We infer the destination if other cores in the same fiber (same station + fiber_name) have a destination.
-        const fiberDestinations = {}; // { station: { fiberName: destination } }
-        data.forEach(d => {
-            if(d.station_name && d.fiber_name && d.destination) {
-                if(!fiberDestinations[d.station_name]) fiberDestinations[d.station_name] = {};
-                // We assume one fiber name goes to one destination (topology constraint)
-                fiberDestinations[d.station_name][d.fiber_name] = d.destination;
-            }
-        });
+        // Pre-process: Infer Fiber Destinations (Bidirectional)
+        const fiberDestinations = getInferredDestinations(data);
         
         for(const segment of path.records) {
             // Find available core between segment.from and segment.to
