@@ -602,10 +602,12 @@ async function confirmAutoAdd() {
         selectedPathIndex = -1;
         
         // Refresh Data
-        // updateRecord calls notify() which updates UI, but let's be sure
-        // await loadData(); // Removed to preserve optimistic updates and avoid race conditions
+        // Reload data from Supabase to ensure consistency across devices
+        await loadData(); 
         renderDataTable(); 
-        loadPathMgmtList(); // Refresh the management list immediately
+        
+        // Switch to Management Tab to show the new record
+        switchAutoTab('mgmt');
         
     } catch(e) {
         console.error(e);
@@ -2571,6 +2573,7 @@ function renderDashboard() {
     // Sort by Total Capacity (Descending) to show Top 10 first
     stats.sort((a, b) => b.total - a.total);
 
+    const top10Stats = stats.slice(0, 10);
     const fragment = document.createDocumentFragment();
 
     // Colors for Top 10
@@ -2587,7 +2590,7 @@ function renderDashboard() {
         '#FF4081'  // Pink
     ];
 
-    stats.forEach((site, index) => {
+    top10Stats.forEach((site, index) => {
         const card = document.createElement('div');
         card.className = 'stat-card';
         const usageRate = site.total > 0 ? Math.round((site.used / site.total) * 100) : 0;
