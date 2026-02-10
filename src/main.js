@@ -296,6 +296,18 @@ function generatePaths(start, end) {
     // Get required core count from input, default to 1
     const requiredCores = parseInt(document.getElementById('auto-core-count').value) || 1;
 
+    // Pre-process: Infer Fiber Destinations
+    // Many spare cores might not have 'destination' set explicitly.
+    // We infer the destination if other cores in the same fiber (same station + fiber_name) have a destination.
+    const fiberDestinations = {}; // { station: { fiberName: destination } }
+    data.forEach(d => {
+        if(d.station_name && d.fiber_name && d.destination) {
+            if(!fiberDestinations[d.station_name]) fiberDestinations[d.station_name] = {};
+            // We assume one fiber name goes to one destination (topology constraint)
+            fiberDestinations[d.station_name][d.fiber_name] = d.destination;
+        }
+    });
+
     // Build Graph: Adjacency List
     // We want to find a sequence of stations.
     // Graph nodes: Station Names
@@ -304,9 +316,17 @@ function generatePaths(start, end) {
     const graph = {};
     
     data.forEach(row => {
-        if(!row.station_name || !row.destination) return;
-        const u = row.station_name;
-        const v = row.destination;
+        if(!row.station_name) return;
+        
+        let u = row.station_name;
+        let v = row.destination;
+
+        // Try to infer destination if missing
+        if (!v && row.fiber_name && fiberDestinations[u] && fiberDestinations[u][row.fiber_name]) {
+            v = fiberDestinations[u][row.fiber_name];
+        }
+
+        if(!v) return;
         
         // Check availability
         const isAvailable = !row.usage || row.usage.trim() === '';
@@ -355,7 +375,11 @@ function generatePaths(start, end) {
                 
                 // Check if this connection has enough capacity
                 const availableRows = graph[current][neighbor];
-                if (availableRows.length < requiredCores) continue;
+                if (availableRows.length < requiredCores) {
+                     // Debug log to understand why it was rejected
+                     console.log(`Rejected ${current}->${neighbor}: Need ${requiredCores}, Have ${availableRows.length}`);
+                     continue;
+                }
 
                 // We have a connection.
                 // We track the neighbor.
@@ -387,6 +411,8 @@ function renderPaths(paths) {
     if(paths.length === 0) {
         if(resultsArea) resultsArea.style.display = 'block';
         container.innerHTML = '<div class="no-data" style="padding:10px; color:#aaa;">找不到符合條件的可用路徑 (或無可用芯線)</div>';
+        // Debug info if needed
+        console.log("No paths found. Check if start/end exist in graph and have enough available cores.");
         return;
     }
     
@@ -469,7 +495,9 @@ async function confirmAutoAdd() {
 
     // Add Path ID to notes
     const pathId = 'PATH-' + Date.now();
-    const noteWithId = (updates.notes ? updates.notes + ' ' : '') + `[PathID:${pathId}]`;
+    // Ensure existing notes is treated as string and not null/undefined
+    const existingNotes = updates.notes ? String(updates.notes) : '';
+    const noteWithId = (existingNotes ? existingNotes + ' ' : '') + `[PathID:${pathId}]`;
 
     try {
         // For each segment (from->to), find REQUIRED NUMBER of available records and update them.
@@ -494,6 +522,11 @@ async function confirmAutoAdd() {
                 );
             }
 
+            // DO NOT SORT BY FIBER NAME IF IT CAUSES ISSUES
+            // Just pick ANY available cores as requested.
+            // But sorting helps keep them somewhat contiguous if possible.
+            // Let's stick to simple sort or no sort.
+            
             candidates.sort((a, b) => {
                 // Try to sort by fiber_name
                 if(a.fiber_name && b.fiber_name) return a.fiber_name.localeCompare(b.fiber_name, undefined, {numeric: true});
@@ -515,6 +548,19 @@ async function confirmAutoAdd() {
         document.getElementById('confirm-auto-add-btn').innerText = "處理中...";
         
         for(const record of recordsToUpdate) {
+            // Append PathID to EXISTING record notes to preserve history if any
+            const currentRecordNotes = record.notes ? String(record.notes) : '';
+            // If the user provided new notes, we use that. If not, we just append PathID to existing notes?
+            // Actually, the requirement is usually to OVERWRITE usage but KEEP other technical details.
+            // But 'notes' is often user-input.
+            // Let's combine user input notes + PathID.
+            // Wait, if we overwrite 'notes' with user input, we lose old notes on that core.
+            // Let's append user input to old notes? No, user input usually describes the NEW usage.
+            
+            // Current Logic: noteWithId = (UserNotes) + [PathID]
+            // We should probably preserve old notes if they are technical info?
+            // Usually 'notes' field is for the current usage.
+            
             await updateRecord(record.id, {
                 ...updates,
                 notes: noteWithId
@@ -533,7 +579,9 @@ async function confirmAutoAdd() {
         
         // Refresh Data
         // updateRecord calls notify() which updates UI, but let's be sure
+        await loadData(); // Force reload from Supabase to ensure consistency
         renderDataTable(); 
+        loadPathMgmtList(); // Refresh the management list immediately
         
     } catch(e) {
         console.error(e);
