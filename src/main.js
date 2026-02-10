@@ -290,6 +290,26 @@ if (pathSearchBtn) {
     pathSearchBtn.addEventListener('click', loadPathMgmtList);
 }
 
+const pathRefreshBtn = document.getElementById('path-refresh-btn');
+if (pathRefreshBtn) {
+    pathRefreshBtn.addEventListener('click', async () => {
+        pathRefreshBtn.disabled = true;
+        const originalText = pathRefreshBtn.textContent;
+        pathRefreshBtn.textContent = "載入中...";
+        try {
+            await loadData();
+            loadPathMgmtList();
+            // alert("資料已更新！"); // Optional: less intrusive
+        } catch(e) {
+            console.error(e);
+            alert("更新失敗: " + e.message);
+        } finally {
+            pathRefreshBtn.disabled = false;
+            pathRefreshBtn.textContent = originalText;
+        }
+    });
+}
+
 // ... Path Finding Logic ...
 // Normalization Helper
 function normalizeStationName(name) {
@@ -304,14 +324,31 @@ function generatePaths(start, end) {
     // Get required core count from input, default to 1
     const requiredCores = parseInt(document.getElementById('auto-core-count').value) || 1;
 
-    // 1. Pre-process: Infer Fiber Destinations (Normalized)
-    const fiberDestinations = {}; 
+    // 1. Pre-process: Identify Physical Connections & Valid Fibers
+    const physicalLinks = new Set(); // Stores "U-V" keys
+    const validFiberMap = {}; // Stores "U-V" -> Set(fiber_name)
+    
     data.forEach(d => {
-        if(d.station_name && d.fiber_name && d.destination) {
+        if(d.station_name && d.destination) {
             const uNorm = normalizeStationName(d.station_name);
             const vNorm = normalizeStationName(d.destination);
-            if(!fiberDestinations[uNorm]) fiberDestinations[uNorm] = {};
-            fiberDestinations[uNorm][d.fiber_name] = vNorm;
+            if(uNorm && vNorm && uNorm !== vNorm) {
+                // Register Link
+                const key1 = `${uNorm}|${vNorm}`;
+                const key2 = `${vNorm}|${uNorm}`;
+                physicalLinks.add(key1);
+                physicalLinks.add(key2);
+                
+                // Register Fiber
+                if(d.fiber_name) {
+                    if(!validFiberMap[key1]) validFiberMap[key1] = new Set();
+                    validFiberMap[key1].add(d.fiber_name);
+                    
+                    // Assume bidirectional fiber name consistency
+                    if(!validFiberMap[key2]) validFiberMap[key2] = new Set();
+                    validFiberMap[key2].add(d.fiber_name);
+                }
+            }
         }
     });
 
@@ -322,31 +359,110 @@ function generatePaths(start, end) {
         if(!row.station_name) return;
         
         const uNorm = normalizeStationName(row.station_name);
-        let vNorm = row.destination ? normalizeStationName(row.destination) : null;
-
-        // Try to infer destination if missing
-        if (!vNorm && row.fiber_name && fiberDestinations[uNorm] && fiberDestinations[uNorm][row.fiber_name]) {
-            vNorm = fiberDestinations[uNorm][row.fiber_name];
-        }
-        
-        if(!vNorm) return;
-        if(uNorm === vNorm) return; // Avoid self-loops
-
         // Check availability
         const isAvailable = !row.usage || row.usage.trim() === '';
-        
-        if(isAvailable) {
-            // Forward Direction (u -> v)
-            if(!graph[uNorm]) graph[uNorm] = {};
-            if(!graph[uNorm][vNorm]) graph[uNorm][vNorm] = [];
-            graph[uNorm][vNorm].push(row);
+        if(!isAvailable) return;
 
-            // Reverse Direction (v -> u) - Bidirectional
-            if(!graph[vNorm]) graph[vNorm] = {};
-            if(!graph[vNorm][uNorm]) graph[vNorm][uNorm] = [];
-            graph[vNorm][uNorm].push(row);
+        // Determine Potential Destinations
+        // 1. Explicit Destination
+        let potentialDests = [];
+        if(row.destination) {
+            potentialDests.push(normalizeStationName(row.destination));
+        } else {
+            // 2. Inferred Destination based on Physical Link + Fiber Name
+            // Find all neighbors V where U-V is a physical link AND fiber_name exists in that link
+            if(row.fiber_name) {
+                for(const linkKey of physicalLinks) {
+                    const [p1, p2] = linkKey.split('|');
+                    if(p1 === uNorm) {
+                        // Check if this fiber belongs to this link
+                        if(validFiberMap[linkKey] && validFiberMap[linkKey].has(row.fiber_name)) {
+                            potentialDests.push(p2);
+                        }
+                    }
+                }
+            }
         }
+        
+        // Remove duplicates and self-loops
+        potentialDests = [...new Set(potentialDests)].filter(d => d && d !== uNorm);
+        
+        potentialDests.forEach(vNorm => {
+             // Add Edge u -> v
+             if(!graph[uNorm]) graph[uNorm] = {};
+             if(!graph[uNorm][vNorm]) graph[uNorm][vNorm] = [];
+             
+             // Crucial: We only push the row at 'u' to the graph at 'u'.
+             // We do NOT infer reverse edges by pushing 'u' rows to 'v'.
+             // The graph building must be symmetric by processing 'v's rows independently.
+             // HOWEVER, if 'v' has no rows (passive), we might need to allow u->v without v->u booking?
+             // But for "booking", we need to lock rows.
+             // If v has no row, we can't lock it.
+             // Let's assume we just lock 'u'.
+             graph[uNorm][vNorm].push(row);
+             
+             // What about B->A?
+             // If we process a row at B with Dest: A, we add B->A.
+             // If B has a row with NO Dest, but Fiber matches A-B link, we add B->A.
+             // This covers the bidirectional requirement if both sides have data.
+        });
     });
+    
+    // Fallback for Reverse Connectivity where downstream data is missing
+    // If A->B exists (explicit), but B has NO record for this fiber.
+    // The user wants "Bidirectional Inference".
+    // If we only have A->B, can we traverse B->A?
+    // If we traverse B->A using A's row, we are essentially using the cable.
+    // Let's re-add the explicit reverse injection BUT be careful.
+    // The user said "First determine physical connection".
+    // If A connects to B.
+    // We can infer B connects to A.
+    // If B has no data, we can create a "Virtual Row" or reuse A's row for the return path?
+    // Reuse A's row is dangerous for updates.
+    // Better approach:
+    // If A->B is established by Row A.
+    // And we need B->A.
+    // Check if graph[vNorm][uNorm] exists.
+    // If not, maybe inject Row A as a placeholder?
+    // But confirmAutoAdd needs to update.
+    // If we update Row A, it marks the core used.
+    // That should be enough for the link?
+    // Let's stick to: "Only lock rows that exist".
+    // If B has no row, we don't lock B.
+    // But we still need the EDGE in the graph to traverse.
+    
+    // Post-Process Graph to ensure Bidirectionality
+    for(const u in graph) {
+        for(const v in graph[u]) {
+            // u -> v exists.
+            // Check v -> u
+            if(!graph[v]) graph[v] = {};
+            if(!graph[v][u]) {
+                 // v -> u missing. 
+                 // It implies v has no available rows for this link.
+                 // OR v's rows are full.
+                 // OR v's rows are missing destination/inference.
+                 
+                 // If we want to allow traversal B->A even if B has no data:
+                 // We can inject the SAME rows from A->B into B->A?
+                 // This effectively treats the cable as a single resource managed at A.
+                 // This is common in simple fiber mgmt.
+                 // Let's do this:
+                 // graph[v][u] = graph[u][v]; 
+                 // But wait, graph[u][v] contains rows with 'id'.
+                 // If we use them for B->A, confirmAutoAdd will try to lock them.
+                 // It will lock Row A.
+                 // That's fine! Locking Row A marks the cable used.
+                 graph[v][u] = [...graph[u][v]];
+            } else {
+                 // v -> u exists (has its own rows).
+                 // We combine them? Or keep separate?
+                 // If we have rows at B, we should prefer them.
+                 // But if we run out of rows at B?
+                 // Let's just keep what we found.
+            }
+        }
+    }
     
     // 3. BFS to find paths
     const startNorm = normalizeStationName(start);
