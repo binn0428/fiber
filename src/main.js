@@ -662,6 +662,10 @@ function selectPath(index) {
     if(noteInput && !noteInput.value) {
         noteInput.placeholder = "自動填入路徑資訊...";
     }
+
+    // Update Map Visualization
+    renderMap();
+    showToast(`路徑已顯示於架構圖中: ${path.nodes.join(' -> ')}`, 3000);
 }
 
 async function confirmAutoAdd() {
@@ -1672,6 +1676,9 @@ function renderMap() {
         <marker id="arrow-red" markerWidth="10" markerHeight="10" refX="55" refY="3" orient="auto" markerUnits="strokeWidth">
           <path d="M0,0 L0,6 L9,3 z" fill="#ef4444" />
         </marker>
+        <marker id="arrow-orange" markerWidth="10" markerHeight="10" refX="55" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L0,6 L9,3 z" fill="#f59e0b" />
+        </marker>
     `;
     svg.appendChild(defs);
     mapContainer.appendChild(svg);
@@ -1830,12 +1837,22 @@ function renderMap() {
         }
     });
 
+    // Get selected path for highlighting
+    const selectedPath = (selectedPathIndex !== -1 && currentGeneratedPaths[selectedPathIndex]) 
+                         ? currentGeneratedPaths[selectedPathIndex] 
+                         : null;
+
     // Create Elements
     Object.values(nodes).forEach(node => {
         const el = document.createElement('div');
         el.className = 'site-node';
         if (node.isBackbone) el.classList.add('backbone');
         if (isEditMode) el.classList.add('edit-mode');
+        
+        // Highlight if in selected path
+        if (selectedPath && selectedPath.nodes.includes(normalizeStationName(node.name))) {
+            el.classList.add('highlight-path');
+        }
         
         el.innerHTML = `
             <div>${node.name}</div>
@@ -1919,11 +1936,29 @@ function renderMap() {
 
     // Draw Lines
     links.forEach(l => {
-        drawLink(nodes[l.source], nodes[l.target], svg, 'normal');
+        let isHighlighted = false;
+        if (selectedPath) {
+            const pNodes = selectedPath.nodes;
+            for(let i=0; i<pNodes.length-1; i++) {
+                const u = pNodes[i];
+                const v = pNodes[i+1];
+                // Check if this link corresponds to a segment in the path
+                // Note: The graph is undirected in visualization (lines), so we check both directions
+                // Use normalized names for comparison to match path generation logic
+                const sourceNorm = normalizeStationName(l.source);
+                const targetNorm = normalizeStationName(l.target);
+                
+                if ((u === sourceNorm && v === targetNorm) || (u === targetNorm && v === sourceNorm)) {
+                    isHighlighted = true;
+                    break;
+                }
+            }
+        }
+        drawLink(nodes[l.source], nodes[l.target], svg, isHighlighted);
     });
 
     // Helper to draw link
-    function drawLink(source, target, svgContainer, type) {
+    function drawLink(source, target, svgContainer, isHighlighted = false) {
         if (!source || !target || source.xPct === undefined || target.xPct === undefined) return;
         
         // 1. Visual Line
@@ -1933,9 +1968,9 @@ function renderMap() {
         line.setAttribute("x2", `${target.xPct}%`);
         line.setAttribute("y2", `${target.yPct}%`);
         
-        line.setAttribute("stroke", "#3b82f6");
-        line.setAttribute("stroke-width", "2"); 
-        line.setAttribute("marker-end", "url(#arrow)");
+        line.setAttribute("stroke", isHighlighted ? "#f59e0b" : "#3b82f6");
+        line.setAttribute("stroke-width", isHighlighted ? "4" : "2"); 
+        line.setAttribute("marker-end", isHighlighted ? "url(#arrow-orange)" : "url(#arrow)");
         
         // Add Data Attributes for Update
         line.setAttribute("data-source", source.name);
