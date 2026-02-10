@@ -260,6 +260,7 @@ window.initAutoAddView = function() {
 // Global variable to store current generated paths
 let currentGeneratedPaths = [];
 let selectedPathIndex = -1;
+let currentHighlightedPath = null; // Stores the normalized node names of the path to highlight
 
 // Event Listeners
 const generatePathBtn = document.getElementById('generate-path-btn');
@@ -655,7 +656,30 @@ function selectPath(index) {
     if(formArea) formArea.style.display = 'block';
     
     const info = document.getElementById('selected-path-info');
-    if(info) info.innerHTML = `已選擇: ${path.nodes.join(' ➝ ')} (共 ${path.records.length} 段)`;
+    if(info) {
+        info.innerHTML = `
+            <div>已選擇: ${path.nodes.join(' ➝ ')} (共 ${path.records.length} 段)</div>
+            <button id="preview-path-btn" class="action-btn" style="margin-top:8px; font-size:0.9em; background-color:#3b82f6;">
+                🗺️ 在架構圖中顯示
+            </button>
+        `;
+
+        // Add Event Listener for Preview
+        const previewBtn = document.getElementById('preview-path-btn');
+        if(previewBtn) {
+            previewBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent bubbling
+                currentHighlightedPath = path.nodes; // These are already normalized
+                
+                // Switch to Map View
+                const mapBtn = document.querySelector('[data-target="map-view"]');
+                if(mapBtn) {
+                    mapBtn.click();
+                    showToast(`已顯示路徑: ${path.nodes.join('->')}`, 3000);
+                }
+            });
+        }
+    }
     
     // Auto fill hint
     const noteInput = document.getElementById('auto-notes');
@@ -1845,6 +1869,18 @@ function renderMap() {
         el.style.top = `${node.yPct}%`;
         el.setAttribute('data-site', node.name);
         
+        // Highlight Logic for Nodes
+        if (currentHighlightedPath) {
+             const normName = normalizeStationName(node.name);
+             if (currentHighlightedPath.includes(normName)) {
+                 el.style.borderColor = '#f59e0b'; // Amber/Orange
+                 el.style.borderWidth = '3px';
+                 el.style.boxShadow = '0 0 20px rgba(245, 158, 11, 0.8)';
+                 el.style.zIndex = '100';
+                 el.style.transform = 'scale(1.1)'; // Slightly larger
+             }
+        }
+        
         makeDraggable(el, node);
 
         let clickTimeout;
@@ -1933,9 +1969,35 @@ function renderMap() {
         line.setAttribute("x2", `${target.xPct}%`);
         line.setAttribute("y2", `${target.yPct}%`);
         
-        line.setAttribute("stroke", "#3b82f6");
-        line.setAttribute("stroke-width", "2"); 
+        let strokeColor = "#3b82f6";
+        let strokeWidth = "2";
+        let isHighlighted = false;
+
+        // Highlight Logic for Links
+        if (currentHighlightedPath) {
+            const sNorm = normalizeStationName(source.name);
+            const tNorm = normalizeStationName(target.name);
+            const sIdx = currentHighlightedPath.indexOf(sNorm);
+            const tIdx = currentHighlightedPath.indexOf(tNorm);
+            
+            // Check if they are adjacent in the path
+            if (sIdx !== -1 && tIdx !== -1 && Math.abs(sIdx - tIdx) === 1) {
+                 strokeColor = "#f59e0b";
+                 strokeWidth = "5";
+                 isHighlighted = true;
+            }
+        }
+
+        line.setAttribute("stroke", strokeColor);
+        line.setAttribute("stroke-width", strokeWidth); 
         line.setAttribute("marker-end", "url(#arrow)");
+        
+        if (isHighlighted) {
+            // Add animation for visibility
+            line.innerHTML = `<animate attributeName="stroke-opacity" values="1;0.4;1" dur="1.5s" repeatCount="indefinite" />`;
+            // Ensure highlighted lines are on top (by appending last? SVG doesn't have z-index)
+            // We can handle this by sorting links before drawing, but for now this is okay.
+        }
         
         // Add Data Attributes for Update
         line.setAttribute("data-source", source.name);
@@ -1993,6 +2055,47 @@ function renderMap() {
 
     if (mapContainer && mapState) {
         mapContainer.style.transform = `translate(${mapState.tx}px, ${mapState.ty}px) scale(${mapState.scale})`;
+    }
+
+    // Add Clear Highlight Button
+    if (currentHighlightedPath) {
+        const clearBtn = document.createElement('button');
+        clearBtn.innerText = "清除路徑顯示";
+        clearBtn.className = "action-btn";
+        clearBtn.style.position = "absolute";
+        clearBtn.style.top = "10px";
+        clearBtn.style.right = "10px";
+        clearBtn.style.zIndex = "1000";
+        clearBtn.style.backgroundColor = "rgba(0,0,0,0.7)";
+        clearBtn.style.color = "white";
+        clearBtn.style.border = "1px solid #777";
+        
+        clearBtn.onclick = (e) => {
+            e.stopPropagation();
+            currentHighlightedPath = null;
+            renderMap();
+        };
+        
+        // We need to append to mapContainer's parent or a fixed overlay, 
+        // because mapContainer itself is transformed (scaled/translated).
+        // If we append to mapContainer, the button will move with the map.
+        // Let's append to the wrapper.
+        const wrapper = document.querySelector('.map-container');
+        if (wrapper) {
+            // Remove existing clear btn if any
+            const existing = wrapper.querySelector('#clear-path-btn');
+            if(existing) existing.remove();
+            
+            clearBtn.id = "clear-path-btn";
+            wrapper.appendChild(clearBtn);
+        }
+    } else {
+        // Remove button if it exists
+        const wrapper = document.querySelector('.map-container');
+        if (wrapper) {
+            const existing = wrapper.querySelector('#clear-path-btn');
+            if(existing) existing.remove();
+        }
     }
 }
 
