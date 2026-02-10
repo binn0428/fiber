@@ -338,6 +338,8 @@ function generatePaths(start, end) {
     // 1. Pre-process: Identify Physical Connections (Topology) & Station Fibers
     const physicalAdj = {}; // uNorm -> Set(vNorm)
     const stationFibers = {}; // uNorm -> Set(fiber_name)
+    const fiberDestinations = {}; // uNorm -> fiber_name -> Set(vNorm)
+    const globalFiberDestinations = {}; // fiber_name -> Set(vNorm) - NEW: Global Map
     
     data.forEach(d => {
         const uNorm = normalizeStationName(d.station_name);
@@ -358,6 +360,20 @@ function generatePaths(start, end) {
             
             if(!physicalAdj[vNorm]) physicalAdj[vNorm] = new Set();
             physicalAdj[vNorm].add(uNorm);
+
+            // Register Fiber Destination (for resolving empty destinations later)
+            if (d.fiber_name) {
+                const fName = d.fiber_name.trim();
+                
+                // Local Map
+                if (!fiberDestinations[uNorm]) fiberDestinations[uNorm] = {};
+                if (!fiberDestinations[uNorm][fName]) fiberDestinations[uNorm][fName] = new Set();
+                fiberDestinations[uNorm][fName].add(vNorm);
+
+                // Global Map (NEW)
+                if (!globalFiberDestinations[fName]) globalFiberDestinations[fName] = new Set();
+                globalFiberDestinations[fName].add(vNorm);
+            }
         }
     });
 
@@ -378,7 +394,25 @@ function generatePaths(start, end) {
         if(row.destination) {
             potentialDests.push(normalizeStationName(row.destination));
         } else {
-            // 2. Inferred Destination based on Physical Link + Fiber Name Match
+            // 2. Inferred Destination
+            // A. Based on Known Fiber Destinations (Strong Inference from other rows)
+            if (row.fiber_name) {
+                 const fName = row.fiber_name.trim();
+                 
+                 // Try Local First
+                 if (fiberDestinations[uNorm] && fiberDestinations[uNorm][fName]) {
+                     fiberDestinations[uNorm][fName].forEach(v => potentialDests.push(v));
+                 } 
+                 // Try Global Fallback (NEW)
+                 // If local didn't provide a destination, check global map
+                 // This helps when intermediate nodes have available cores but lack destination info
+                 // which is present in other nodes (e.g. PCU8 vs 2PH case)
+                 else if (globalFiberDestinations[fName]) {
+                      globalFiberDestinations[fName].forEach(v => potentialDests.push(v));
+                 }
+            }
+
+            // B. Based on Physical Link + Fiber Name Match (Weak Inference)
             // "First judge if there is a physical connection, then correspond fiber names"
             if(row.fiber_name && physicalAdj[uNorm]) {
                 const fName = row.fiber_name.trim();
