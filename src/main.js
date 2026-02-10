@@ -317,8 +317,8 @@ function normalizeStationName(name) {
     // Remove ( , / and subsequent text. 
     // Handle # only if it is NOT at the start (to allow names like #1CCB)
     
-    // First split by ( and /
-    let clean = name.split(/[(\/]/)[0];
+    // First split by ( and / and SPACE
+    let clean = name.split(/[(\/\s]/)[0];
     
     // Check for #
     const hashIndex = clean.indexOf('#');
