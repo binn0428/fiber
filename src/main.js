@@ -405,10 +405,13 @@ function generatePaths(start, end) {
                  } 
                  // Try Global Fallback (NEW)
                  // If local didn't provide a destination, check global map
-                 // This helps when intermediate nodes have available cores but lack destination info
-                 // which is present in other nodes (e.g. PCU8 vs 2PH case)
+                 // STRICT CONSTRAINT: Only allow if 'v' is a physical neighbor (prevent skipping stations)
                  else if (globalFiberDestinations[fName]) {
-                      globalFiberDestinations[fName].forEach(v => potentialDests.push(v));
+                      globalFiberDestinations[fName].forEach(v => {
+                          if (physicalAdj[uNorm] && physicalAdj[uNorm].has(v)) {
+                              potentialDests.push(v);
+                          }
+                      });
                  }
             }
 
@@ -437,6 +440,40 @@ function generatePaths(start, end) {
         });
     });
     
+    // 2.5 Inject Passthrough Edges (Bridging Gaps)
+    // For nodes like PCU8 that might be physically connected but lack specific available records for a fiber,
+    // we use global fiber knowledge + physical topology to inject virtual edges.
+    // This solves the issue where a path exists (fiber continues) but intermediate records are missing or reserved.
+    for (const u in stationFibers) {
+        stationFibers[u].forEach(fName => {
+            // If this fiber goes to 'v' globally
+            if (globalFiberDestinations[fName]) {
+                globalFiberDestinations[fName].forEach(v => {
+                     // STRICT CONSTRAINT: Only if u is physically connected to v
+                     // This ensures we don't skip stations (e.g. 2PH -> 500區 blocked if PCU8 is in between)
+                     if (physicalAdj[u] && physicalAdj[u].has(v)) {
+                         if (!graph[u]) graph[u] = {};
+                         if (!graph[u][v]) graph[u][v] = [];
+                         
+                         // Add a Virtual Row if we don't have an available record for this fiber yet
+                         // This allows "passing through" even if the specific record is missing/reserved
+                         const hasAvailableRow = graph[u][v].some(r => r.fiber_name === fName && (!r.usage || r.usage === ''));
+                         
+                         if (!hasAvailableRow) {
+                             graph[u][v].push({
+                                 station_name: u, 
+                                 destination: v,
+                                 fiber_name: fName,
+                                 usage: '', 
+                                 _generated: true
+                             });
+                         }
+                     }
+                });
+            }
+        });
+    }
+
     // Fallback for Reverse Connectivity where downstream data is missing
     // If A->B exists (explicit), but B has NO record for this fiber.
     // The user wants "Bidirectional Inference".
