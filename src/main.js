@@ -48,10 +48,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 supabaseUrlInput.value = url;
             }
             
-            // Hide config panel automatically as we have hardcoded defaults
+            // Hide config panel if already connected (User Request: No need to enter again)
             const configPanel = supabaseUrlInput?.closest('.io-card');
             if (configPanel) {
                 configPanel.style.display = 'none';
+                // User Request: Remove the show button completely
             }
 
             if (window.logToScreen) window.logToScreen("Supabase initialized.");
@@ -877,58 +878,7 @@ async function confirmAutoAdd() {
         document.getElementById('confirm-auto-add-btn').disabled = true;
         document.getElementById('confirm-auto-add-btn').innerText = "處理中...";
         
-        // 1. Save Path Metadata to 'generated_paths' table
-        // This is the new, robust way to store path info
-        const pathRecord = {
-            station_name: 'PATH_RECORD', // Dummy value to satisfy potential constraints, or use a specific identifier
-            fiber_name: pathId, // Use fiber_name col for ID if no dedicated col, or just standard fields
-            // Better: Use standard fields mapping if possible. 
-            // Assuming 'generated_paths' has columns: id, path_id, nodes, usage, department, contact, notes, created_at
-            // But we must stick to the generic addRecord which uses 'udc' schema mostly.
-            // Let's assume 'generated_paths' mimics the standard schema or we abuse fields.
-            // usage -> usage
-            // department -> department
-            // contact -> contact
-            // notes -> nodes JSON
-            // fiber_name -> pathId
-            
-            usage: updates.usage,
-            department: updates.department,
-            contact: updates.contact,
-            notes: JSON.stringify(path.nodes), // Store nodes as JSON in notes
-            fiber_name: pathId,
-            core_count: String(requiredCores), // Store core count
-            // We need a way to distinguish this record in the generic table loader?
-            // Yes, table name is 'generated_paths'.
-        };
-        
-        // We need to tell addRecord to use 'generated_paths'.
-        // Currently addRecord uses getTableForStation.
-        // We can hack it by passing a station name that maps to 'generated_paths' OR
-        // modify addRecord to accept explicit table.
-        // But addRecord signature is (record).
-        // Let's modify getTableForStation in dataService.js OR
-        // just pass a special station name.
-        // Wait, I cannot easily modify getTableForStation without another tool call.
-        // I ALREADY added 'generated_paths' to TABLES list in dataService.js.
-        // But getTableForStation logic needs to know how to route to it.
-        // Let's assume if I set station_name to 'generated_paths_entry', I can catch it.
-        // OR, I can use the fact that I can't change dataService logic easily right now (I did read it though).
-        
-        // Let's look at dataService again.
-        // getTableForStation matches substrings.
-        // If I name station_name 'generated_paths', does it match?
-        // No, the list is: ms2, ms3, ms4, 1ph, 2ph, dkb, 5kb, o2, room, udc.
-        // It defaults to 'udc'.
-        
-        // I MUST modify getTableForStation in dataService to support 'generated_paths'.
-        // I will do that in next step.
-        // For now, I will prepare the record assuming it will work.
-        pathRecord.station_name = 'generated_paths'; 
-        
-        await addRecord(pathRecord);
-
-        // 2. Create New Records for Passthrough Edges
+        // 1. Create New Records for Passthrough Edges
         for (const row of recordsToCreate) {
              const newRecord = {
                  station_name: row.station_name,
@@ -995,73 +945,18 @@ async function confirmAutoAdd() {
 
 window.viewPathOnMap = function(pathId) {
     const data = getData();
-    // Find ALL records with this PathID to ensure we catch the tag or can reconstruct
-    const records = data.filter(d => d.notes && d.notes.includes(`[PathID:${pathId}]`));
+    // Find any record with this PathID
+    const record = data.find(d => d.notes && d.notes.includes(`[PathID:${pathId}]`));
     
-    if(records.length === 0) {
+    if(!record) {
         alert("找不到路徑資料");
         return;
     }
     
-    // 1. Try to find explicit tag
-    const recordWithTag = records.find(d => d.notes.includes('[PathNodes:'));
-    
-    let nodes = null;
-    
-    if (recordWithTag) {
-        const match = recordWithTag.notes.match(/\[PathNodes:([^\]]+)\]/);
-        if(match) {
-            nodes = match[1].split(',');
-        }
-    }
-    
-    // 2. Fallback: Reconstruct
-    if (!nodes) {
-        // Need to define reconstructPathNodes globally or inline it here.
-        // For simplicity, let's reuse the logic (inline) or move it out.
-        // Since I defined it inside loadPathMgmtList, I should move it out or duplicate.
-        // Duplicating for safety as I don't want to mess up scope refactoring now.
-        
-        try {
-            const adj = {};
-            const counts = {};
-            const ensure = (n) => { if(!counts[n]) counts[n] = {in:0, out:0}; };
-            
-            records.forEach(r => {
-                const u = normalizeStationName(r.station_name);
-                const v = normalizeStationName(r.destination);
-                if(!u || !v) return;
-                if(!adj[u]) adj[u] = [];
-                if(!adj[u].includes(v)) adj[u].push(v);
-                ensure(u); ensure(v);
-                counts[u].out++;
-                counts[v].in++;
-            });
-            
-            const candidates = Object.keys(counts).sort();
-            let start = candidates.find(n => counts[n].out > counts[n].in);
-            if(!start) start = candidates.find(n => counts[n].out > 0);
-            
-            if(start) {
-                const path = [start];
-                let curr = start;
-                const visited = new Set([start]);
-                for(let i=0; i<records.length + 5; i++) {
-                    const neighbors = adj[curr];
-                    if(!neighbors || neighbors.length === 0) break;
-                    const next = neighbors.find(n => !visited.has(n));
-                    if(next) {
-                        path.push(next);
-                        visited.add(next);
-                        curr = next;
-                    } else break;
-                }
-                if (path.length > 1) nodes = path;
-            }
-        } catch(e) { console.error(e); }
-    }
-    
-    if(nodes) {
+    // Extract Nodes
+    const match = record.notes.match(/\[PathNodes:([^\]]+)\]/);
+    if(match) {
+        const nodes = match[1].split(',');
         currentHighlightedPath = nodes;
         
         // Switch to Map View
@@ -1071,256 +966,109 @@ window.viewPathOnMap = function(pathId) {
             showToast(`已顯示路徑: ${nodes.join('->')}`, 3000);
         }
     } else {
-        alert("此路徑未包含視覺化資料，且無法自動重建路徑順序。");
+        alert("此路徑未包含視覺化資料");
     }
 };
 
 // Path Management (Delete/Restore)
 function loadPathMgmtList() {
-    try {
-        console.log("Loading Path Management List...");
-        const queryInput = document.getElementById('path-search');
-        const query = queryInput ? queryInput.value.toLowerCase().trim() : '';
-        const container = document.getElementById('mgmt-path-list');
-        if(!container) {
-            console.error("Container #mgmt-path-list not found");
-            return;
+    const queryInput = document.getElementById('path-search');
+    const query = queryInput ? queryInput.value.toLowerCase().trim() : '';
+    const container = document.getElementById('mgmt-path-list');
+    if(!container) return;
+    
+    const data = getData();
+    // Group by PathID
+    const paths = {};
+    
+    data.forEach(d => {
+        if(d.notes && typeof d.notes === 'string' && d.notes.includes('[PathID:')) {
+            const match = d.notes.match(/\[PathID:([^\]]+)\]/);
+            if(match) {
+                const pid = match[1];
+                if(!paths[pid]) paths[pid] = { id: pid, records: [], usage: d.usage, time: 0 };
+                paths[pid].records.push(d);
+                // Extract time from ID if possible
+                const ts = parseInt(pid.split('-')[1]);
+                if(!isNaN(ts)) paths[pid].time = ts;
+            }
+        }
+    });
+    
+    const sortedPaths = Object.values(paths).sort((a, b) => b.time - a.time);
+    
+    container.innerHTML = '';
+    
+    if(sortedPaths.length === 0) {
+        container.innerHTML = '<p style="padding:10px; color:#aaa;">尚無自動生成的路徑紀錄。</p>';
+        return;
+    }
+    
+    let count = 0;
+    sortedPaths.forEach(p => {
+        const usage = p.usage || '';
+        const pid = p.id || '';
+        if(query && !usage.toLowerCase().includes(query) && !pid.toLowerCase().includes(query)) {
+             // Check stations too
+             const stationStr = p.records.map(r => (r.station_name||'') + (r.destination||'')).join('');
+             if(!stationStr.toLowerCase().includes(query)) return;
         }
         
-        const data = getData();
-        console.log(`Loaded ${data.length} records for path mgmt.`);
+        count++;
+        const div = document.createElement('div');
+        div.className = 'path-mgmt-item';
+        div.style.border = '1px solid #444';
+        div.style.borderRadius = '5px';
+        div.style.padding = '15px';
+        div.style.marginBottom = '10px';
+        div.style.backgroundColor = 'var(--bg-secondary)';
+        
+        const dateStr = p.time ? new Date(p.time).toLocaleString() : '未知時間';
+        
+        // Construct Path Flow
+        // We have records, but they might be out of order.
+        // We can try to chain them.
+        const recs = [...p.records];
+        // Simple display: list segments
+        const segments = recs.map(r => `<span class="badge">${r.station_name} ➝ ${r.destination}</span>`).join(' ');
+        
+        // Buttons
+        let buttons = `<div style="display:flex; gap:5px;">`;
 
-        // Group by PathID
-        const paths = {};
-        
-        // 1. Load from 'generated_paths' table (Primary Source)
-        const genPaths = data.filter(d => d._table === 'generated_paths');
-        genPaths.forEach(p => {
-            const pid = p.fiber_name; // We stored PathID in fiber_name
-            if (pid) {
-                // Parse nodes from notes
-                let nodes = [];
-                try {
-                    nodes = JSON.parse(p.notes);
-                } catch(e) { /* ignore */ }
-                
-                paths[pid] = { 
-                    id: pid, 
-                    records: [], // We can link real records if needed, but for display we use metadata
-                    usage: p.usage, 
-                    time: 0,
-                    nodes: nodes, // Store explicit nodes
-                    metaRecord: p // Keep reference to the metadata record
-                };
-                
-                // Extract time
-                const parts = pid.split('-');
-                if (parts.length > 1) {
-                    const ts = parseInt(parts[1]);
-                    if(!isNaN(ts)) paths[pid].time = ts;
-                }
-            }
-        });
-
-        // 2. Load legacy records (Fallback)
-        data.forEach(d => {
-            if(d.notes && typeof d.notes === 'string' && d.notes.includes('[PathID:')) {
-                const match = d.notes.match(/\[PathID:([^\]]+)\]/);
-                if(match) {
-                    const pid = match[1];
-                    if(!paths[pid]) {
-                        // Legacy path found
-                        paths[pid] = { id: pid, records: [], usage: d.usage, time: 0 };
-                        // Extract time from ID if possible
-                        const parts = pid.split('-');
-                        if (parts.length > 1) {
-                            const ts = parseInt(parts[1]);
-                            if(!isNaN(ts)) paths[pid].time = ts;
-                        }
-                    }
-                    paths[pid].records.push(d);
-                }
-            }
-        });
-        
-        const sortedPaths = Object.values(paths).sort((a, b) => b.time - a.time);
-        console.log(`Found ${sortedPaths.length} paths.`);
-        
-        container.innerHTML = '';
-        
-        if(sortedPaths.length === 0) {
-            container.innerHTML = '<p style="padding:10px; color:white;">尚無自動生成的路徑紀錄。</p>';
-            return;
+        // View Button (Check if nodes info exists in notes)
+        const noteWithNodes = recs[0].notes || '';
+        if (noteWithNodes.includes('[PathNodes:')) {
+             buttons += `<button class="action-btn" style="background-color:#3b82f6; font-size:0.9em; padding:5px 10px;" onclick="viewPathOnMap('${p.id}')">🗺️ 檢視</button>`;
         }
-        
-        // Helper to reconstruct path nodes from records if tag is missing
-        const reconstructPathNodes = (records) => {
-            try {
-                const adj = {};
-                const counts = {}; // { name: { in: 0, out: 0 } }
-                
-                const ensure = (n) => { if(!counts[n]) counts[n] = {in:0, out:0}; };
-                
-                records.forEach(r => {
-                    const u = normalizeStationName(r.station_name);
-                    const v = normalizeStationName(r.destination);
-                    if(!u || !v) return;
-                    
-                    if(!adj[u]) adj[u] = [];
-                    // Avoid duplicates in adj
-                    if(!adj[u].includes(v)) adj[u].push(v);
-                    
-                    ensure(u); ensure(v);
-                    counts[u].out++;
-                    counts[v].in++;
-                });
-                
-                // Find Start Node: Out > In (Start of path), or just Out > 0 if cycle/loop
-                // Sort keys to ensure deterministic start if multiple candidates
-                const candidates = Object.keys(counts).sort();
-                let start = candidates.find(n => counts[n].out > counts[n].in);
-                if(!start) start = candidates.find(n => counts[n].out > 0);
-                
-                if(!start) return []; 
-                
-                const path = [start];
-                let curr = start;
-                const visited = new Set([start]);
-                
-                // Limit iterations to prevent infinite loops
-                for(let i=0; i<records.length + 5; i++) {
-                    const neighbors = adj[curr];
-                    if(!neighbors || neighbors.length === 0) break;
-                    
-                    // Prefer unvisited neighbor
-                    const next = neighbors.find(n => !visited.has(n));
-                    if(next) {
-                        path.push(next);
-                        visited.add(next);
-                        curr = next;
-                    } else {
-                        // Dead end or all neighbors visited
-                        break;
-                    }
-                }
-                return path.length > 1 ? path : [];
-            } catch(e) {
-                console.error("Path reconstruction failed", e);
-                return [];
-            }
-        };
 
-        let count = 0;
-        sortedPaths.forEach(p => {
-            const usage = p.usage || '';
-            const pid = p.id || '';
-            if(query && !usage.toLowerCase().includes(query) && !pid.toLowerCase().includes(query)) {
-                 // Check stations too
-                 const stationStr = p.records.map(r => (r.station_name||'') + (r.destination||'')).join('');
-                 if(!stationStr.toLowerCase().includes(query)) return;
-            }
-            
-            count++;
-            const div = document.createElement('div');
-            div.className = 'path-mgmt-item';
-            div.style.border = '1px solid #444';
-            div.style.borderRadius = '5px';
-            div.style.padding = '15px';
-            div.style.marginBottom = '10px';
-            div.style.backgroundColor = 'var(--bg-secondary)';
-            
-            const dateStr = p.time ? new Date(p.time).toLocaleString() : '未知時間';
-            
-            // Construct Path Flow
-            const recs = [...p.records];
-            let segments = '';
-            
-            if (p.nodes && p.nodes.length > 0) {
-                // Use explicit nodes from metadata
-                segments = p.nodes.join(' <span style="color:var(--primary-color)">➝</span> ');
-            } else {
-                // Fallback to legacy segment display
-                segments = recs.map(r => `<span class="badge">${r.station_name} ➝ ${r.destination}</span>`).join(' ');
-            }
-            
-            // Buttons
-            let buttons = `<div style="display:flex; gap:5px;">`;
-
-            // Robust Check for PathNodes
-            let hasPathInfo = false;
-            
-            if (p.nodes && p.nodes.length > 0) {
-                hasPathInfo = true;
-            } else {
-                // Legacy checks
-                const recordWithTag = recs.find(r => r.notes && r.notes.includes('[PathNodes:'));
-                if (recordWithTag) {
-                    hasPathInfo = true;
-                } else {
-                    const reconstructed = reconstructPathNodes(recs);
-                    if (reconstructed.length > 1) {
-                        hasPathInfo = true;
-                    }
-                }
-            }
-
-            if (hasPathInfo) {
-                 buttons += `<button class="action-btn" style="background-color:#3b82f6; font-size:0.9em; padding:5px 10px;" onclick="viewPathOnMap('${p.id}')">🗺️ 檢視</button>`;
-            }
-
-            // Always show admin buttons if logged in (Edit/Delete)
-            if(isAdminLoggedIn) {
-                buttons += `
-                        <button class="action-btn" style="background-color:var(--primary-color); font-size:0.9em; padding:5px 10px;" onclick="openEditPathModal('${p.id}')">編輯</button>
-                        <button class="action-btn" style="background-color:var(--danger-color); font-size:0.9em; padding:5px 10px;" onclick="deletePath('${p.id}')">刪除</button>
-                `;
-            }
-            buttons += `</div>`;
-
-            // Clean notes for display
-            let displayNotes = '';
-            if (p.metaRecord) {
-                displayNotes = p.metaRecord.notes; // Metadata notes usually just contain the JSON, maybe we shouldn't show it raw?
-                // Actually in confirmAutoAdd we set notes: JSON.stringify(path.nodes).
-                // So displayNotes will be the node list JSON.
-                // We might want to show "自動生成路徑" or nothing if it's just JSON.
-                displayNotes = "自動生成路徑";
-            } else {
-                displayNotes = (p.records[0]?.notes || '')
-                    .replace(`[PathID:${p.id}]`, '')
-                    .replace(/\[PathNodes:[^\]]+\]/, '')
-                    .trim();
-            }
-            
-            // Contact info fallback
-            const dept = p.metaRecord ? p.metaRecord.department : (p.records[0]?.department || '-');
-            const contact = p.metaRecord ? p.metaRecord.contact : (p.records[0]?.contact || '-');
-
-            div.innerHTML = `
-                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px;">
-                    <div>
-                        <h4 style="margin:0; color:var(--primary-color);">${p.usage || '無用途'}</h4>
-                        <small style="color:#888;">${dateStr} | ID: ${p.id}</small>
-                    </div>
-                    ${buttons}
-                </div>
-                <div style="font-size:0.9em; color:#ccc;">
-                    <div><strong>使用單位:</strong> ${dept} | <strong>聯絡人:</strong> ${contact}</div>
-                    <div><strong>備註:</strong> ${displayNotes}</div>
-                    <div style="margin-top:5px;"><strong>經過路徑:</strong></div>
-                    <div style="margin-top:5px; display:flex; flex-wrap:wrap; gap:5px;">${segments}</div>
-                </div>
+        if(isAdminLoggedIn) {
+            buttons += `
+                    <button class="action-btn" style="background-color:var(--primary-color); font-size:0.9em; padding:5px 10px;" onclick="openEditPathModal('${p.id}')">編輯</button>
+                    <button class="action-btn" style="background-color:var(--danger-color); font-size:0.9em; padding:5px 10px;" onclick="deletePath('${p.id}')">刪除</button>
             `;
-            container.appendChild(div);
-        });
-        
-        if(count === 0) {
-            container.innerHTML = '<p style="padding:10px; color:white;">無符合搜尋條件的紀錄。</p>';
         }
-    } catch(e) {
-        console.error("Error loading path mgmt list:", e);
-        const container = document.getElementById('mgmt-path-list');
-        if(container) container.innerHTML = `<div style="color:red; padding:10px;">載入失敗: ${e.message}</div>`;
+        buttons += `</div>`;
+
+        div.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px;">
+                <div>
+                    <h4 style="margin:0; color:var(--primary-color);">${p.usage || '無用途'}</h4>
+                    <small style="color:#888;">${dateStr} | ID: ${p.id}</small>
+                </div>
+                ${buttons}
+            </div>
+            <div style="font-size:0.9em; color:#ccc;">
+                <div><strong>使用單位:</strong> ${p.records[0].department || '-'} | <strong>聯絡人:</strong> ${p.records[0].contact || '-'}</div>
+                <div><strong>備註:</strong> ${p.records[0].notes.replace(`[PathID:${p.id}]`, '') || '-'}</div>
+                <div style="margin-top:5px;"><strong>經過路徑 (${p.records.length}段):</strong></div>
+                <div style="margin-top:5px; display:flex; flex-wrap:wrap; gap:5px;">${segments}</div>
+            </div>
+        `;
+        container.appendChild(div);
+    });
+    
+    if(count === 0) {
+        container.innerHTML = '<p style="padding:10px; color:#aaa;">無符合搜尋條件的紀錄。</p>';
     }
 }
 
@@ -1332,19 +1080,15 @@ window.deletePath = async function(pathId) {
     if(!confirm('確定要刪除此路徑並釋放所有相關芯線嗎？\n(這將清除用途、芯數、Port等資料並恢復為可用狀態)')) return;
     
     const data = getData();
-    // 1. Find records in standard tables (for releasing cores)
-    const records = data.filter(d => d.notes && d.notes.includes(`[PathID:${pathId}]`) && d._table !== 'generated_paths');
-    // 2. Find metadata record (for deletion)
-    const metaRecord = data.find(d => d.fiber_name === pathId && d._table === 'generated_paths');
+    const records = data.filter(d => d.notes && d.notes.includes(`[PathID:${pathId}]`));
     
-    if(records.length === 0 && !metaRecord) {
+    if(records.length === 0) {
         alert("找不到相關紀錄，可能已被刪除。");
         loadPathMgmtList();
         return;
     }
     
     try {
-        // A. Release Cores in Fiber Tables
         for(const r of records) {
             // Remove PathID and PathNodes from notes
             let newNotes = r.notes.replace(`[PathID:${pathId}]`, '')
@@ -1363,30 +1107,8 @@ window.deletePath = async function(pathId) {
                 port: null
             }, r._table);
         }
-
-        // B. Delete Metadata Record from 'generated_paths'
-        if (metaRecord) {
-            // We use deleteStation hack or we need a deleteRecord? 
-            // dataService has deleteStation. It deletes by station_name.
-            // But here we want to delete by ID.
-            // dataService doesn't have a generic deleteRecord by ID.
-            // We can add it or use raw supabase if accessible?
-            // Actually dataService exports getSupabase.
-            // Let's import getSupabase in main.js (it is already imported)
-            
-            // Or better: Implement deleteRecord in dataService.js? 
-            // For now, let's use direct supabase call here since main.js imports getSupabase.
-            const sb = getSupabase();
-            if (sb) {
-                await sb.from('generated_paths').delete().eq('id', metaRecord.id);
-                // Manually remove from local cache since dataService doesn't support generic delete notification
-                // Actually, just reloading data is safer.
-            }
-        }
-
         alert(`已成功刪除路徑並釋放 ${records.length} 筆芯線資料。`);
-        await loadData(); // Refresh list
-        loadPathMgmtList(); 
+        loadPathMgmtList(); // Refresh list
         renderDataTable(); // Refresh main table
     } catch(e) {
         console.error(e);

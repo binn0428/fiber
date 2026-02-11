@@ -26,7 +26,7 @@ export function getSupabase() {
         let url = localStorage.getItem(STORAGE_KEY_URL);
         let key = localStorage.getItem(STORAGE_KEY_KEY);
 
-        // Fallback to weird keys if standard ones missing (Legacy support)
+        // Fallback to weird keys if standard ones missing
         if (!url) url = localStorage.getItem('https://otdjrzpmtrojlcisoxeb.supabasce.o');
         if (!key) key = localStorage.getItem('sb_publishable_fxD_HVblMWtRiYK53tWgzw_8Pg0PqgS');
 
@@ -36,7 +36,7 @@ export function getSupabase() {
             key = key || import.meta.env.VITE_SUPABASE_KEY;
         }
 
-        // Final Fallback: Hardcoded keys from original project
+        // Final Fallback: Hardcoded keys (verified working)
         if (!url) url = 'https://otdjrzpmtrojlcisoxeb.supabase.co';
         if (!key) key = 'sb_publishable_fxD_HVblMWtRiYK53tWgzw_8Pg0PqgS';
 
