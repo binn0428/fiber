@@ -266,6 +266,11 @@ let currentHighlightedPath = null; // Stores the normalized node names of the pa
 const generatePathBtn = document.getElementById('generate-path-btn');
 if (generatePathBtn) {
     generatePathBtn.addEventListener('click', () => {
+        if (!isAdminLoggedIn) {
+            alert("權限不足：自動生成路徑功能僅供管理員使用");
+            return;
+        }
+
         const start = document.getElementById('auto-start-node').value.trim();
         const end = document.getElementById('auto-end-node').value.trim();
         if(!start || !end) {
@@ -707,6 +712,11 @@ function selectPath(index) {
 }
 
 async function confirmAutoAdd() {
+    if (!isAdminLoggedIn) {
+        alert("權限不足：僅管理員可確認新增路徑");
+        return;
+    }
+
     if(selectedPathIndex === -1) return;
     
     const path = currentGeneratedPaths[selectedPathIndex];
@@ -734,7 +744,8 @@ async function confirmAutoAdd() {
     const pathId = 'PATH-' + Date.now();
     // Ensure existing notes is treated as string and not null/undefined
     const existingNotes = updates.notes ? String(updates.notes) : '';
-    const noteWithId = (existingNotes ? existingNotes + ' ' : '') + `[PathID:${pathId}]`;
+    // Save Path Nodes for visualization
+    const noteWithId = (existingNotes ? existingNotes + ' ' : '') + `[PathID:${pathId}] [PathNodes:${path.nodes.join(',')}]`;
 
     try {
         // Use PRE-LOCKED rows from path generation to avoid re-search errors
@@ -932,6 +943,33 @@ async function confirmAutoAdd() {
     }
 }
 
+window.viewPathOnMap = function(pathId) {
+    const data = getData();
+    // Find any record with this PathID
+    const record = data.find(d => d.notes && d.notes.includes(`[PathID:${pathId}]`));
+    
+    if(!record) {
+        alert("找不到路徑資料");
+        return;
+    }
+    
+    // Extract Nodes
+    const match = record.notes.match(/\[PathNodes:([^\]]+)\]/);
+    if(match) {
+        const nodes = match[1].split(',');
+        currentHighlightedPath = nodes;
+        
+        // Switch to Map View
+        const mapBtn = document.querySelector('[data-target="map-view"]');
+        if(mapBtn) {
+            mapBtn.click();
+            showToast(`已顯示路徑: ${nodes.join('->')}`, 3000);
+        }
+    } else {
+        alert("此路徑未包含視覺化資料");
+    }
+};
+
 // Path Management (Delete/Restore)
 function loadPathMgmtList() {
     const queryInput = document.getElementById('path-search');
@@ -995,15 +1033,21 @@ function loadPathMgmtList() {
         const segments = recs.map(r => `<span class="badge">${r.station_name} ➝ ${r.destination}</span>`).join(' ');
         
         // Buttons
-        let buttons = '';
+        let buttons = `<div style="display:flex; gap:5px;">`;
+
+        // View Button (Check if nodes info exists in notes)
+        const noteWithNodes = recs[0].notes || '';
+        if (noteWithNodes.includes('[PathNodes:')) {
+             buttons += `<button class="action-btn" style="background-color:#3b82f6; font-size:0.9em; padding:5px 10px;" onclick="viewPathOnMap('${p.id}')">🗺️ 檢視</button>`;
+        }
+
         if(isAdminLoggedIn) {
-            buttons = `
-                <div style="display:flex; gap:5px;">
+            buttons += `
                     <button class="action-btn" style="background-color:var(--primary-color); font-size:0.9em; padding:5px 10px;" onclick="openEditPathModal('${p.id}')">編輯</button>
                     <button class="action-btn" style="background-color:var(--danger-color); font-size:0.9em; padding:5px 10px;" onclick="deletePath('${p.id}')">刪除</button>
-                </div>
             `;
         }
+        buttons += `</div>`;
 
         div.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px;">
@@ -1046,8 +1090,10 @@ window.deletePath = async function(pathId) {
     
     try {
         for(const r of records) {
-            // Remove PathID from notes
-            let newNotes = r.notes.replace(`[PathID:${pathId}]`, '').trim();
+            // Remove PathID and PathNodes from notes
+            let newNotes = r.notes.replace(`[PathID:${pathId}]`, '')
+                                  .replace(/\[PathNodes:[^\]]+\]/, '')
+                                  .trim();
             // Clean up double spaces if any
             newNotes = newNotes.replace(/\s+/g, ' ');
             
@@ -1086,7 +1132,18 @@ window.openEditPathModal = function(pathId) {
     
     // Use the first record to populate (assuming consistency)
     const r = records[0];
-    const notesClean = r.notes.replace(`[PathID:${pathId}]`, '').trim();
+    
+    // Extract and preserve PathNodes
+    let pathNodesStr = '';
+    const nodesMatch = r.notes.match(/\[PathNodes:[^\]]+\]/);
+    if(nodesMatch) pathNodesStr = nodesMatch[0];
+    
+    // Store for saving
+    document.getElementById('edit-path-modal').dataset.pathNodes = pathNodesStr;
+
+    const notesClean = r.notes.replace(`[PathID:${pathId}]`, '')
+                              .replace(/\[PathNodes:[^\]]+\]/, '')
+                              .trim();
     
     document.getElementById('edit-path-id').value = pathId;
     document.getElementById('edit-path-usage').value = r.usage || '';
@@ -1115,8 +1172,9 @@ if(editPathForm) {
             return;
         }
         
-        // Re-append PathID
-        const noteWithId = (updates.notes ? updates.notes + ' ' : '') + `[PathID:${pathId}]`;
+        // Re-append PathID and PathNodes
+        const savedPathNodes = document.getElementById('edit-path-modal').dataset.pathNodes || '';
+        const noteWithId = (updates.notes ? updates.notes + ' ' : '') + `[PathID:${pathId}]` + (savedPathNodes ? ' ' + savedPathNodes : '');
         updates.notes = noteWithId;
         
         try {
@@ -1444,12 +1502,16 @@ if (navBtns.length > 0) {
             console.log("Nav clicked:", targetId);
 
             // Admin Permission Check for Auto Add
+            // REMOVED: Allow general users to access the tab for Querying (Mgmt)
+            // Specific actions (Generate/Confirm) will be restricted instead.
+            /*
             if (targetId === 'auto-add' && !isAdminLoggedIn) {
                 alert('權限不足：此功能僅供管理員使用。請先登入。');
                 const loginModal = document.getElementById('login-modal');
                 if (loginModal) openModal(loginModal);
                 return;
             }
+            */
 
             navBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
