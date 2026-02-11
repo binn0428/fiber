@@ -203,9 +203,38 @@ export function exportToExcel(data) {
 
     const wb = XLSX_LIB.utils.book_new();
     
+    const usedSheetNames = new Set();
+
     for (const siteName in sites) {
+        // Sanitize sheet name: remove invalid chars : \ / ? * [ ]
+        let safeName = siteName.replace(/[:\\/?*\[\]]/g, "_");
+        
+        // Excel sheet name limit is 31 chars
+        if (safeName.length > 31) {
+            safeName = safeName.substring(0, 31);
+        }
+        // Fallback for empty name
+        if (!safeName) {
+            safeName = "Sheet";
+        }
+
+        // Handle duplicates
+        let uniqueName = safeName;
+        let counter = 1;
+        while (usedSheetNames.has(uniqueName)) {
+            const suffix = `_${counter}`;
+            // Ensure unique name doesn't exceed 31 chars
+            if (safeName.length + suffix.length > 31) {
+                uniqueName = safeName.substring(0, 31 - suffix.length) + suffix;
+            } else {
+                uniqueName = safeName + suffix;
+            }
+            counter++;
+        }
+        usedSheetNames.add(uniqueName);
+
         const ws = XLSX_LIB.utils.json_to_sheet(sites[siteName]);
-        XLSX_LIB.utils.book_append_sheet(wb, ws, siteName);
+        XLSX_LIB.utils.book_append_sheet(wb, ws, uniqueName);
     }
 
     XLSX_LIB.writeFile(wb, "fiber_management_export.xlsx");
