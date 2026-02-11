@@ -470,16 +470,22 @@ function generatePaths(start, end) {
                          
                          // Add a Virtual Row if we don't have an available record for this fiber yet
                          // This allows "passing through" even if the specific record is missing/reserved
-                         const hasAvailableRow = graph[u][v].some(r => r.fiber_name === fName && (!r.usage || r.usage === ''));
+                         // FIX: We need to inject enough virtual rows to satisfy the 'requiredCores' count.
+                         // Otherwise, path finding will fail if user requests e.g. 2 cores but we only have 1 virtual row.
                          
-                         if (!hasAvailableRow) {
-                             graph[u][v].push({
-                                 station_name: normToOriginal[u] || u, // Use Original Name if available
-                                 destination: normToOriginal[v] || v,   // Use Original Name if available
-                                 fiber_name: fName,
-                                 usage: '', 
-                                 _generated: true
-                             });
+                         const availableCount = graph[u][v].filter(r => r.fiber_name === fName && (!r.usage || r.usage === '')).length;
+                         
+                         if (availableCount < requiredCores) {
+                             const needed = requiredCores - availableCount;
+                             for(let i=0; i<needed; i++) {
+                                 graph[u][v].push({
+                                     station_name: normToOriginal[u] || u, // Use Original Name if available
+                                     destination: normToOriginal[v] || v,   // Use Original Name if available
+                                     fiber_name: fName,
+                                     usage: '', 
+                                     _generated: true
+                                 });
+                             }
                          }
                      }
                 });
