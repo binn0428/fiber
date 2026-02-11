@@ -364,7 +364,8 @@ function generatePaths(start, end) {
         }
 
         // Register Physical Link (Topology)
-        const vNorm = normalizeStationName(d.destination);
+        // Note: vNorm is already calculated above, but we need to ensure it's in scope or re-use it.
+        // It was declared at line 355.
         if(vNorm && uNorm !== vNorm) {
             // Bi-directional registration of the Physical Link
             if(!physicalAdj[uNorm]) physicalAdj[uNorm] = new Set();

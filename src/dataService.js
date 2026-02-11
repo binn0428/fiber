@@ -338,10 +338,10 @@ export function getSiteData(siteName) {
 export function getStats() {
     const sites = {};
     const siteFibers = {};
-    // Map to track destinations for each (Source, Fiber) pair
-    // Structure: { [sourceName]: { [fiberName]: Set(destinationNames) } }
-    const fiberDestinations = {}; 
-    
+
+    // 1. Build Adjacency Graph per Fiber & Init Local Stats
+    const fiberGraph = {}; // { fName: { u: Set(v) } }
+
     currentData.forEach(d => {
         const sName = d.station_name || 'Unknown';
         const fName = d.fiber_name || 'Unclassified';
@@ -362,14 +362,6 @@ export function getStats() {
             };
         }
         
-        // Initialize Destination Tracking
-        if (!fiberDestinations[sName]) {
-            fiberDestinations[sName] = {};
-        }
-        if (!fiberDestinations[sName][fName]) {
-            fiberDestinations[sName][fName] = new Set();
-        }
-        
         const group = siteFibers[sName][fName];
         group.rowCount++;
 
@@ -385,11 +377,6 @@ export function getStats() {
             group.usedCount++;
         }
 
-        // Track Destination
-        if (destination && destination !== sName) {
-            fiberDestinations[sName][fName].add(destination);
-        }
-        
         // Track Max Explicit Core Count
         let cores = parseInt(d.core_count);
         if (!isNaN(cores) && cores > 0) {
@@ -398,43 +385,76 @@ export function getStats() {
             }
             group.validCoreCount++;
         }
+
+        // Build Connected Graph (Undirected)
+        // If A connects to B via Fiber X, they are in the same component
+        if (destination && destination !== sName) {
+            if (!fiberGraph[fName]) fiberGraph[fName] = {};
+            
+            // Add Edge U <-> V
+            if (!fiberGraph[fName][sName]) fiberGraph[fName][sName] = new Set();
+            fiberGraph[fName][sName].add(destination);
+            
+            if (!fiberGraph[fName][destination]) fiberGraph[fName][destination] = new Set();
+            fiberGraph[fName][destination].add(sName);
+        }
     });
 
-    // Post-Processing: Propagate Stats to Destination Sites
-    // For every (Source, Fiber) group, if it connects to Destination(s),
-    // those Destinations inherit the Source's stats for that Fiber.
-    for (const sName in fiberDestinations) {
-        for (const fName in fiberDestinations[sName]) {
-            const dests = fiberDestinations[sName][fName];
-            const sourceGroup = siteFibers[sName][fName];
+    // 2. Process Connected Components (Global Aggregation)
+    // For each fiber, find connected components and aggregate stats
+    for (const fName in fiberGraph) {
+        const adj = fiberGraph[fName];
+        const nodes = Object.keys(adj);
+        const visited = new Set();
+        
+        for (const node of nodes) {
+            if (visited.has(node)) continue;
             
-            dests.forEach(dest => {
-                // Initialize Destination Site if missing
-                if (!sites[dest]) {
-                    sites[dest] = { name: dest, total: 0, used: 0, free: 0 };
-                }
-                if (!siteFibers[dest]) {
-                    siteFibers[dest] = {};
-                }
+            // BFS to find component
+            const component = [];
+            const queue = [node];
+            visited.add(node);
+            
+            while (queue.length > 0) {
+                const u = queue.shift();
+                component.push(u);
                 
-                // Create or Get Destination Group
-                // We assume the Source is the "Authority" for this Fiber's stats.
-                // We overwrite/sync the stats to the destination.
-                // This ensures Branch Station sees "48 cores" even if it only has 1 incoming connection row.
-                if (!siteFibers[dest][fName]) {
-                    siteFibers[dest][fName] = { ...sourceGroup };
-                } else {
-                    // If destination already has stats (e.g. mixed data from multiple sources), 
-                    // we SUM the counts to reflect total aggregated usage/capacity at this node.
-                    // This fixes the issue where split cables (e.g. cores 1-6 from A, 7-12 from B)
-                    // were under-reported by Math.max.
-                    const destGroup = siteFibers[dest][fName];
-                    destGroup.rowCount += sourceGroup.rowCount;
-                    destGroup.usedCount += sourceGroup.usedCount;
-                    destGroup.validCoreCount += sourceGroup.validCoreCount;
-                    // Capacity (Max Core Number) should still be Max, as it represents the cable's "Size"
-                    destGroup.explicitCapacity = Math.max(destGroup.explicitCapacity, sourceGroup.explicitCapacity);
+                if (adj[u]) {
+                    adj[u].forEach(v => {
+                        if (!visited.has(v)) {
+                            visited.add(v);
+                            queue.push(v);
+                        }
+                    });
                 }
+            }
+            
+            // Aggregate Stats for Component
+            const aggStats = {
+                rowCount: 0,
+                usedCount: 0,
+                validCoreCount: 0,
+                explicitCapacity: 0
+            };
+            
+            component.forEach(u => {
+                if (siteFibers[u] && siteFibers[u][fName]) {
+                    const g = siteFibers[u][fName];
+                    aggStats.rowCount += g.rowCount;
+                    aggStats.usedCount += g.usedCount;
+                    aggStats.validCoreCount += g.validCoreCount;
+                    aggStats.explicitCapacity = Math.max(aggStats.explicitCapacity, g.explicitCapacity);
+                }
+            });
+            
+            // Assign Aggregated Stats to ALL nodes in component
+            component.forEach(u => {
+                // Ensure site exists (e.g. for passive destinations)
+                if (!sites[u]) sites[u] = { name: u, total: 0, used: 0, free: 0 };
+                if (!siteFibers[u]) siteFibers[u] = {};
+                
+                // Overwrite with aggregated stats
+                siteFibers[u][fName] = { ...aggStats };
             });
         }
     }
