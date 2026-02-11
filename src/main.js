@@ -2,7 +2,7 @@
 console.log("Main script starting...");
 
 import { initSupabase, checkConnection, getSupabase } from './supabase.js';
-import { loadData, addRecord, updateRecord, getData, getStats, getSiteData, searchLine, getFiberPath, syncData, deleteStation, getAppSettings, setAppSettings } from './dataService.js';
+import { loadData, addRecord, updateRecord, deleteRecord, getData, getStats, getSiteData, searchLine, getFiberPath, syncData, deleteStation, getAppSettings, setAppSettings } from './dataService.js';
 import { parseExcel, exportToExcel } from './excelService.js';
 import './mobile.js';
 

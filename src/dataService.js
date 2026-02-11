@@ -547,6 +547,40 @@ export function getFiberPath(fiberName) {
     return currentData.filter(d => d.fiber_name === fiberName);
 }
 
+export async function deleteRecord(id, tableHint = null) {
+    const sb = getSupabase();
+    if (!sb) throw new Error("Supabase not configured");
+
+    const idx = currentData.findIndex(d => d.id === id && (!tableHint || d._table === tableHint));
+    
+    if (idx !== -1) {
+        const record = currentData[idx];
+        const tableName = record._table;
+
+        // Optimistic delete
+        currentData.splice(idx, 1);
+        notify();
+
+        const { error } = await sb.from(tableName).delete().eq('id', id);
+        if (error) {
+            console.error(`Error deleting record ${id} from ${tableName}:`, error);
+            // Revert by reloading
+            await loadData();
+            throw error;
+        }
+    } else {
+        console.warn(`deleteRecord: Record with id ${id} not found.`);
+        // Consider if we should throw error or just return. 
+        // If not found in local state, it might still exist in DB if state is stale,
+        // but for safety we rely on local state to know the table.
+        if (tableHint) {
+            // Try blind delete if we know the table
+             const { error } = await sb.from(tableHint).delete().eq('id', id);
+             if (error) throw error;
+        }
+    }
+}
+
 export async function deleteStation(stationName) {
     const sb = getSupabase();
     if (!sb) throw new Error("Supabase not configured");
