@@ -945,18 +945,73 @@ async function confirmAutoAdd() {
 
 window.viewPathOnMap = function(pathId) {
     const data = getData();
-    // Find any record with this PathID
-    const record = data.find(d => d.notes && d.notes.includes(`[PathID:${pathId}]`));
+    // Find ALL records with this PathID to ensure we catch the tag or can reconstruct
+    const records = data.filter(d => d.notes && d.notes.includes(`[PathID:${pathId}]`));
     
-    if(!record) {
+    if(records.length === 0) {
         alert("找不到路徑資料");
         return;
     }
     
-    // Extract Nodes
-    const match = record.notes.match(/\[PathNodes:([^\]]+)\]/);
-    if(match) {
-        const nodes = match[1].split(',');
+    // 1. Try to find explicit tag
+    const recordWithTag = records.find(d => d.notes.includes('[PathNodes:'));
+    
+    let nodes = null;
+    
+    if (recordWithTag) {
+        const match = recordWithTag.notes.match(/\[PathNodes:([^\]]+)\]/);
+        if(match) {
+            nodes = match[1].split(',');
+        }
+    }
+    
+    // 2. Fallback: Reconstruct
+    if (!nodes) {
+        // Need to define reconstructPathNodes globally or inline it here.
+        // For simplicity, let's reuse the logic (inline) or move it out.
+        // Since I defined it inside loadPathMgmtList, I should move it out or duplicate.
+        // Duplicating for safety as I don't want to mess up scope refactoring now.
+        
+        try {
+            const adj = {};
+            const counts = {};
+            const ensure = (n) => { if(!counts[n]) counts[n] = {in:0, out:0}; };
+            
+            records.forEach(r => {
+                const u = normalizeStationName(r.station_name);
+                const v = normalizeStationName(r.destination);
+                if(!u || !v) return;
+                if(!adj[u]) adj[u] = [];
+                if(!adj[u].includes(v)) adj[u].push(v);
+                ensure(u); ensure(v);
+                counts[u].out++;
+                counts[v].in++;
+            });
+            
+            const candidates = Object.keys(counts).sort();
+            let start = candidates.find(n => counts[n].out > counts[n].in);
+            if(!start) start = candidates.find(n => counts[n].out > 0);
+            
+            if(start) {
+                const path = [start];
+                let curr = start;
+                const visited = new Set([start]);
+                for(let i=0; i<records.length + 5; i++) {
+                    const neighbors = adj[curr];
+                    if(!neighbors || neighbors.length === 0) break;
+                    const next = neighbors.find(n => !visited.has(n));
+                    if(next) {
+                        path.push(next);
+                        visited.add(next);
+                        curr = next;
+                    } else break;
+                }
+                if (path.length > 1) nodes = path;
+            }
+        } catch(e) { console.error(e); }
+    }
+    
+    if(nodes) {
         currentHighlightedPath = nodes;
         
         // Switch to Map View
@@ -966,7 +1021,7 @@ window.viewPathOnMap = function(pathId) {
             showToast(`已顯示路徑: ${nodes.join('->')}`, 3000);
         }
     } else {
-        alert("此路徑未包含視覺化資料");
+        alert("此路徑未包含視覺化資料，且無法自動重建路徑順序。");
     }
 };
 
@@ -1004,6 +1059,63 @@ function loadPathMgmtList() {
         return;
     }
     
+    // Helper to reconstruct path nodes from records if tag is missing
+    function reconstructPathNodes(records) {
+        try {
+            const adj = {};
+            const counts = {}; // { name: { in: 0, out: 0 } }
+            
+            const ensure = (n) => { if(!counts[n]) counts[n] = {in:0, out:0}; };
+            
+            records.forEach(r => {
+                const u = normalizeStationName(r.station_name);
+                const v = normalizeStationName(r.destination);
+                if(!u || !v) return;
+                
+                if(!adj[u]) adj[u] = [];
+                // Avoid duplicates in adj
+                if(!adj[u].includes(v)) adj[u].push(v);
+                
+                ensure(u); ensure(v);
+                counts[u].out++;
+                counts[v].in++;
+            });
+            
+            // Find Start Node: Out > In (Start of path), or just Out > 0 if cycle/loop
+            // Sort keys to ensure deterministic start if multiple candidates
+            const candidates = Object.keys(counts).sort();
+            let start = candidates.find(n => counts[n].out > counts[n].in);
+            if(!start) start = candidates.find(n => counts[n].out > 0);
+            
+            if(!start) return []; 
+            
+            const path = [start];
+            let curr = start;
+            const visited = new Set([start]);
+            
+            // Limit iterations to prevent infinite loops
+            for(let i=0; i<records.length + 5; i++) {
+                const neighbors = adj[curr];
+                if(!neighbors || neighbors.length === 0) break;
+                
+                // Prefer unvisited neighbor
+                const next = neighbors.find(n => !visited.has(n));
+                if(next) {
+                    path.push(next);
+                    visited.add(next);
+                    curr = next;
+                } else {
+                    // Dead end or all neighbors visited
+                    break;
+                }
+            }
+            return path.length > 1 ? path : [];
+        } catch(e) {
+            console.error("Path reconstruction failed", e);
+            return [];
+        }
+    }
+
     let count = 0;
     sortedPaths.forEach(p => {
         const usage = p.usage || '';
@@ -1026,18 +1138,28 @@ function loadPathMgmtList() {
         const dateStr = p.time ? new Date(p.time).toLocaleString() : '未知時間';
         
         // Construct Path Flow
-        // We have records, but they might be out of order.
-        // We can try to chain them.
         const recs = [...p.records];
-        // Simple display: list segments
         const segments = recs.map(r => `<span class="badge">${r.station_name} ➝ ${r.destination}</span>`).join(' ');
         
         // Buttons
         let buttons = `<div style="display:flex; gap:5px;">`;
 
-        // View Button (Check if nodes info exists in notes)
-        const noteWithNodes = recs[0].notes || '';
-        if (noteWithNodes.includes('[PathNodes:')) {
+        // Robust Check for PathNodes
+        // 1. Try to find explicit tag in ANY record
+        let hasPathInfo = false;
+        const recordWithTag = recs.find(r => r.notes && r.notes.includes('[PathNodes:'));
+        
+        // 2. If no tag, try to reconstruct
+        if (recordWithTag) {
+            hasPathInfo = true;
+        } else {
+            const reconstructed = reconstructPathNodes(recs);
+            if (reconstructed.length > 1) {
+                hasPathInfo = true;
+            }
+        }
+
+        if (hasPathInfo) {
              buttons += `<button class="action-btn" style="background-color:#3b82f6; font-size:0.9em; padding:5px 10px;" onclick="viewPathOnMap('${p.id}')">🗺️ 檢視</button>`;
         }
 
