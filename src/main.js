@@ -1027,170 +1027,193 @@ window.viewPathOnMap = function(pathId) {
 
 // Path Management (Delete/Restore)
 function loadPathMgmtList() {
-    const queryInput = document.getElementById('path-search');
-    const query = queryInput ? queryInput.value.toLowerCase().trim() : '';
-    const container = document.getElementById('mgmt-path-list');
-    if(!container) return;
-    
-    const data = getData();
-    // Group by PathID
-    const paths = {};
-    
-    data.forEach(d => {
-        if(d.notes && typeof d.notes === 'string' && d.notes.includes('[PathID:')) {
-            const match = d.notes.match(/\[PathID:([^\]]+)\]/);
-            if(match) {
-                const pid = match[1];
-                if(!paths[pid]) paths[pid] = { id: pid, records: [], usage: d.usage, time: 0 };
-                paths[pid].records.push(d);
-                // Extract time from ID if possible
-                const ts = parseInt(pid.split('-')[1]);
-                if(!isNaN(ts)) paths[pid].time = ts;
-            }
+    try {
+        console.log("Loading Path Management List...");
+        const queryInput = document.getElementById('path-search');
+        const query = queryInput ? queryInput.value.toLowerCase().trim() : '';
+        const container = document.getElementById('mgmt-path-list');
+        if(!container) {
+            console.error("Container #mgmt-path-list not found");
+            return;
         }
-    });
-    
-    const sortedPaths = Object.values(paths).sort((a, b) => b.time - a.time);
-    
-    container.innerHTML = '';
-    
-    if(sortedPaths.length === 0) {
-        container.innerHTML = '<p style="padding:10px; color:#aaa;">尚無自動生成的路徑紀錄。</p>';
-        return;
-    }
-    
-    // Helper to reconstruct path nodes from records if tag is missing
-    function reconstructPathNodes(records) {
-        try {
-            const adj = {};
-            const counts = {}; // { name: { in: 0, out: 0 } }
-            
-            const ensure = (n) => { if(!counts[n]) counts[n] = {in:0, out:0}; };
-            
-            records.forEach(r => {
-                const u = normalizeStationName(r.station_name);
-                const v = normalizeStationName(r.destination);
-                if(!u || !v) return;
-                
-                if(!adj[u]) adj[u] = [];
-                // Avoid duplicates in adj
-                if(!adj[u].includes(v)) adj[u].push(v);
-                
-                ensure(u); ensure(v);
-                counts[u].out++;
-                counts[v].in++;
-            });
-            
-            // Find Start Node: Out > In (Start of path), or just Out > 0 if cycle/loop
-            // Sort keys to ensure deterministic start if multiple candidates
-            const candidates = Object.keys(counts).sort();
-            let start = candidates.find(n => counts[n].out > counts[n].in);
-            if(!start) start = candidates.find(n => counts[n].out > 0);
-            
-            if(!start) return []; 
-            
-            const path = [start];
-            let curr = start;
-            const visited = new Set([start]);
-            
-            // Limit iterations to prevent infinite loops
-            for(let i=0; i<records.length + 5; i++) {
-                const neighbors = adj[curr];
-                if(!neighbors || neighbors.length === 0) break;
-                
-                // Prefer unvisited neighbor
-                const next = neighbors.find(n => !visited.has(n));
-                if(next) {
-                    path.push(next);
-                    visited.add(next);
-                    curr = next;
-                } else {
-                    // Dead end or all neighbors visited
-                    break;
+        
+        const data = getData();
+        console.log(`Loaded ${data.length} records for path mgmt.`);
+
+        // Group by PathID
+        const paths = {};
+        
+        data.forEach(d => {
+            if(d.notes && typeof d.notes === 'string' && d.notes.includes('[PathID:')) {
+                const match = d.notes.match(/\[PathID:([^\]]+)\]/);
+                if(match) {
+                    const pid = match[1];
+                    if(!paths[pid]) paths[pid] = { id: pid, records: [], usage: d.usage, time: 0 };
+                    paths[pid].records.push(d);
+                    // Extract time from ID if possible
+                    const parts = pid.split('-');
+                    if (parts.length > 1) {
+                        const ts = parseInt(parts[1]);
+                        if(!isNaN(ts)) paths[pid].time = ts;
+                    }
                 }
             }
-            return path.length > 1 ? path : [];
-        } catch(e) {
-            console.error("Path reconstruction failed", e);
-            return [];
-        }
-    }
-
-    let count = 0;
-    sortedPaths.forEach(p => {
-        const usage = p.usage || '';
-        const pid = p.id || '';
-        if(query && !usage.toLowerCase().includes(query) && !pid.toLowerCase().includes(query)) {
-             // Check stations too
-             const stationStr = p.records.map(r => (r.station_name||'') + (r.destination||'')).join('');
-             if(!stationStr.toLowerCase().includes(query)) return;
+        });
+        
+        const sortedPaths = Object.values(paths).sort((a, b) => b.time - a.time);
+        console.log(`Found ${sortedPaths.length} paths.`);
+        
+        container.innerHTML = '';
+        
+        if(sortedPaths.length === 0) {
+            container.innerHTML = '<p style="padding:10px; color:white;">尚無自動生成的路徑紀錄。</p>';
+            return;
         }
         
-        count++;
-        const div = document.createElement('div');
-        div.className = 'path-mgmt-item';
-        div.style.border = '1px solid #444';
-        div.style.borderRadius = '5px';
-        div.style.padding = '15px';
-        div.style.marginBottom = '10px';
-        div.style.backgroundColor = 'var(--bg-secondary)';
-        
-        const dateStr = p.time ? new Date(p.time).toLocaleString() : '未知時間';
-        
-        // Construct Path Flow
-        const recs = [...p.records];
-        const segments = recs.map(r => `<span class="badge">${r.station_name} ➝ ${r.destination}</span>`).join(' ');
-        
-        // Buttons
-        let buttons = `<div style="display:flex; gap:5px;">`;
-
-        // Robust Check for PathNodes
-        // 1. Try to find explicit tag in ANY record
-        let hasPathInfo = false;
-        const recordWithTag = recs.find(r => r.notes && r.notes.includes('[PathNodes:'));
-        
-        // 2. If no tag, try to reconstruct
-        if (recordWithTag) {
-            hasPathInfo = true;
-        } else {
-            const reconstructed = reconstructPathNodes(recs);
-            if (reconstructed.length > 1) {
-                hasPathInfo = true;
+        // Helper to reconstruct path nodes from records if tag is missing
+        const reconstructPathNodes = (records) => {
+            try {
+                const adj = {};
+                const counts = {}; // { name: { in: 0, out: 0 } }
+                
+                const ensure = (n) => { if(!counts[n]) counts[n] = {in:0, out:0}; };
+                
+                records.forEach(r => {
+                    const u = normalizeStationName(r.station_name);
+                    const v = normalizeStationName(r.destination);
+                    if(!u || !v) return;
+                    
+                    if(!adj[u]) adj[u] = [];
+                    // Avoid duplicates in adj
+                    if(!adj[u].includes(v)) adj[u].push(v);
+                    
+                    ensure(u); ensure(v);
+                    counts[u].out++;
+                    counts[v].in++;
+                });
+                
+                // Find Start Node: Out > In (Start of path), or just Out > 0 if cycle/loop
+                // Sort keys to ensure deterministic start if multiple candidates
+                const candidates = Object.keys(counts).sort();
+                let start = candidates.find(n => counts[n].out > counts[n].in);
+                if(!start) start = candidates.find(n => counts[n].out > 0);
+                
+                if(!start) return []; 
+                
+                const path = [start];
+                let curr = start;
+                const visited = new Set([start]);
+                
+                // Limit iterations to prevent infinite loops
+                for(let i=0; i<records.length + 5; i++) {
+                    const neighbors = adj[curr];
+                    if(!neighbors || neighbors.length === 0) break;
+                    
+                    // Prefer unvisited neighbor
+                    const next = neighbors.find(n => !visited.has(n));
+                    if(next) {
+                        path.push(next);
+                        visited.add(next);
+                        curr = next;
+                    } else {
+                        // Dead end or all neighbors visited
+                        break;
+                    }
+                }
+                return path.length > 1 ? path : [];
+            } catch(e) {
+                console.error("Path reconstruction failed", e);
+                return [];
             }
-        }
+        };
 
-        if (hasPathInfo) {
-             buttons += `<button class="action-btn" style="background-color:#3b82f6; font-size:0.9em; padding:5px 10px;" onclick="viewPathOnMap('${p.id}')">🗺️ 檢視</button>`;
-        }
+        let count = 0;
+        sortedPaths.forEach(p => {
+            const usage = p.usage || '';
+            const pid = p.id || '';
+            if(query && !usage.toLowerCase().includes(query) && !pid.toLowerCase().includes(query)) {
+                 // Check stations too
+                 const stationStr = p.records.map(r => (r.station_name||'') + (r.destination||'')).join('');
+                 if(!stationStr.toLowerCase().includes(query)) return;
+            }
+            
+            count++;
+            const div = document.createElement('div');
+            div.className = 'path-mgmt-item';
+            div.style.border = '1px solid #444';
+            div.style.borderRadius = '5px';
+            div.style.padding = '15px';
+            div.style.marginBottom = '10px';
+            div.style.backgroundColor = 'var(--bg-secondary)';
+            
+            const dateStr = p.time ? new Date(p.time).toLocaleString() : '未知時間';
+            
+            // Construct Path Flow
+            const recs = [...p.records];
+            const segments = recs.map(r => `<span class="badge">${r.station_name} ➝ ${r.destination}</span>`).join(' ');
+            
+            // Buttons
+            let buttons = `<div style="display:flex; gap:5px;">`;
 
-        if(isAdminLoggedIn) {
-            buttons += `
-                    <button class="action-btn" style="background-color:var(--primary-color); font-size:0.9em; padding:5px 10px;" onclick="openEditPathModal('${p.id}')">編輯</button>
-                    <button class="action-btn" style="background-color:var(--danger-color); font-size:0.9em; padding:5px 10px;" onclick="deletePath('${p.id}')">刪除</button>
-            `;
-        }
-        buttons += `</div>`;
+            // Robust Check for PathNodes
+            // 1. Try to find explicit tag in ANY record
+            let hasPathInfo = false;
+            const recordWithTag = recs.find(r => r.notes && r.notes.includes('[PathNodes:'));
+            
+            // 2. If no tag, try to reconstruct
+            if (recordWithTag) {
+                hasPathInfo = true;
+            } else {
+                const reconstructed = reconstructPathNodes(recs);
+                if (reconstructed.length > 1) {
+                    hasPathInfo = true;
+                }
+            }
 
-        div.innerHTML = `
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px;">
-                <div>
-                    <h4 style="margin:0; color:var(--primary-color);">${p.usage || '無用途'}</h4>
-                    <small style="color:#888;">${dateStr} | ID: ${p.id}</small>
+            if (hasPathInfo) {
+                 buttons += `<button class="action-btn" style="background-color:#3b82f6; font-size:0.9em; padding:5px 10px;" onclick="viewPathOnMap('${p.id}')">🗺️ 檢視</button>`;
+            }
+
+            // Always show admin buttons if logged in (Edit/Delete)
+            if(isAdminLoggedIn) {
+                buttons += `
+                        <button class="action-btn" style="background-color:var(--primary-color); font-size:0.9em; padding:5px 10px;" onclick="openEditPathModal('${p.id}')">編輯</button>
+                        <button class="action-btn" style="background-color:var(--danger-color); font-size:0.9em; padding:5px 10px;" onclick="deletePath('${p.id}')">刪除</button>
+                `;
+            }
+            buttons += `</div>`;
+
+            // Clean notes for display
+            const displayNotes = (p.records[0].notes || '')
+                .replace(`[PathID:${p.id}]`, '')
+                .replace(/\[PathNodes:[^\]]+\]/, '')
+                .trim();
+
+            div.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px;">
+                    <div>
+                        <h4 style="margin:0; color:var(--primary-color);">${p.usage || '無用途'}</h4>
+                        <small style="color:#888;">${dateStr} | ID: ${p.id}</small>
+                    </div>
+                    ${buttons}
                 </div>
-                ${buttons}
-            </div>
-            <div style="font-size:0.9em; color:#ccc;">
-                <div><strong>使用單位:</strong> ${p.records[0].department || '-'} | <strong>聯絡人:</strong> ${p.records[0].contact || '-'}</div>
-                <div><strong>備註:</strong> ${p.records[0].notes.replace(`[PathID:${p.id}]`, '') || '-'}</div>
-                <div style="margin-top:5px;"><strong>經過路徑 (${p.records.length}段):</strong></div>
-                <div style="margin-top:5px; display:flex; flex-wrap:wrap; gap:5px;">${segments}</div>
-            </div>
-        `;
-        container.appendChild(div);
-    });
-    
-    if(count === 0) {
-        container.innerHTML = '<p style="padding:10px; color:#aaa;">無符合搜尋條件的紀錄。</p>';
+                <div style="font-size:0.9em; color:#ccc;">
+                    <div><strong>使用單位:</strong> ${p.records[0].department || '-'} | <strong>聯絡人:</strong> ${p.records[0].contact || '-'}</div>
+                    <div><strong>備註:</strong> ${displayNotes || '-'}</div>
+                    <div style="margin-top:5px;"><strong>經過路徑 (${p.records.length}段):</strong></div>
+                    <div style="margin-top:5px; display:flex; flex-wrap:wrap; gap:5px;">${segments}</div>
+                </div>
+            `;
+            container.appendChild(div);
+        });
+        
+        if(count === 0) {
+            container.innerHTML = '<p style="padding:10px; color:white;">無符合搜尋條件的紀錄。</p>';
+        }
+    } catch(e) {
+        console.error("Error loading path mgmt list:", e);
+        const container = document.getElementById('mgmt-path-list');
+        if(container) container.innerHTML = `<div style="color:red; padding:10px;">載入失敗: ${e.message}</div>`;
     }
 }
 
