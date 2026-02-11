@@ -770,10 +770,8 @@ async function confirmAutoAdd() {
                 
                 // Match Direction 1: A->B
                 const matchDirect = (uNorm === sNorm && vNorm === dNorm && fiber === fName);
-                // Match Direction 2: B->A (Reverse)
-                const matchReverse = (uNorm === dNorm && vNorm === sNorm && fiber === fName);
                 
-                return matchDirect || matchReverse;
+                return matchDirect;
             }).map(d => {
                 const num = parseInt(d.core_count);
                 return isNaN(num) ? 0 : num;
