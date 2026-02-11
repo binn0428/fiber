@@ -3084,7 +3084,7 @@ function attachInlineEditing(container) {
 
 // Render Table
 function renderDataTable() {
-    const data = getData().filter(d => !(String(d.source||'').toLowerCase().includes('auto')));
+    const data = getData();
     const totalPages = Math.ceil(data.length / ITEMS_PER_PAGE);
     
     // Ensure currentPage is valid
@@ -3120,7 +3120,7 @@ function renderPaginationControls(totalPages) {
     
     const info = document.createElement('span');
     info.className = 'pagination-info';
-    info.textContent = `第 ${currentPage} / ${totalPages} 頁 (共 ${getData().filter(d => !(String(d.source||'').toLowerCase().includes('auto'))).length} 筆)`;
+    info.textContent = `第 ${currentPage} / ${totalPages} 頁 (共 ${getData().length} 筆)`;
     
     container.appendChild(prevBtn);
     container.appendChild(info);
