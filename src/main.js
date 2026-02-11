@@ -341,10 +341,21 @@ function generatePaths(start, end) {
     const stationFibers = {}; // uNorm -> Set(fiber_name)
     const fiberDestinations = {}; // uNorm -> fiber_name -> Set(vNorm)
     const globalFiberDestinations = {}; // fiber_name -> Set(vNorm) - NEW: Global Map
-    
+    const normToOriginal = {}; // uNorm -> OriginalName (e.g. "500區" -> "500區(c5)")
+
     data.forEach(d => {
         const uNorm = normalizeStationName(d.station_name);
         if(!uNorm) return;
+
+        // Store original name mapping (First one wins, or maybe prefer longer?)
+        if (!normToOriginal[uNorm] || d.station_name.length > normToOriginal[uNorm].length) {
+            normToOriginal[uNorm] = d.station_name;
+        }
+        
+        const vNorm = normalizeStationName(d.destination);
+        if (vNorm && (!normToOriginal[vNorm] || d.destination.length > normToOriginal[vNorm].length)) {
+             normToOriginal[vNorm] = d.destination;
+        }
 
         // Register Fiber at Station
         if(d.fiber_name) {
@@ -462,8 +473,8 @@ function generatePaths(start, end) {
                          
                          if (!hasAvailableRow) {
                              graph[u][v].push({
-                                 station_name: u, 
-                                 destination: v,
+                                 station_name: normToOriginal[u] || u, // Use Original Name if available
+                                 destination: normToOriginal[v] || v,   // Use Original Name if available
                                  fiber_name: fName,
                                  usage: '', 
                                  _generated: true
@@ -765,7 +776,9 @@ async function confirmAutoAdd() {
                  destination: row.destination,
                  fiber_name: row.fiber_name,
                  usage: updates.usage,
-                 notes: noteWithId
+                 notes: noteWithId,
+                 department: updates.department,
+                 contact: updates.contact
                  // core_number: ??? We leave it empty as it's a virtual inferred link
              };
              
@@ -1997,6 +2010,9 @@ function renderMap() {
             line.innerHTML = `<animate attributeName="stroke-opacity" values="1;0.4;1" dur="1.5s" repeatCount="indefinite" />`;
             // Ensure highlighted lines are on top (by appending last? SVG doesn't have z-index)
             // We can handle this by sorting links before drawing, but for now this is okay.
+        } else {
+            // Clear animation if not highlighted (important for re-renders)
+            line.innerHTML = '';
         }
         
         // Add Data Attributes for Update
