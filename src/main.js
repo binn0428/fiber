@@ -2958,6 +2958,40 @@ function openSiteDetails(siteName) {
                 };
                 const groupRows = sortByCore(groups[key] || []);
 
+                // Determine Display Rows EARLY to calculate specific used cores
+                let displayRows = groupRows;
+                if (ownerMainSite && ownerMainSite !== siteName) {
+                    const mainRows = getSiteData(ownerMainSite).filter(r => (r.fiber_name || '未分類') === key);
+                    if (mainRows.length > 0) {
+                        displayRows = sortByCore(mainRows);
+                    }
+                }
+                displayRows = sortByCore(displayRows);
+
+                // Calculate Used Cores String (Ranges)
+                const usedRows = displayRows.filter(isRowUsed);
+                const usedCores = usedRows
+                    .map(r => parseInt(r.core_count))
+                    .filter(n => !isNaN(n))
+                    .sort((a, b) => a - b);
+                
+                let usedCoresText = '';
+                if (usedCores.length > 0) {
+                    const ranges = [];
+                    let start = usedCores[0];
+                    let prev = usedCores[0];
+                    
+                    for (let i = 1; i < usedCores.length; i++) {
+                        if (usedCores[i] !== prev + 1) {
+                            ranges.push(start === prev ? String(start) : `${start}-${prev}`);
+                            start = usedCores[i];
+                        }
+                        prev = usedCores[i];
+                    }
+                    ranges.push(start === prev ? String(start) : `${start}-${prev}`);
+                    usedCoresText = `(${ranges.join(', ')})`;
+                }
+
                 // Calculate stats for this group
                 // Prefer Synced Stats from Main Station if available (Authoritative)
                 let total, used, free;
@@ -3003,7 +3037,7 @@ function openSiteDetails(siteName) {
                 header.innerHTML = `
                     <strong>${key}</strong>
                     <div style="font-size: 0.9em;">
-                        <span style="color: #ef4444; margin-right: 12px; font-weight: bold;">已用: ${used}</span>
+                        <span style="color: #ef4444; margin-right: 12px; font-weight: bold;">已用: ${used} ${usedCoresText}</span>
                         <span style="color: #10b981; font-weight: bold;">可用: ${free}</span>
                     </div>
                 `;
@@ -3055,14 +3089,7 @@ function openSiteDetails(siteName) {
                 const tbody = table.querySelector('tbody');
                 
                 // Render Rows using existing helper logic (slightly adapted)
-                let displayRows = groupRows;
-                if (ownerMainSite && ownerMainSite !== siteName) {
-                    const mainRows = getSiteData(ownerMainSite).filter(r => (r.fiber_name || '未分類') === key);
-                    if (mainRows.length > 0) {
-                        displayRows = sortByCore(mainRows);
-                    }
-                }
-                displayRows = sortByCore(displayRows);
+                // displayRows is already calculated above
                 
                 displayRows.forEach(row => {
                      const tr = document.createElement('tr');
