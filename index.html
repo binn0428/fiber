@@ -325,5 +325,33 @@
             </form>
         </div>
     </div>
+
+    <!-- Edit Path Modal -->
+    <div id="edit-path-modal" class="modal hidden">
+        <div class="modal-content sm">
+            <span class="close-modal">&times;</span>
+            <h3>編輯路徑資料</h3>
+            <form id="edit-path-form">
+                <input type="hidden" id="edit-path-id">
+                <div class="form-group">
+                    <label>用途</label>
+                    <input type="text" id="edit-path-usage" required>
+                </div>
+                <div class="form-group">
+                    <label>使用單位</label>
+                    <input type="text" id="edit-path-department">
+                </div>
+                <div class="form-group">
+                    <label>聯絡人</label>
+                    <input type="text" id="edit-path-contact">
+                </div>
+                <div class="form-group">
+                    <label>備註 (PathID 將自動保留)</label>
+                    <input type="text" id="edit-path-notes">
+                </div>
+                <button type="submit" class="btn-primary full-width">儲存變更</button>
+            </form>
+        </div>
+    </div>
 </body>
 </html>
