@@ -1812,11 +1812,13 @@ if (mapContainer) {
             const exists = getData().some(d => d.station_name === name);
             if (!exists) {
                 await addRecord({ station_name: name, source: 'MANUAL', notes: '架構圖新增站點' });
+                await loadData();
             }
             nodePositions[name] = { x: xPct, y: yPct };
             stationCreationState = { active: false };
             mapContainer.style.cursor = '';
             renderMap();
+            renderDataTable();
         } catch (err) {
             stationCreationState = { active: false };
             mapContainer.style.cursor = '';
@@ -1844,7 +1846,9 @@ async function finishConnectionCreation(source, target) {
             notes: '架構圖手動新增'
         });
         alert("連線建立成功！");
-        renderMap(); 
+            await loadData();
+            renderMap(); 
+            renderDataTable();
     } catch (e) {
         console.error(e);
         alert("建立失敗：" + e.message);
