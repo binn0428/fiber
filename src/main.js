@@ -612,6 +612,12 @@ function generatePaths(start, end) {
             }
         }
     }
+
+    // Attach original start/end inputs to each path for later use
+    paths.forEach(p => {
+        p.originalStart = start;
+        p.originalEnd = end;
+    });
     
     currentGeneratedPaths = paths;
     renderPaths(paths);
@@ -728,6 +734,8 @@ async function confirmAutoAdd() {
         department: document.getElementById('auto-department').value.trim(),
         contact: document.getElementById('auto-contact').value.trim(),
         notes: document.getElementById('auto-notes').value.trim(),
+        net_start: path.originalStart,
+        net_end: path.originalEnd
         // core_count: document.getElementById('auto-core-count').value.trim(), // DO NOT OVERWRITE
         // port: document.getElementById('auto-port').value.trim() // DO NOT OVERWRITE
     };
@@ -889,6 +897,8 @@ async function confirmAutoAdd() {
                  notes: noteWithId,
                  department: updates.department,
                  contact: updates.contact,
+                 net_start: updates.net_start,
+                 net_end: updates.net_end,
                  // Auto-assign core number for virtual rows
                  core_count: row._assignedCore || '1'
              };
