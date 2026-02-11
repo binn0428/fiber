@@ -1704,17 +1704,27 @@ if (searchBtn && globalSearchInput) {
                              }
                              
                              alert('刪除完成');
-                             // Clear search and reload
-                             globalSearchInput.value = '';
-                             await loadData();
-                             renderDataTable();
-                         } catch(e) {
-                             console.error(e);
-                             alert('刪除過程發生錯誤: ' + e.message);
-                             // Reload anyway to show current state
-                             await loadData();
-                             renderDataTable();
-                         }
+                            // User Request: Maintain search view after delete
+                            // Do NOT clear search input
+                            // globalSearchInput.value = '';
+                            
+                            // Reload data to ensure consistency
+                            await loadData();
+                            
+                            // Re-run search to update the view
+                            performSearch();
+                        } catch(e) {
+                            console.error(e);
+                            alert('刪除過程發生錯誤: ' + e.message);
+                            // Reload anyway to show current state
+                            await loadData();
+                            // If search input still has value, re-search, otherwise reset
+                            if (globalSearchInput.value.trim()) {
+                                performSearch();
+                            } else {
+                                renderDataTable();
+                            }
+                        }
                      }
                  };
                  bulkDeleteContainer.appendChild(deleteBtn);
@@ -3282,8 +3292,14 @@ function renderTableRows(tbody, data) {
                     
                     await deleteRecord(id, table);
                     
-                    // deleteRecord updates local data, so we just re-render
-                    renderDataTable();
+                    // deleteRecord updates local data
+                    
+                    // User Request: Maintain search view if we are searching
+                    if (globalSearchInput && globalSearchInput.value.trim() && searchBtn) {
+                         searchBtn.click();
+                    } else {
+                         renderDataTable();
+                    }
                     
                     // Optional: show toast/alert
                     // alert('刪除成功'); 
