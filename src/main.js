@@ -2380,7 +2380,7 @@ async function handleConnectionClick(sourceName, targetName) {
     }
 
     // Get synced fiber stats from getStats()
-    const stats = getStats(currentMainSites);
+    const stats = getStats();
     const sourceSiteStats = stats.find(s => s.name === sourceName);
     const fiberStats = sourceSiteStats?.groups || {};
 
@@ -2625,7 +2625,7 @@ function openSiteDetails(siteName) {
     const data = getSiteData(siteName);
     
     // Calculate stats using global getStats() to ensure sync with Main Station
-    const allStats = getStats(currentMainSites);
+    const allStats = getStats();
     const siteStats = allStats.find(s => s.name === siteName) || { total: 0, used: 0, free: 0, groups: {} };
     
     const { total, used, free } = siteStats;
@@ -3170,7 +3170,7 @@ if (addForm) {
 
 // Dashboard Stats
 function renderDashboard() {
-    let stats = getStats(currentMainSites);
+    let stats = getStats();
     const container = document.getElementById('stats-container');
     if (!container) return;
     container.innerHTML = '';
@@ -3298,7 +3298,7 @@ function renderDashboard() {
 }
 
 function populateSiteSelector() {
-    const stats = getStats(currentMainSites);
+    const stats = getStats();
     if (!siteSelector) return;
     siteSelector.innerHTML = '<option value="">選擇站點...</option>';
     stats.forEach(s => {

@@ -335,7 +335,7 @@ export function getSiteData(siteName) {
     });
 }
 
-export function getStats(mainSites = []) {
+export function getStats() {
     const sites = {};
     const siteFibers = {};
 
@@ -467,31 +467,13 @@ export function getStats(mainSites = []) {
             });
             
             // Assign Aggregated Stats to ALL nodes in component
-            // Special handling for '107CCTV': Separate by Main Station if applicable
-            let targetFName = fName;
-            if (fName.includes('107CCTV') && mainSites.length > 0) {
-                 // Try to find if this component is rooted at or contains a Main Station
-                 const root = component.find(c => mainSites.includes(c));
-                 if (root) {
-                      // Append Main Station Name to differentiate
-                      // e.g. "107CCTV-StationA"
-                      // Use a separator that is visible but clean
-                      targetFName = `${fName}-${root}`;
-                 }
-            }
-
             component.forEach(u => {
                 // Ensure site exists (e.g. for passive destinations)
                 if (!sites[u]) sites[u] = { name: u, total: 0, used: 0, free: 0 };
                 if (!siteFibers[u]) siteFibers[u] = {};
                 
                 // Overwrite with aggregated stats
-                siteFibers[u][targetFName] = { ...aggStats };
-                
-                // If we renamed it, ensure the old key is removed if it existed (it might have been created in Init Local Stats)
-                if (targetFName !== fName && siteFibers[u][fName]) {
-                    delete siteFibers[u][fName];
-                }
+                siteFibers[u][fName] = { ...aggStats };
             });
         }
     }
