@@ -326,7 +326,9 @@ export function getData() {
 }
 
 export function getSiteData(siteName) {
-    const data = currentData.filter(d => d.station_name === siteName || d.destination === siteName);
+    const data = currentData
+        .filter(d => d.station_name === siteName || d.destination === siteName)
+        .filter(d => !(String(d.source||'').toLowerCase().includes('auto')));
     // Sort by sequence if available
     return data.sort((a, b) => {
         const seqA = parseInt(a.sequence) || 999999;
@@ -528,6 +530,7 @@ export function searchLine(query) {
     // User asked for "context". We return the full row.
     // Also search source and destination for better matches.
     return currentData.filter(d => 
+        !(String(d.source||'').toLowerCase().includes('auto')) &&
         (d.fiber_name && String(d.fiber_name).toLowerCase().includes(lowerQ)) ||
         (d.usage && String(d.usage).toLowerCase().includes(lowerQ)) ||
         (d.notes && String(d.notes).toLowerCase().includes(lowerQ)) ||
@@ -543,7 +546,7 @@ export function searchLine(query) {
 }
 
 export function getFiberPath(fiberName) {
-    return currentData.filter(d => d.fiber_name === fiberName);
+    return currentData.filter(d => d.fiber_name === fiberName && !(String(d.source||'').toLowerCase().includes('auto')));
 }
 
 export async function deleteStation(stationName) {

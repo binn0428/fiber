@@ -885,6 +885,7 @@ async function confirmAutoAdd() {
                  destination: row.destination,
                  fiber_name: row.fiber_name,
                  usage: updates.usage,
+                 source: 'AUTO',
                  notes: noteWithId,
                  department: updates.department,
                  contact: updates.contact,
@@ -1672,6 +1673,7 @@ const refreshMapBtn = document.getElementById('refresh-map-btn');
 const multiCenterSortBtn = document.getElementById('multi-center-sort-btn');
 const saveMapBtn = document.getElementById('save-map-btn');
 const addLinkBtn = document.getElementById('add-link-btn');
+const addStationBtn = document.getElementById('add-station-btn');
 
 if (multiCenterSortBtn) {
     multiCenterSortBtn.addEventListener('click', () => {
@@ -1749,6 +1751,7 @@ if (editMapBtn) {
         editMapBtn.style.backgroundColor = isEditMode ? 'var(--success-color)' : 'var(--warning-color)';
         
         if (addLinkBtn) addLinkBtn.style.display = isEditMode ? 'inline-block' : 'none';
+        if (addStationBtn) addStationBtn.style.display = isEditMode ? 'inline-block' : 'none';
 
         // Re-render map to show/hide edit handles
         renderMap();
@@ -1775,6 +1778,53 @@ if (addLinkBtn) {
     });
 }
 
+let stationCreationState = { active: false };
+if (addStationBtn) {
+    addStationBtn.addEventListener('click', () => {
+        if (!isAdminLoggedIn) {
+            alert('請先登入管理員模式！');
+            return;
+        }
+        if (!isEditMode) {
+            alert('請先切換到編輯模式');
+            return;
+        }
+        stationCreationState = { active: true };
+        showToast('請在架構圖上點選位置以增加站點', 5000);
+        if (mapContainer) mapContainer.style.cursor = 'crosshair';
+    });
+}
+
+if (mapContainer) {
+    mapContainer.addEventListener('click', async (e) => {
+        if (!stationCreationState.active) return;
+        if (e.target.closest('.site-node')) return;
+        const rect = mapContainer.getBoundingClientRect();
+        const xPct = ((e.clientX - rect.left) / rect.width) * 100;
+        const yPct = ((e.clientY - rect.top) / rect.height) * 100;
+        const name = prompt('請輸入新站點名稱：', '');
+        if (!name) {
+            stationCreationState = { active: false };
+            mapContainer.style.cursor = '';
+            return;
+        }
+        try {
+            const exists = getData().some(d => d.station_name === name);
+            if (!exists) {
+                await addRecord({ station_name: name, source: 'MANUAL', notes: '架構圖新增站點' });
+            }
+            nodePositions[name] = { x: xPct, y: yPct };
+            stationCreationState = { active: false };
+            mapContainer.style.cursor = '';
+            renderMap();
+        } catch (err) {
+            stationCreationState = { active: false };
+            mapContainer.style.cursor = '';
+            alert('新增站點失敗: ' + err.message);
+        }
+    });
+}
+
 async function finishConnectionCreation(source, target) {
     const fiberName = prompt(`建立連線: ${source} -> ${target}\n請輸入光纜名稱 (例如: 96C)：`, "96C");
     if (fiberName === null) return; // User cancelled
@@ -1790,6 +1840,7 @@ async function finishConnectionCreation(source, target) {
             fiber_name: fiberName,
             core_count: coreCount,
             usage: '預留',
+                source: 'MANUAL',
             notes: '架構圖手動新增'
         });
         alert("連線建立成功！");
@@ -3033,7 +3084,7 @@ function attachInlineEditing(container) {
 
 // Render Table
 function renderDataTable() {
-    const data = getData();
+    const data = getData().filter(d => !(String(d.source||'').toLowerCase().includes('auto')));
     const totalPages = Math.ceil(data.length / ITEMS_PER_PAGE);
     
     // Ensure currentPage is valid
@@ -3069,7 +3120,7 @@ function renderPaginationControls(totalPages) {
     
     const info = document.createElement('span');
     info.className = 'pagination-info';
-    info.textContent = `第 ${currentPage} / ${totalPages} 頁 (共 ${getData().length} 筆)`;
+    info.textContent = `第 ${currentPage} / ${totalPages} 頁 (共 ${getData().filter(d => !(String(d.source||'').toLowerCase().includes('auto'))).length} 筆)`;
     
     container.appendChild(prevBtn);
     container.appendChild(info);
