@@ -2624,6 +2624,42 @@ function openSiteDetails(siteName) {
     if (modalSiteTitle) modalSiteTitle.textContent = `站點詳情: ${siteName}`;
     const data = getSiteData(siteName);
     
+    // Helper: Find owning main site for this station (nearest reachable)
+    const getOwningMainSite = (name) => {
+        if (!currentMainSites || currentMainSites.length === 0) return null;
+        const mains = new Set(currentMainSites);
+        const all = getData();
+        const adj = {};
+        const ensure = (n) => { if (n && !adj[n]) adj[n] = new Set(); };
+        all.forEach(r => {
+            const u = r.station_name;
+            const v = r.destination;
+            ensure(u);
+            ensure(v);
+            if (u && v && u !== v) {
+                adj[u].add(v);
+                adj[v].add(u);
+            }
+        });
+        if (!adj[name]) return null;
+        const visited = new Set([name]);
+        const queue = [name];
+        while (queue.length > 0) {
+            const u = queue.shift();
+            if (mains.has(u)) return u;
+            if (adj[u]) {
+                adj[u].forEach(v => {
+                    if (!visited.has(v)) {
+                        visited.add(v);
+                        queue.push(v);
+                    }
+                });
+            }
+        }
+        return null;
+    };
+    const ownerMainSite = getOwningMainSite(siteName);
+    
     // Calculate stats using global getStats() to ensure sync with Main Station
     const allStats = getStats();
     const siteStats = allStats.find(s => s.name === siteName) || { total: 0, used: 0, free: 0, groups: {} };
@@ -2772,12 +2808,21 @@ function openSiteDetails(siteName) {
             };
 
             sortedKeys.forEach(key => {
-                const groupRows = (groups[key] || []).sort((a, b) => {
-                    const valA = String(a.core_count || '');
-                    const valB = String(b.core_count || '');
-                    // Use numeric sort to handle 1, 2, 10 correctly
-                    return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-                });
+                const sortByCore = (rows) => {
+                    return (rows || []).slice().sort((a, b) => {
+                        const aNum = parseInt(a.core_count);
+                        const bNum = parseInt(b.core_count);
+                        const aNan = isNaN(aNum);
+                        const bNan = isNaN(bNum);
+                        if (!aNan && !bNan) return aNum - bNum;
+                        if (aNan && !bNan) return 1;
+                        if (!aNan && bNan) return -1;
+                        const aPort = String(a.port || '');
+                        const bPort = String(b.port || '');
+                        return aPort.localeCompare(bPort, undefined, { numeric: true, sensitivity: 'base' });
+                    });
+                };
+                const groupRows = sortByCore(groups[key] || []);
 
                 // Calculate stats for this group
                 // Prefer Synced Stats from Main Station if available (Authoritative)
@@ -2876,7 +2921,16 @@ function openSiteDetails(siteName) {
                 const tbody = table.querySelector('tbody');
                 
                 // Render Rows using existing helper logic (slightly adapted)
-                groupRows.forEach(row => {
+                let displayRows = groupRows;
+                if (ownerMainSite && ownerMainSite !== siteName) {
+                    const mainRows = getSiteData(ownerMainSite).filter(r => (r.fiber_name || '未分類') === key);
+                    if (mainRows.length > 0) {
+                        displayRows = sortByCore(mainRows);
+                    }
+                }
+                displayRows = sortByCore(displayRows);
+                
+                displayRows.forEach(row => {
                      const tr = document.createElement('tr');
                      tr.style.borderBottom = '1px solid rgba(255,255,255,0.1)';
                      
@@ -2919,6 +2973,9 @@ function openSiteDetails(siteName) {
                 // Toggle Logic
                 header.addEventListener('click', () => {
                     content.classList.toggle('hidden');
+                    if (!content.classList.contains('hidden')) {
+                        content.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
                 });
             });
         }
