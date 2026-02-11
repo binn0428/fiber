@@ -743,6 +743,40 @@ async function confirmAutoAdd() {
         
         const data = getData(); // Get fresh data for verification
 
+        // Helper to find next available core number for a specific link
+        const getNextCoreNumber = (station, destination, fiberName) => {
+            // Find all records for this specific link (A->B or B->A with same fiber)
+            // Normalize names to be safe
+            const sNorm = normalizeStationName(station);
+            const dNorm = normalizeStationName(destination);
+            const fName = fiberName.trim();
+
+            const existingCores = data.filter(d => {
+                const uNorm = normalizeStationName(d.station_name);
+                const vNorm = normalizeStationName(d.destination);
+                const fiber = (d.fiber_name || '').trim();
+                
+                // Match Direction 1: A->B
+                const matchDirect = (uNorm === sNorm && vNorm === dNorm && fiber === fName);
+                // Match Direction 2: B->A (if bidirectional, but core numbers usually follow the cable)
+                // Usually we just care about the specific record set. 
+                // If the system separates A->B and B->A records, we should only check A->B.
+                // Based on previous logic, we seem to treat them as separate records.
+                
+                return matchDirect;
+            }).map(d => {
+                // Extract numeric part of core_count
+                const num = parseInt(d.core_count);
+                return isNaN(num) ? 0 : num;
+            });
+
+            if (existingCores.length === 0) return 0;
+            return Math.max(...existingCores);
+        };
+
+        // Cache for next core numbers to handle multiple cores in one batch
+        const nextCoreCache = {}; // Key: "station|dest|fiber" -> currentMax
+
         for(const segment of path.records) {
             if(!segment.records && segment.rows) { 
                 // Compatibility handle: my previous code used 'rows', but let's be safe. 
@@ -753,13 +787,20 @@ async function confirmAutoAdd() {
                  throw new Error(`路徑段 ${segment.from} -> ${segment.to} 資料異常，無法鎖定芯線。請重新搜尋。`);
             }
             
-            let segmentCoreCounter = 0; // Reset for each segment
+            // let segmentCoreCounter = 0; // OLD Logic
+            
             for(const row of segment.rows) {
-                 segmentCoreCounter++;
+                 // segmentCoreCounter++; // OLD Logic
 
                  if (row._generated) {
-                     // Passthrough/Virtual Row: No ID check needed, we will CREATE it.
-                     row._assignedCore = String(segmentCoreCounter);
+                     // Passthrough/Virtual Row: Calculate next available core
+                     const key = `${row.station_name}|${row.destination}|${row.fiber_name}`;
+                     if (nextCoreCache[key] === undefined) {
+                         nextCoreCache[key] = getNextCoreNumber(row.station_name, row.destination, row.fiber_name);
+                     }
+                     nextCoreCache[key]++; // Increment
+                     
+                     row._assignedCore = String(nextCoreCache[key]);
                      recordsToCreate.push(row);
                      continue;
                  }
@@ -775,7 +816,13 @@ async function confirmAutoAdd() {
                  
                  // If core_count is missing, assign it temporarily for update
                  if (!freshRow.core_count) {
-                      freshRow._assignedCore = String(segmentCoreCounter);
+                      const key = `${freshRow.station_name}|${freshRow.destination}|${freshRow.fiber_name}`;
+                      if (nextCoreCache[key] === undefined) {
+                          nextCoreCache[key] = getNextCoreNumber(freshRow.station_name, freshRow.destination, freshRow.fiber_name);
+                      }
+                      nextCoreCache[key]++;
+                      
+                      freshRow._assignedCore = String(nextCoreCache[key]);
                  }
                  recordsToUpdate.push(freshRow);
             }
