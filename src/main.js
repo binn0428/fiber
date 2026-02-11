@@ -916,7 +916,7 @@ function loadPathMgmtList() {
                     <h4 style="margin:0; color:var(--primary-color);">${p.usage || '無用途'}</h4>
                     <small style="color:#888;">${dateStr} | ID: ${p.id}</small>
                 </div>
-                <button class="action-btn" style="background-color:var(--danger-color); font-size:0.9em; padding:5px 10px;" onclick="deletePath('${p.id}')">刪除/復原</button>
+                ${isAdminLoggedIn ? `<button class="action-btn" style="background-color:var(--danger-color); font-size:0.9em; padding:5px 10px;" onclick="deletePath('${p.id}')">刪除/復原</button>` : ''}
             </div>
             <div style="font-size:0.9em; color:#ccc;">
                 <div><strong>備註:</strong> ${p.records[0].notes.replace(`[PathID:${p.id}]`, '') || '-'}</div>
@@ -933,6 +933,10 @@ function loadPathMgmtList() {
 }
 
 window.deletePath = async function(pathId) {
+    if(!isAdminLoggedIn) {
+        alert("權限不足：僅管理員可刪除路徑");
+        return;
+    }
     if(!confirm('確定要刪除此路徑並釋放所有相關芯線嗎？\n(這將清除用途、芯數、Port等資料並恢復為可用狀態)')) return;
     
     const data = getData();
