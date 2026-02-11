@@ -744,38 +744,46 @@ async function confirmAutoAdd() {
         const data = getData(); // Get fresh data for verification
 
         // Helper to find next available core number for a specific link
-        const getNextCoreNumber = (station, destination, fiberName) => {
+        // UPDATED: Finds the smallest available core numbers (Gap Filling) instead of just Max+1
+        const getAvailableCoreNumbers = (station, destination, fiberName, requiredCount) => {
             // Find all records for this specific link (A->B or B->A with same fiber)
             // Normalize names to be safe
             const sNorm = normalizeStationName(station);
             const dNorm = normalizeStationName(destination);
             const fName = fiberName.trim();
 
-            const existingCores = data.filter(d => {
+            const existingCores = new Set(data.filter(d => {
                 const uNorm = normalizeStationName(d.station_name);
                 const vNorm = normalizeStationName(d.destination);
                 const fiber = (d.fiber_name || '').trim();
                 
                 // Match Direction 1: A->B
                 const matchDirect = (uNorm === sNorm && vNorm === dNorm && fiber === fName);
-                // Match Direction 2: B->A (if bidirectional, but core numbers usually follow the cable)
-                // Usually we just care about the specific record set. 
-                // If the system separates A->B and B->A records, we should only check A->B.
-                // Based on previous logic, we seem to treat them as separate records.
                 
                 return matchDirect;
             }).map(d => {
-                // Extract numeric part of core_count
                 const num = parseInt(d.core_count);
                 return isNaN(num) ? 0 : num;
-            });
+            }));
 
-            if (existingCores.length === 0) return 0;
-            return Math.max(...existingCores);
+            const available = [];
+            let candidate = 1;
+            while (available.length < requiredCount) {
+                if (!existingCores.has(candidate)) {
+                    available.push(candidate);
+                }
+                candidate++;
+                // Safety break to prevent infinite loops in extreme cases
+                if (candidate > 1000) break;
+            }
+            return available;
         };
 
         // Cache for next core numbers to handle multiple cores in one batch
-        const nextCoreCache = {}; // Key: "station|dest|fiber" -> currentMax
+        // Key: "station|dest|fiber" -> Array of allocated cores [c1, c2, ...]
+        const allocatedCoresCache = {}; 
+        // We also need an index to know which one to pick next for the same link in the same batch
+        const allocatedCoresIndex = {}; 
 
         for(const segment of path.records) {
             if(!segment.records && segment.rows) { 
@@ -787,20 +795,49 @@ async function confirmAutoAdd() {
                  throw new Error(`路徑段 ${segment.from} -> ${segment.to} 資料異常，無法鎖定芯線。請重新搜尋。`);
             }
             
-            // let segmentCoreCounter = 0; // OLD Logic
+            // Pre-calculate how many new core assignments are needed for this segment
+            const rowsNeedingAssignment = segment.rows.filter(r => r._generated || !r.core_count);
             
-            for(const row of segment.rows) {
-                 // segmentCoreCounter++; // OLD Logic
+            // Group by physical link to batch-request available cores
+            // This is important if a segment uses multiple fibers? (Unlikely in current logic, usually 1 fiber per segment)
+            // But let's handle it by link key.
+            
+            for(const row of rowsNeedingAssignment) {
+                 // Check if it's a real row (unused) that just lacks core_count, or a virtual row
+                 // Use FRESH data to check core_count existence if it's a real row
+                 let isRealRowNeedsUpdate = false;
+                 if (!row._generated) {
+                      const freshRow = data.find(d => d.id === row.id && d._table === row._table);
+                      if (freshRow && !freshRow.core_count) {
+                          isRealRowNeedsUpdate = true;
+                      }
+                 }
+                 
+                 if (row._generated || isRealRowNeedsUpdate) {
+                      const key = `${row.station_name}|${row.destination}|${row.fiber_name}`;
+                      
+                      // Initialize cache if needed
+                      if (!allocatedCoresCache[key]) {
+                          // We need to count how many rows for THIS link need assignment in this batch
+                          // To avoid calling getAvailableCoreNumbers multiple times and getting same results
+                          const countForLink = rowsNeedingAssignment.filter(r => 
+                              `${r.station_name}|${r.destination}|${r.fiber_name}` === key
+                          ).length;
+                          
+                          allocatedCoresCache[key] = getAvailableCoreNumbers(row.station_name, row.destination, row.fiber_name, countForLink);
+                          allocatedCoresIndex[key] = 0;
+                      }
+                 }
+            }
 
+            for(const row of segment.rows) {
                  if (row._generated) {
-                     // Passthrough/Virtual Row: Calculate next available core
+                     // Passthrough/Virtual Row
                      const key = `${row.station_name}|${row.destination}|${row.fiber_name}`;
-                     if (nextCoreCache[key] === undefined) {
-                         nextCoreCache[key] = getNextCoreNumber(row.station_name, row.destination, row.fiber_name);
-                     }
-                     nextCoreCache[key]++; // Increment
+                     const idx = allocatedCoresIndex[key]++;
+                     const assignedCore = allocatedCoresCache[key][idx];
                      
-                     row._assignedCore = String(nextCoreCache[key]);
+                     row._assignedCore = String(assignedCore);
                      recordsToCreate.push(row);
                      continue;
                  }
@@ -817,12 +854,10 @@ async function confirmAutoAdd() {
                  // If core_count is missing, assign it temporarily for update
                  if (!freshRow.core_count) {
                       const key = `${freshRow.station_name}|${freshRow.destination}|${freshRow.fiber_name}`;
-                      if (nextCoreCache[key] === undefined) {
-                          nextCoreCache[key] = getNextCoreNumber(freshRow.station_name, freshRow.destination, freshRow.fiber_name);
-                      }
-                      nextCoreCache[key]++;
+                      const idx = allocatedCoresIndex[key]++;
+                      const assignedCore = allocatedCoresCache[key][idx];
                       
-                      freshRow._assignedCore = String(nextCoreCache[key]);
+                      freshRow._assignedCore = String(assignedCore);
                  }
                  recordsToUpdate.push(freshRow);
             }
