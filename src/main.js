@@ -2391,7 +2391,12 @@ async function handleConnectionClick(sourceName, targetName) {
         if (!uniqueFibers[fName]) {
             const fiberGroup = fiberStats[fName];
             // Capacity: Use stats if available, otherwise fallback to row count or core_count
-            const capacity = fiberGroup ? Math.max(fiberGroup.rowCount, fiberGroup.explicitCapacity) : (r.core_count || '?');
+            let capacity;
+            if (fiberGroup && fiberGroup.total !== undefined) {
+                 capacity = fiberGroup.total;
+            } else {
+                 capacity = fiberGroup ? Math.max(fiberGroup.rowCount, fiberGroup.explicitCapacity) : (r.core_count || '?');
+            }
             uniqueFibers[fName] = {
                 name: fName,
                 capacity: capacity,
@@ -2780,10 +2785,18 @@ function openSiteDetails(siteName) {
                 const syncedGroup = siteStats.groups ? siteStats.groups[key] : null;
 
                 if (syncedGroup) {
-                    // Use synced stats logic (Max of RowCount or Explicit Capacity)
-                    total = Math.max(syncedGroup.rowCount, syncedGroup.explicitCapacity);
-                    used = syncedGroup.usedCount;
-                    free = Math.max(0, total - used);
+                    // Use synced stats logic (Authoritative)
+                    // Updated to use pre-calculated values from getStats() which handle unique cores and prefix parsing
+                    if (syncedGroup.total !== undefined) {
+                        total = syncedGroup.total;
+                        used = syncedGroup.used;
+                        free = syncedGroup.free;
+                    } else {
+                        // Fallback for safety
+                        total = Math.max(syncedGroup.rowCount, syncedGroup.explicitCapacity);
+                        used = syncedGroup.usedCount;
+                        free = Math.max(0, total - used);
+                    }
                 } else {
                     // Fallback to local calculation for purely local fibers
                     total = groupRows.length;

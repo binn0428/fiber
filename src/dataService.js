@@ -358,7 +358,11 @@ export function getStats() {
                 explicitCapacity: 0, 
                 usedCount: 0, 
                 rowCount: 0,
-                validCoreCount: 0 
+                validCoreCount: 0,
+                usedCores: new Set(),
+                allCores: new Set(),
+                rowsWithoutCore: 0,
+                usedRowsWithoutCore: 0
             };
         }
         
@@ -377,13 +381,19 @@ export function getStats() {
             group.usedCount++;
         }
 
-        // Track Max Explicit Core Count
+        // Track Unique Cores
         let cores = parseInt(d.core_count);
-        if (!isNaN(cores) && cores > 0) {
+        if (!isNaN(cores)) {
+            group.allCores.add(cores);
+            if (isUsed) group.usedCores.add(cores);
+            
             if (cores > group.explicitCapacity) {
                 group.explicitCapacity = cores;
             }
             group.validCoreCount++;
+        } else {
+            group.rowsWithoutCore++;
+            if (isUsed) group.usedRowsWithoutCore++;
         }
 
         // Build Connected Graph (Undirected)
@@ -434,7 +444,11 @@ export function getStats() {
                 rowCount: 0,
                 usedCount: 0,
                 validCoreCount: 0,
-                explicitCapacity: 0
+                explicitCapacity: 0,
+                usedCores: new Set(),
+                allCores: new Set(),
+                rowsWithoutCore: 0,
+                usedRowsWithoutCore: 0
             };
             
             component.forEach(u => {
@@ -444,6 +458,11 @@ export function getStats() {
                     aggStats.usedCount += g.usedCount;
                     aggStats.validCoreCount += g.validCoreCount;
                     aggStats.explicitCapacity = Math.max(aggStats.explicitCapacity, g.explicitCapacity);
+                    
+                    g.usedCores.forEach(c => aggStats.usedCores.add(c));
+                    g.allCores.forEach(c => aggStats.allCores.add(c));
+                    aggStats.rowsWithoutCore += g.rowsWithoutCore;
+                    aggStats.usedRowsWithoutCore += g.usedRowsWithoutCore;
                 }
             });
             
@@ -469,12 +488,28 @@ export function getStats() {
         for (const fName in fibers) {
             const group = fibers[fName];
             
-            // Capacity Logic: Max of RowCount or ExplicitCapacity
-            // This handles the "1 row with core_count=48" scenario.
-            let capacity = Math.max(group.rowCount, group.explicitCapacity);
+            // Capacity Logic:
+            // 1. Try to parse total from fiber name prefix (e.g., "48_fh_3" -> 48)
+            let capacity = 0;
+            const prefixMatch = fName.match(/^(\d+)/);
+            if (prefixMatch) {
+                capacity = parseInt(prefixMatch[1]);
+            }
+
+            // 2. Fallback: Use Unique Cores + Rows without Core
+            if (!capacity || isNaN(capacity) || capacity === 0) {
+                 capacity = group.allCores.size + group.rowsWithoutCore;
+                 // Fallback to max of rowCount/explicit if sets are empty (edge case)
+                 if (capacity === 0) capacity = Math.max(group.rowCount, group.explicitCapacity);
+            }
             
-            const used = group.usedCount;
+            const used = group.usedCores.size + group.usedRowsWithoutCore;
             const free = Math.max(0, capacity - used);
+            
+            // Update group object with calculated values so main.js can use them
+            group.total = capacity;
+            group.used = used;
+            group.free = free;
             
             sites[sName].total += capacity;
             sites[sName].used += used;
