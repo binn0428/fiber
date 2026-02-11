@@ -778,8 +778,10 @@ async function confirmAutoAdd() {
                 
                 // Match Direction 1: A->B
                 const matchDirect = (uNorm === sNorm && vNorm === dNorm && fiber === fName);
+                // Match Direction 2: B->A (Bidirectional Check)
+                const matchReverse = (uNorm === dNorm && vNorm === sNorm && fiber === fName);
                 
-                return matchDirect;
+                return matchDirect || matchReverse;
             }).map(d => {
                 const num = parseInt(d.core_count);
                 return isNaN(num) ? 0 : num;
@@ -1662,6 +1664,45 @@ if (searchBtn && globalSearchInput) {
         
         // Calculate and Render Stats
         calculateAndRenderStats(results);
+
+        // Add Bulk Delete Button if Admin and filtered
+        const bulkDeleteContainer = document.getElementById('bulk-delete-container');
+        if (bulkDeleteContainer) {
+            bulkDeleteContainer.innerHTML = '';
+            if (isAdminLoggedIn && results.length > 0 && query) {
+                 const deleteBtn = document.createElement('button');
+                 deleteBtn.textContent = `🗑️ 刪除搜尋到的 ${results.length} 筆資料`;
+                 deleteBtn.className = 'action-btn';
+                 deleteBtn.style.backgroundColor = 'var(--danger-color)';
+                 deleteBtn.style.marginBottom = '10px';
+                 deleteBtn.onclick = async () => {
+                     if(confirm(`警告：確定要刪除搜尋結果中的所有 ${results.length} 筆資料嗎？\n此操作無法復原！`)) {
+                         try {
+                             deleteBtn.disabled = true;
+                             deleteBtn.textContent = '刪除中...';
+                             
+                             // Batch delete
+                             for(const row of results) {
+                                 await deleteRecord(row.id, row._table);
+                             }
+                             
+                             alert('刪除完成');
+                             // Clear search and reload
+                             globalSearchInput.value = '';
+                             await loadData();
+                             renderDataTable();
+                         } catch(e) {
+                             console.error(e);
+                             alert('刪除過程發生錯誤: ' + e.message);
+                             // Reload anyway to show current state
+                             await loadData();
+                             renderDataTable();
+                         }
+                     }
+                 };
+                 bulkDeleteContainer.appendChild(deleteBtn);
+            }
+        }
 
         renderTableRows(dataTableBody, results);
         
