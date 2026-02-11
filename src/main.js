@@ -886,9 +886,11 @@ function loadPathMgmtList() {
     
     let count = 0;
     sortedPaths.forEach(p => {
-        if(query && !p.usage.toLowerCase().includes(query) && !p.id.toLowerCase().includes(query)) {
+        const usage = p.usage || '';
+        const pid = p.id || '';
+        if(query && !usage.toLowerCase().includes(query) && !pid.toLowerCase().includes(query)) {
              // Check stations too
-             const stationStr = p.records.map(r => r.station_name + r.destination).join('');
+             const stationStr = p.records.map(r => (r.station_name||'') + (r.destination||'')).join('');
              if(!stationStr.toLowerCase().includes(query)) return;
         }
         
@@ -910,15 +912,27 @@ function loadPathMgmtList() {
         // Simple display: list segments
         const segments = recs.map(r => `<span class="badge">${r.station_name} ➝ ${r.destination}</span>`).join(' ');
         
+        // Buttons
+        let buttons = '';
+        if(isAdminLoggedIn) {
+            buttons = `
+                <div style="display:flex; gap:5px;">
+                    <button class="action-btn" style="background-color:var(--primary-color); font-size:0.9em; padding:5px 10px;" onclick="openEditPathModal('${p.id}')">編輯</button>
+                    <button class="action-btn" style="background-color:var(--danger-color); font-size:0.9em; padding:5px 10px;" onclick="deletePath('${p.id}')">刪除</button>
+                </div>
+            `;
+        }
+
         div.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px;">
                 <div>
                     <h4 style="margin:0; color:var(--primary-color);">${p.usage || '無用途'}</h4>
                     <small style="color:#888;">${dateStr} | ID: ${p.id}</small>
                 </div>
-                ${isAdminLoggedIn ? `<button class="action-btn" style="background-color:var(--danger-color); font-size:0.9em; padding:5px 10px;" onclick="deletePath('${p.id}')">刪除/復原</button>` : ''}
+                ${buttons}
             </div>
             <div style="font-size:0.9em; color:#ccc;">
+                <div><strong>使用單位:</strong> ${p.records[0].department || '-'} | <strong>聯絡人:</strong> ${p.records[0].contact || '-'}</div>
                 <div><strong>備註:</strong> ${p.records[0].notes.replace(`[PathID:${p.id}]`, '') || '-'}</div>
                 <div style="margin-top:5px;"><strong>經過路徑 (${p.records.length}段):</strong></div>
                 <div style="margin-top:5px; display:flex; flex-wrap:wrap; gap:5px;">${segments}</div>
@@ -973,6 +987,84 @@ window.deletePath = async function(pathId) {
         alert('刪除失敗: ' + e.message);
     }
 };
+
+window.openEditPathModal = function(pathId) {
+    if(!isAdminLoggedIn) {
+        alert("權限不足");
+        return;
+    }
+    
+    const data = getData();
+    const records = data.filter(d => d.notes && d.notes.includes(`[PathID:${pathId}]`));
+    
+    if(records.length === 0) {
+        alert("找不到路徑資料");
+        return;
+    }
+    
+    // Use the first record to populate (assuming consistency)
+    const r = records[0];
+    const notesClean = r.notes.replace(`[PathID:${pathId}]`, '').trim();
+    
+    document.getElementById('edit-path-id').value = pathId;
+    document.getElementById('edit-path-usage').value = r.usage || '';
+    document.getElementById('edit-path-department').value = r.department || '';
+    document.getElementById('edit-path-contact').value = r.contact || '';
+    document.getElementById('edit-path-notes').value = notesClean;
+    
+    openModal(document.getElementById('edit-path-modal'));
+};
+
+const editPathForm = document.getElementById('edit-path-form');
+if(editPathForm) {
+    editPathForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const pathId = document.getElementById('edit-path-id').value;
+        const updates = {
+            usage: document.getElementById('edit-path-usage').value.trim(),
+            department: document.getElementById('edit-path-department').value.trim(),
+            contact: document.getElementById('edit-path-contact').value.trim(),
+            notes: document.getElementById('edit-path-notes').value.trim()
+        };
+        
+        if(!updates.usage) {
+            alert("用途為必填");
+            return;
+        }
+        
+        // Re-append PathID
+        const noteWithId = (updates.notes ? updates.notes + ' ' : '') + `[PathID:${pathId}]`;
+        updates.notes = noteWithId;
+        
+        try {
+            const data = getData();
+            const records = data.filter(d => d.notes && d.notes.includes(`[PathID:${pathId}]`));
+            
+            const btn = editPathForm.querySelector('button[type="submit"]');
+            btn.disabled = true;
+            btn.innerText = "儲存中...";
+            
+            for(const r of records) {
+                await updateRecord(r.id, updates, r._table);
+            }
+            
+            alert("更新成功！");
+            closeModal(document.getElementById('edit-path-modal'));
+            
+            await loadData();
+            loadPathMgmtList();
+            renderDataTable();
+        } catch(e) {
+            console.error(e);
+            alert("更新失敗: " + e.message);
+        } finally {
+             const btn = editPathForm.querySelector('button[type="submit"]');
+             btn.disabled = false;
+             btn.innerText = "儲存變更";
+        }
+    });
+}
 
 // Global State
 let isAdminLoggedIn = false;
