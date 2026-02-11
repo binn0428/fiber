@@ -11,7 +11,7 @@ function notify() {
     listeners.forEach(cb => cb(currentData));
 }
 
-const TABLES = ['udc', 'station_1ph', 'station_2ph', 'dkb', 'station_5kb', 'ms2', 'ms3', 'ms4', 'o2', 'room'];
+const TABLES = ['udc', 'station_1ph', 'station_2ph', 'dkb', 'station_5kb', 'ms2', 'ms3', 'ms4', 'o2', 'room', 'generated_paths'];
 
 export async function getAppSettings(key) {
     const sb = getSupabase();
@@ -102,6 +102,7 @@ function getTableForStation(stationName) {
     const station = (stationName || '').toLowerCase().trim();
     
     // Priority: Specific stations first, then generic 'udc'
+    if (station.includes('generated_paths')) return 'generated_paths';
     if (station.includes('ms2')) return 'ms2';
     if (station.includes('ms3')) return 'ms3';
     if (station.includes('ms4')) return 'ms4';

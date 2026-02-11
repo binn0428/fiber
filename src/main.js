@@ -48,11 +48,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 supabaseUrlInput.value = url;
             }
             
-            // Hide config panel if already connected (User Request: No need to enter again)
+            // Hide config panel automatically as we have hardcoded defaults
             const configPanel = supabaseUrlInput?.closest('.io-card');
             if (configPanel) {
                 configPanel.style.display = 'none';
-                // User Request: Remove the show button completely
             }
 
             if (window.logToScreen) window.logToScreen("Supabase initialized.");
@@ -878,7 +877,58 @@ async function confirmAutoAdd() {
         document.getElementById('confirm-auto-add-btn').disabled = true;
         document.getElementById('confirm-auto-add-btn').innerText = "處理中...";
         
-        // 1. Create New Records for Passthrough Edges
+        // 1. Save Path Metadata to 'generated_paths' table
+        // This is the new, robust way to store path info
+        const pathRecord = {
+            station_name: 'PATH_RECORD', // Dummy value to satisfy potential constraints, or use a specific identifier
+            fiber_name: pathId, // Use fiber_name col for ID if no dedicated col, or just standard fields
+            // Better: Use standard fields mapping if possible. 
+            // Assuming 'generated_paths' has columns: id, path_id, nodes, usage, department, contact, notes, created_at
+            // But we must stick to the generic addRecord which uses 'udc' schema mostly.
+            // Let's assume 'generated_paths' mimics the standard schema or we abuse fields.
+            // usage -> usage
+            // department -> department
+            // contact -> contact
+            // notes -> nodes JSON
+            // fiber_name -> pathId
+            
+            usage: updates.usage,
+            department: updates.department,
+            contact: updates.contact,
+            notes: JSON.stringify(path.nodes), // Store nodes as JSON in notes
+            fiber_name: pathId,
+            core_count: String(requiredCores), // Store core count
+            // We need a way to distinguish this record in the generic table loader?
+            // Yes, table name is 'generated_paths'.
+        };
+        
+        // We need to tell addRecord to use 'generated_paths'.
+        // Currently addRecord uses getTableForStation.
+        // We can hack it by passing a station name that maps to 'generated_paths' OR
+        // modify addRecord to accept explicit table.
+        // But addRecord signature is (record).
+        // Let's modify getTableForStation in dataService.js OR
+        // just pass a special station name.
+        // Wait, I cannot easily modify getTableForStation without another tool call.
+        // I ALREADY added 'generated_paths' to TABLES list in dataService.js.
+        // But getTableForStation logic needs to know how to route to it.
+        // Let's assume if I set station_name to 'generated_paths_entry', I can catch it.
+        // OR, I can use the fact that I can't change dataService logic easily right now (I did read it though).
+        
+        // Let's look at dataService again.
+        // getTableForStation matches substrings.
+        // If I name station_name 'generated_paths', does it match?
+        // No, the list is: ms2, ms3, ms4, 1ph, 2ph, dkb, 5kb, o2, room, udc.
+        // It defaults to 'udc'.
+        
+        // I MUST modify getTableForStation in dataService to support 'generated_paths'.
+        // I will do that in next step.
+        // For now, I will prepare the record assuming it will work.
+        pathRecord.station_name = 'generated_paths'; 
+        
+        await addRecord(pathRecord);
+
+        // 2. Create New Records for Passthrough Edges
         for (const row of recordsToCreate) {
              const newRecord = {
                  station_name: row.station_name,
@@ -1043,19 +1093,52 @@ function loadPathMgmtList() {
         // Group by PathID
         const paths = {};
         
+        // 1. Load from 'generated_paths' table (Primary Source)
+        const genPaths = data.filter(d => d._table === 'generated_paths');
+        genPaths.forEach(p => {
+            const pid = p.fiber_name; // We stored PathID in fiber_name
+            if (pid) {
+                // Parse nodes from notes
+                let nodes = [];
+                try {
+                    nodes = JSON.parse(p.notes);
+                } catch(e) { /* ignore */ }
+                
+                paths[pid] = { 
+                    id: pid, 
+                    records: [], // We can link real records if needed, but for display we use metadata
+                    usage: p.usage, 
+                    time: 0,
+                    nodes: nodes, // Store explicit nodes
+                    metaRecord: p // Keep reference to the metadata record
+                };
+                
+                // Extract time
+                const parts = pid.split('-');
+                if (parts.length > 1) {
+                    const ts = parseInt(parts[1]);
+                    if(!isNaN(ts)) paths[pid].time = ts;
+                }
+            }
+        });
+
+        // 2. Load legacy records (Fallback)
         data.forEach(d => {
             if(d.notes && typeof d.notes === 'string' && d.notes.includes('[PathID:')) {
                 const match = d.notes.match(/\[PathID:([^\]]+)\]/);
                 if(match) {
                     const pid = match[1];
-                    if(!paths[pid]) paths[pid] = { id: pid, records: [], usage: d.usage, time: 0 };
-                    paths[pid].records.push(d);
-                    // Extract time from ID if possible
-                    const parts = pid.split('-');
-                    if (parts.length > 1) {
-                        const ts = parseInt(parts[1]);
-                        if(!isNaN(ts)) paths[pid].time = ts;
+                    if(!paths[pid]) {
+                        // Legacy path found
+                        paths[pid] = { id: pid, records: [], usage: d.usage, time: 0 };
+                        // Extract time from ID if possible
+                        const parts = pid.split('-');
+                        if (parts.length > 1) {
+                            const ts = parseInt(parts[1]);
+                            if(!isNaN(ts)) paths[pid].time = ts;
+                        }
                     }
+                    paths[pid].records.push(d);
                 }
             }
         });
@@ -1150,23 +1233,34 @@ function loadPathMgmtList() {
             
             // Construct Path Flow
             const recs = [...p.records];
-            const segments = recs.map(r => `<span class="badge">${r.station_name} ➝ ${r.destination}</span>`).join(' ');
+            let segments = '';
+            
+            if (p.nodes && p.nodes.length > 0) {
+                // Use explicit nodes from metadata
+                segments = p.nodes.join(' <span style="color:var(--primary-color)">➝</span> ');
+            } else {
+                // Fallback to legacy segment display
+                segments = recs.map(r => `<span class="badge">${r.station_name} ➝ ${r.destination}</span>`).join(' ');
+            }
             
             // Buttons
             let buttons = `<div style="display:flex; gap:5px;">`;
 
             // Robust Check for PathNodes
-            // 1. Try to find explicit tag in ANY record
             let hasPathInfo = false;
-            const recordWithTag = recs.find(r => r.notes && r.notes.includes('[PathNodes:'));
             
-            // 2. If no tag, try to reconstruct
-            if (recordWithTag) {
+            if (p.nodes && p.nodes.length > 0) {
                 hasPathInfo = true;
             } else {
-                const reconstructed = reconstructPathNodes(recs);
-                if (reconstructed.length > 1) {
+                // Legacy checks
+                const recordWithTag = recs.find(r => r.notes && r.notes.includes('[PathNodes:'));
+                if (recordWithTag) {
                     hasPathInfo = true;
+                } else {
+                    const reconstructed = reconstructPathNodes(recs);
+                    if (reconstructed.length > 1) {
+                        hasPathInfo = true;
+                    }
                 }
             }
 
@@ -1184,10 +1278,23 @@ function loadPathMgmtList() {
             buttons += `</div>`;
 
             // Clean notes for display
-            const displayNotes = (p.records[0].notes || '')
-                .replace(`[PathID:${p.id}]`, '')
-                .replace(/\[PathNodes:[^\]]+\]/, '')
-                .trim();
+            let displayNotes = '';
+            if (p.metaRecord) {
+                displayNotes = p.metaRecord.notes; // Metadata notes usually just contain the JSON, maybe we shouldn't show it raw?
+                // Actually in confirmAutoAdd we set notes: JSON.stringify(path.nodes).
+                // So displayNotes will be the node list JSON.
+                // We might want to show "自動生成路徑" or nothing if it's just JSON.
+                displayNotes = "自動生成路徑";
+            } else {
+                displayNotes = (p.records[0]?.notes || '')
+                    .replace(`[PathID:${p.id}]`, '')
+                    .replace(/\[PathNodes:[^\]]+\]/, '')
+                    .trim();
+            }
+            
+            // Contact info fallback
+            const dept = p.metaRecord ? p.metaRecord.department : (p.records[0]?.department || '-');
+            const contact = p.metaRecord ? p.metaRecord.contact : (p.records[0]?.contact || '-');
 
             div.innerHTML = `
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px;">
@@ -1198,9 +1305,9 @@ function loadPathMgmtList() {
                     ${buttons}
                 </div>
                 <div style="font-size:0.9em; color:#ccc;">
-                    <div><strong>使用單位:</strong> ${p.records[0].department || '-'} | <strong>聯絡人:</strong> ${p.records[0].contact || '-'}</div>
-                    <div><strong>備註:</strong> ${displayNotes || '-'}</div>
-                    <div style="margin-top:5px;"><strong>經過路徑 (${p.records.length}段):</strong></div>
+                    <div><strong>使用單位:</strong> ${dept} | <strong>聯絡人:</strong> ${contact}</div>
+                    <div><strong>備註:</strong> ${displayNotes}</div>
+                    <div style="margin-top:5px;"><strong>經過路徑:</strong></div>
                     <div style="margin-top:5px; display:flex; flex-wrap:wrap; gap:5px;">${segments}</div>
                 </div>
             `;
@@ -1225,15 +1332,19 @@ window.deletePath = async function(pathId) {
     if(!confirm('確定要刪除此路徑並釋放所有相關芯線嗎？\n(這將清除用途、芯數、Port等資料並恢復為可用狀態)')) return;
     
     const data = getData();
-    const records = data.filter(d => d.notes && d.notes.includes(`[PathID:${pathId}]`));
+    // 1. Find records in standard tables (for releasing cores)
+    const records = data.filter(d => d.notes && d.notes.includes(`[PathID:${pathId}]`) && d._table !== 'generated_paths');
+    // 2. Find metadata record (for deletion)
+    const metaRecord = data.find(d => d.fiber_name === pathId && d._table === 'generated_paths');
     
-    if(records.length === 0) {
+    if(records.length === 0 && !metaRecord) {
         alert("找不到相關紀錄，可能已被刪除。");
         loadPathMgmtList();
         return;
     }
     
     try {
+        // A. Release Cores in Fiber Tables
         for(const r of records) {
             // Remove PathID and PathNodes from notes
             let newNotes = r.notes.replace(`[PathID:${pathId}]`, '')
@@ -1252,8 +1363,30 @@ window.deletePath = async function(pathId) {
                 port: null
             }, r._table);
         }
+
+        // B. Delete Metadata Record from 'generated_paths'
+        if (metaRecord) {
+            // We use deleteStation hack or we need a deleteRecord? 
+            // dataService has deleteStation. It deletes by station_name.
+            // But here we want to delete by ID.
+            // dataService doesn't have a generic deleteRecord by ID.
+            // We can add it or use raw supabase if accessible?
+            // Actually dataService exports getSupabase.
+            // Let's import getSupabase in main.js (it is already imported)
+            
+            // Or better: Implement deleteRecord in dataService.js? 
+            // For now, let's use direct supabase call here since main.js imports getSupabase.
+            const sb = getSupabase();
+            if (sb) {
+                await sb.from('generated_paths').delete().eq('id', metaRecord.id);
+                // Manually remove from local cache since dataService doesn't support generic delete notification
+                // Actually, just reloading data is safer.
+            }
+        }
+
         alert(`已成功刪除路徑並釋放 ${records.length} 筆芯線資料。`);
-        loadPathMgmtList(); // Refresh list
+        await loadData(); // Refresh list
+        loadPathMgmtList(); 
         renderDataTable(); // Refresh main table
     } catch(e) {
         console.error(e);
