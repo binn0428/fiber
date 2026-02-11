@@ -3234,8 +3234,8 @@ function renderTableRows(tbody, data) {
             ${createEditableCell('phone', row.phone, row.id)}
             ${createEditableCell('notes', row.notes, row.id)}
             <td>${row.station_name || ''}</td>
-            <td>
-                <!-- Removed Edit button as we have inline editing now, or keep as fallback -->
+            <td style="text-align: center;">
+                ${isAdminLoggedIn ? `<button class="action-btn delete-btn-small" data-id="${row.id}" data-table="${row._table}" style="padding: 4px 8px; font-size: 0.85em; background-color: #ff5252; color: white; border: none; border-radius: 4px; cursor: pointer;">刪除</button>` : ''}
             </td>
         `;
         tbody.appendChild(tr);
@@ -3247,6 +3247,36 @@ function renderTableRows(tbody, data) {
             e.preventDefault();
             const fiberName = e.target.getAttribute('data-fiber');
             openPathDiagram(fiberName);
+        });
+    });
+
+    // Add event listeners for delete buttons
+    tbody.querySelectorAll('.delete-btn-small').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation(); // Prevent row click if any
+            const id = e.target.getAttribute('data-id');
+            const table = e.target.getAttribute('data-table');
+            
+            if(confirm('確定要刪除這筆資料嗎？\n此操作無法復原！')) {
+                const originalText = e.target.textContent;
+                try {
+                    e.target.textContent = '...';
+                    e.target.disabled = true;
+                    
+                    await deleteRecord(id, table);
+                    
+                    // deleteRecord updates local data, so we just re-render
+                    renderDataTable();
+                    
+                    // Optional: show toast/alert
+                    // alert('刪除成功'); 
+                } catch(err) {
+                    console.error(err);
+                    alert('刪除失敗: ' + err.message);
+                    e.target.textContent = originalText;
+                    e.target.disabled = false;
+                }
+            }
         });
     });
 
