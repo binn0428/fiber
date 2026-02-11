@@ -777,11 +777,28 @@ async function confirmAutoAdd() {
                 const fiber = (d.fiber_name || '').trim();
                 
                 // Match Direction 1: A->B
-                const matchDirect = (uNorm === sNorm && vNorm === dNorm && fiber === fName);
+                // const matchDirect = (uNorm === sNorm && vNorm === dNorm && fiber === fName);
                 // Match Direction 2: B->A (Bidirectional Check)
-                const matchReverse = (uNorm === dNorm && vNorm === sNorm && fiber === fName);
+                // const matchReverse = (uNorm === dNorm && vNorm === sNorm && fiber === fName);
                 
-                return matchDirect || matchReverse;
+                // return matchDirect || matchReverse;
+
+                // AGGRESSIVE MATCHING (User Request):
+                // If fiber name matches exactly, and the record touches EITHER of our endpoints (Start or End),
+                // we consider the core used.
+                // This covers:
+                // 1. Exact match (A->B)
+                // 2. Reverse match (B->A)
+                // 3. Incomplete data (A->?)
+                // 4. Mismatched destination but same cable/node (A->C vs A->B) - conservative safety to avoid duplication
+                
+                if (fiber !== fName) return false;
+
+                const touchesStation = (uNorm === sNorm || uNorm === dNorm);
+                const touchesDest = (vNorm === sNorm || vNorm === dNorm);
+
+                // If it touches either end, count it as used.
+                return touchesStation || touchesDest;
             }).map(d => {
                 const num = parseInt(d.core_count);
                 return isNaN(num) ? 0 : num;
