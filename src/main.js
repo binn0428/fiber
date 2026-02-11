@@ -747,9 +747,13 @@ async function confirmAutoAdd() {
                  throw new Error(`路徑段 ${segment.from} -> ${segment.to} 資料異常，無法鎖定芯線。請重新搜尋。`);
             }
             
+            let segmentCoreCounter = 0; // Reset for each segment
             for(const row of segment.rows) {
+                 segmentCoreCounter++;
+
                  if (row._generated) {
                      // Passthrough/Virtual Row: No ID check needed, we will CREATE it.
+                     row._assignedCore = String(segmentCoreCounter);
                      recordsToCreate.push(row);
                      continue;
                  }
@@ -761,6 +765,11 @@ async function confirmAutoAdd() {
                  }
                  if(freshRow.usage && freshRow.usage.trim() !== '') {
                       throw new Error(`芯線已被佔用 (${freshRow.station_name} ${freshRow.fiber_name})，請重新搜尋。`);
+                 }
+                 
+                 // If core_count is missing, assign it temporarily for update
+                 if (!freshRow.core_count) {
+                      freshRow._assignedCore = String(segmentCoreCounter);
                  }
                  recordsToUpdate.push(freshRow);
             }
@@ -779,8 +788,9 @@ async function confirmAutoAdd() {
                  usage: updates.usage,
                  notes: noteWithId,
                  department: updates.department,
-                 contact: updates.contact
-                 // core_number: ??? We leave it empty as it's a virtual inferred link
+                 contact: updates.contact,
+                 // Auto-assign core number for virtual rows
+                 core_count: row._assignedCore || '1'
              };
              
              await addRecord(newRecord);
@@ -790,21 +800,18 @@ async function confirmAutoAdd() {
         for(const record of recordsToUpdate) {
             // Append PathID to EXISTING record notes to preserve history if any
             const currentRecordNotes = record.notes ? String(record.notes) : '';
-            // If the user provided new notes, we use that. If not, we just append PathID to existing notes?
-            // Actually, the requirement is usually to OVERWRITE usage but KEEP other technical details.
-            // But 'notes' is often user-input.
-            // Let's combine user input notes + PathID.
-            // Wait, if we overwrite 'notes' with user input, we lose old notes on that core.
-            // Let's append user input to old notes? No, user input usually describes the NEW usage.
             
-            // Current Logic: noteWithId = (UserNotes) + [PathID]
-            // We should probably preserve old notes if they are technical info?
-            // Usually 'notes' field is for the current usage.
-            
-            await updateRecord(record.id, {
+            const updatePayload = {
                 ...updates,
                 notes: noteWithId
-            }, record._table);
+            };
+
+            // Fix: If core_count is missing (marked by _assignedCore), assign it
+            if (record._assignedCore) {
+                updatePayload.core_count = record._assignedCore;
+            }
+
+            await updateRecord(record.id, updatePayload, record._table);
         }
         
         alert("新增成功！路徑 ID: " + pathId);
@@ -2131,11 +2138,28 @@ async function handleConnectionClick(sourceName, targetName) {
     const sourceSiteStats = stats.find(s => s.name === sourceName);
     const fiberStats = sourceSiteStats?.groups || {};
 
-    let msg = `連線: ${sourceName} -> ${targetName}\n找到 ${records.length} 條光纜資料:\n`;
-    records.forEach((r, idx) => {
-        const fiberGroup = fiberStats[r.fiber_name || 'Unclassified'];
-        const capacity = fiberGroup ? Math.max(fiberGroup.rowCount, fiberGroup.explicitCapacity) : r.core_count || '?';
-        msg += `${idx + 1}. 名稱: ${r.fiber_name || '無'}, 芯數: ${capacity}\n`;
+    // Group records by fiber_name to avoid duplicates
+    const uniqueFibers = {};
+    records.forEach(r => {
+        const fName = r.fiber_name || 'Unclassified';
+        if (!uniqueFibers[fName]) {
+            const fiberGroup = fiberStats[fName];
+            // Capacity: Use stats if available, otherwise fallback to row count or core_count
+            const capacity = fiberGroup ? Math.max(fiberGroup.rowCount, fiberGroup.explicitCapacity) : (r.core_count || '?');
+            uniqueFibers[fName] = {
+                name: fName,
+                capacity: capacity,
+                count: 1
+            };
+        } else {
+            uniqueFibers[fName].count++;
+        }
+    });
+
+    let msg = `連線: ${sourceName} -> ${targetName}\n找到 ${Object.keys(uniqueFibers).length} 條光纜資料 (共 ${records.length} 芯):\n`;
+    
+    Object.values(uniqueFibers).forEach((f, idx) => {
+        msg += `${idx + 1}. 名稱: ${f.name}, 總芯數: ${f.capacity} (本段可用: ${f.count})\n`;
     });
 
     if (!isEditMode) {
@@ -2143,7 +2167,7 @@ async function handleConnectionClick(sourceName, targetName) {
         return;
     }
 
-    msg += `\n請輸入:\n- 數字 (1-${records.length}): 編輯該光纜\n- 'd': 刪除此連線所有資料\n- 取消: 關閉視窗`;
+    msg += `\n請輸入:\n- 數字 (1-${Object.keys(uniqueFibers).length}): 編輯該光纜 (將開啟第一筆資料)\n- 'd': 刪除此連線所有資料\n- 取消: 關閉視窗`;
 
     const input = prompt(msg);
     if (!input) return;
