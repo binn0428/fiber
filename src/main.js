@@ -783,15 +783,16 @@ async function confirmAutoAdd() {
                 
                 // return matchDirect || matchReverse;
 
-                // AGGRESSIVE MATCHING (User Request):
-                // If fiber name matches exactly, and the record touches EITHER of our endpoints (Start or End),
-                // we consider the core used.
-                // This covers:
-                // 1. Exact match (A->B)
-                // 2. Reverse match (B->A)
-                // 3. Incomplete data (A->?)
-                // 4. Mismatched destination but same cable/node (A->C vs A->B) - conservative safety to avoid duplication
+                // AGGRESSIVE MATCHING (Global Unique Fiber Name):
+                // If fiber name matches exactly, we consider the core used, REGARDLESS of the endpoints.
+                // This assumes that Fiber Names (e.g. 1.12_c5c6_1) are globally unique identifiers for a physical cable.
+                // If the user uses generic names (e.g. 96C) for multiple different cables, this will cause issues,
+                // but for specific IDs like the user provided, this is the only way to guarantee no duplicates.
                 
+                if (fiber === fName) return true;
+
+                // Previous Logic (Disabled in favor of Global Unique Check):
+                /*
                 if (fiber !== fName) return false;
 
                 const touchesStation = (uNorm === sNorm || uNorm === dNorm);
@@ -799,6 +800,8 @@ async function confirmAutoAdd() {
 
                 // If it touches either end, count it as used.
                 return touchesStation || touchesDest;
+                */
+               return false;
             }).map(d => {
                 const num = parseInt(d.core_count);
                 return isNaN(num) ? 0 : num;
