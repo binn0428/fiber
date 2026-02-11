@@ -376,7 +376,8 @@ export function getStats() {
         const netEnd = d.net_end ? String(d.net_end).trim() : '';
         const department = d.department ? String(d.department).trim() : '';
         
-        const isUsed = usage.length > 0 || destination.length > 0 || netEnd.length > 0 || department.length > 0;
+        // Fix: Destination alone does not imply usage (it just defines the link structure)
+        const isUsed = usage.length > 0 || netEnd.length > 0 || department.length > 0;
         
         if (isUsed) {
             group.usedCount++;
