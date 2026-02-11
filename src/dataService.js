@@ -424,14 +424,16 @@ export function getStats() {
                 if (!siteFibers[dest][fName]) {
                     siteFibers[dest][fName] = { ...sourceGroup };
                 } else {
-                    // If destination already has stats (e.g. mixed data), 
-                    // we prioritize the Source's "Global View" (usually larger/more complete).
-                    // Or we can take the Maximum.
+                    // If destination already has stats (e.g. mixed data from multiple sources), 
+                    // we SUM the counts to reflect total aggregated usage/capacity at this node.
+                    // This fixes the issue where split cables (e.g. cores 1-6 from A, 7-12 from B)
+                    // were under-reported by Math.max.
                     const destGroup = siteFibers[dest][fName];
-                    destGroup.rowCount = Math.max(destGroup.rowCount, sourceGroup.rowCount);
-                    destGroup.usedCount = Math.max(destGroup.usedCount, sourceGroup.usedCount);
+                    destGroup.rowCount += sourceGroup.rowCount;
+                    destGroup.usedCount += sourceGroup.usedCount;
+                    destGroup.validCoreCount += sourceGroup.validCoreCount;
+                    // Capacity (Max Core Number) should still be Max, as it represents the cable's "Size"
                     destGroup.explicitCapacity = Math.max(destGroup.explicitCapacity, sourceGroup.explicitCapacity);
-                    destGroup.validCoreCount = Math.max(destGroup.validCoreCount, sourceGroup.validCoreCount);
                 }
             });
         }

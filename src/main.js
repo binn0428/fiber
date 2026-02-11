@@ -2347,9 +2347,13 @@ function openSiteDetails(siteName) {
         const btnColor = isMain ? "#ef4444" : "#3b82f6";
 
         // Check if admin is logged in
-        const adminBtnHtml = isAdminLoggedIn 
-            ? `<button id="btn-set-main" style="padding: 6px 12px; background: ${btnColor}; color: white; border: none; border-radius: 4px; cursor: pointer;">${btnText}</button>`
-            : '';
+        let adminBtnHtml = '';
+        if (isAdminLoggedIn) {
+            adminBtnHtml = `
+                <button id="btn-set-main" style="padding: 6px 12px; background: ${btnColor}; color: white; border: none; border-radius: 4px; cursor: pointer;">${btnText}</button>
+                <button id="btn-delete-station" style="padding: 6px 12px; background: var(--danger-color); color: white; border: none; border-radius: 4px; cursor: pointer;">🗑️ 刪除站點</button>
+            `;
+        }
 
         modalSiteStats.innerHTML = `
             <div style="display: flex; gap: 10px; margin-bottom: 1rem;">
@@ -2391,6 +2395,31 @@ function openSiteDetails(siteName) {
                     } catch (e) {
                         console.error(e);
                         alert('儲存設定失敗');
+                    }
+                };
+            }
+
+            const btnDeleteStation = document.getElementById('btn-delete-station');
+            if (btnDeleteStation) {
+                btnDeleteStation.onclick = async () => {
+                    if (confirm(`確定要刪除站點 "${siteName}" 嗎？\n此操作將永久刪除該站點的所有光纖資料！`)) {
+                        try {
+                            btnDeleteStation.disabled = true;
+                            btnDeleteStation.textContent = "刪除中...";
+                            await deleteStation(siteName);
+                            alert(`已刪除站點 ${siteName}`);
+                            closeModal(siteModal);
+                            // Refresh all views
+                            await loadData(); // Reload to be safe
+                            renderDashboard();
+                            renderMap();
+                            renderDataTable();
+                        } catch (e) {
+                            console.error(e);
+                            alert('刪除失敗: ' + e.message);
+                            btnDeleteStation.disabled = false;
+                            btnDeleteStation.textContent = "🗑️ 刪除站點";
+                        }
                     }
                 };
             }
