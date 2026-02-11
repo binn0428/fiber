@@ -763,19 +763,24 @@ async function confirmAutoAdd() {
             const dNorm = normalizeStationName(destination);
             const fName = fiberName.trim();
 
-            const existingCores = new Set(data.filter(d => {
-                const uNorm = normalizeStationName(d.station_name);
-                const vNorm = normalizeStationName(d.destination);
-                const fiber = (d.fiber_name || '').trim();
-                
-                // Match Direction 1: A->B
-                const matchDirect = (uNorm === sNorm && vNorm === dNorm && fiber === fName);
-                
-                return matchDirect;
-            }).map(d => {
-                const num = parseInt(d.core_count);
-                return isNaN(num) ? 0 : num;
-            }));
+            const existingCores = new Set(
+                data
+                  .filter(d => {
+                      const uNorm = normalizeStationName(d.station_name);
+                      const vNorm = normalizeStationName(d.destination);
+                      const fiber = (d.fiber_name || '').trim();
+                      
+                      // Treat A<->B as the same physical link for core allocation
+                      const matchDirect = (uNorm === sNorm && vNorm === dNorm && fiber === fName);
+                      const matchReverse = (uNorm === dNorm && vNorm === sNorm && fiber === fName);
+                      return matchDirect || matchReverse;
+                  })
+                  .map(d => {
+                      const num = parseInt(d.core_count);
+                      return isNaN(num) ? 0 : num;
+                  })
+                  .filter(n => n > 0) // ignore non-positive and NaN
+            );
 
             const available = [];
             let candidate = 1;

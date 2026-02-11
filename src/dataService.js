@@ -504,7 +504,12 @@ export function getStats() {
                  if (capacity === 0) capacity = Math.max(group.rowCount, group.explicitCapacity);
             }
             
-            const used = group.usedCores.size + group.usedRowsWithoutCore;
+            // Used cores should reflect unique core numbers to avoid overcount.
+            // If no core numbers are present, fall back to rows marked used without core.
+            let used = group.usedCores.size;
+            if (used === 0 && group.usedRowsWithoutCore > 0) {
+                used = group.usedRowsWithoutCore;
+            }
             const free = Math.max(0, capacity - used);
             
             // Update group object with calculated values so main.js can use them
