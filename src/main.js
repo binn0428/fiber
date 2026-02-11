@@ -1653,9 +1653,7 @@ if (searchBtn && globalSearchInput) {
         // Calculate and Render Stats
         calculateAndRenderStats(results);
 
-        // Do NOT render results immediately (User Request)
-        // renderTableRows(dataTableBody, results);
-        dataTableBody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding: 2rem; color: var(--text-muted);">請選擇上方篩選條件以檢視結果</td></tr>';
+        renderTableRows(dataTableBody, results);
         
         // Reset site selector
         if (siteSelector) siteSelector.value = "";
