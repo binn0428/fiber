@@ -301,6 +301,119 @@ if (mapControlsToggle && mapControlsMenu) {
 
 // --- Auto Add & Path Management Logic ---
 
+window.loadPathMgmtList = async function() {
+    const container = document.getElementById('mgmt-path-list');
+    if(!container) return;
+    
+    container.innerHTML = '<p>載入中...</p>';
+    
+    // Ensure data is loaded
+    const data = getData();
+    if(!data || data.length === 0) {
+        await loadData();
+    }
+    
+    const allData = getData();
+    
+    // Group by PathID
+    const paths = {};
+    
+    allData.forEach(d => {
+        if(d.notes && d.notes.includes('[PathID:')) {
+            const match = d.notes.match(/\[PathID:([^\]]+)\]/);
+            if(match) {
+                const id = match[1];
+                if(!paths[id]) {
+                    paths[id] = {
+                        id: id,
+                        usage: d.usage,
+                        department: d.department,
+                        contact: d.contact,
+                        notes: d.notes,
+                        records: []
+                    };
+                }
+                paths[id].records.push(d);
+            }
+        }
+    });
+
+    // Filter by Search
+    const searchInput = document.getElementById('path-search');
+    const keyword = searchInput ? searchInput.value.trim().toLowerCase() : '';
+    
+    let pathList = Object.values(paths);
+    
+    if(keyword) {
+        pathList = pathList.filter(p => {
+            const searchStr = `${p.usage || ''} ${p.department || ''} ${p.notes || ''} ${p.id}`.toLowerCase();
+            return searchStr.includes(keyword);
+        });
+    }
+
+    if(pathList.length === 0) {
+        container.innerHTML = '<div style="padding:10px; color:#aaa; text-align:center;">無符合條件的路徑資料</div>';
+        return;
+    }
+    
+    // Sort by ID (descending)
+    pathList.sort((a,b) => b.id.localeCompare(a.id));
+    
+    const table = document.createElement('table');
+    table.style.width = '100%';
+    table.style.borderCollapse = 'collapse';
+    
+    table.innerHTML = `
+        <thead>
+            <tr style="background:rgba(255,255,255,0.05); color:var(--text-primary);">
+                <th style="padding:8px; border-bottom:1px solid #555; text-align:left;">ID</th>
+                <th style="padding:8px; border-bottom:1px solid #555; text-align:left;">起訖點</th>
+                <th style="padding:8px; border-bottom:1px solid #555; text-align:left;">用途</th>
+                <th style="padding:8px; border-bottom:1px solid #555; text-align:left;">單位</th>
+                <th style="padding:8px; border-bottom:1px solid #555; text-align:center;">芯數</th>
+                <th style="padding:8px; border-bottom:1px solid #555; text-align:center;">操作</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    `;
+    
+    const tbody = table.querySelector('tbody');
+    
+    pathList.forEach(p => {
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid #444';
+        
+        // Extract Route
+        let routeStr = '未知路徑';
+        const nodesMatch = p.notes.match(/\[PathNodes:([^\]]+)\]/);
+        if(nodesMatch) {
+            const nodes = nodesMatch[1].split(',');
+            if(nodes.length >= 2) {
+                routeStr = `${nodes[0]} <span style="color:var(--primary-color)">➝</span> ${nodes[nodes.length-1]}`;
+            } else {
+                routeStr = nodes.join(' ➝ ');
+            }
+        }
+        
+        tr.innerHTML = `
+            <td style="padding:8px; font-size:0.9em; color:#888;">${p.id.substring(0,6)}...</td>
+            <td style="padding:8px;">${routeStr}</td>
+            <td style="padding:8px;">${p.usage || '-'}</td>
+            <td style="padding:8px;">${p.department || '-'}</td>
+            <td style="padding:8px; text-align:center;">${p.records.length}</td>
+            <td style="padding:8px; text-align:center;">
+                <button onclick="viewPathOnMap('${p.id}')" title="地圖" style="background:none; border:none; cursor:pointer; color:var(--primary-color); margin-right:5px;">🗺️</button>
+                <button onclick="openEditPathModal('${p.id}')" title="編輯" style="background:none; border:none; cursor:pointer; color:var(--warning-color); margin-right:5px;">✏️</button>
+                <button onclick="deletePath('${p.id}')" title="刪除" style="background:none; border:none; cursor:pointer; color:#ef4444;">🗑️</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+    
+    container.innerHTML = '';
+    container.appendChild(table);
+};
+
 window.switchAutoTab = function(tab) {
     document.querySelectorAll('#auto-add .tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('#auto-add .tab-content-panel').forEach(p => p.style.display = 'none');
@@ -1098,116 +1211,7 @@ window.viewPathOnMap = function(pathId) {
     }
 };
 
-// Path Management (Delete/Restore)
-window.loadPathMgmtList = async function() {
-    const container = document.getElementById('mgmt-path-list');
-    const select = document.getElementById('path-history-select');
-    if(!container) return;
-    
-    container.innerHTML = '<p style="padding:10px; color:#aaa;">載入中...</p>';
-    
-    // Fetch History from Supabase
-    let historyPaths = [];
-    try {
-        historyPaths = await getPathHistoryList();
-    } catch(e) {
-        console.error("Failed to load path history:", e);
-        container.innerHTML = '<p style="padding:10px; color:var(--danger-color);">無法載入歷史紀錄，請檢查網路或資料庫連線。</p>';
-        return;
-    }
-    
-    // Populate Dropdown
-    if(select) {
-        const currentVal = select.value;
-        select.innerHTML = '<option value="">-- 選擇歷史路徑紀錄 --</option>';
-        historyPaths.forEach(p => {
-            const dateStr = new Date(p.created_at).toLocaleString();
-            const label = `${p.usage || '無用途'} (${dateStr}) - ${p.path_id}`;
-            const opt = document.createElement('option');
-            opt.value = p.path_id;
-            opt.textContent = label;
-            select.appendChild(opt);
-        });
-        select.value = currentVal;
-        
-        // Ensure event listener for filtering
-        select.onchange = () => window.loadPathMgmtList();
-    }
-    
-    const queryInput = document.getElementById('path-search');
-    const query = queryInput ? queryInput.value.toLowerCase().trim() : '';
-    const selectedId = select ? select.value : '';
 
-    // Filter Logic
-    const filtered = historyPaths.filter(p => {
-        // Dropdown Filter
-        if(selectedId && p.path_id !== selectedId) return false;
-        
-        // Text Filter
-        if(query) {
-            const usage = (p.usage || '').toLowerCase();
-            const notes = (p.notes || '').toLowerCase();
-            const id = (p.path_id || '').toLowerCase();
-            const start = (p.start_node || '').toLowerCase();
-            const end = (p.end_node || '').toLowerCase();
-            
-            return usage.includes(query) || notes.includes(query) || id.includes(query) || start.includes(query) || end.includes(query);
-        }
-        return true;
-    });
-
-    container.innerHTML = '';
-    
-    if(filtered.length === 0) {
-        container.innerHTML = '<p style="padding:10px; color:#aaa;">尚無符合條件的路徑紀錄。</p>';
-        return;
-    }
-    
-    filtered.forEach(p => {
-        const dateStr = new Date(p.created_at).toLocaleString();
-        let nodes = [];
-        try {
-            nodes = Array.isArray(p.nodes) ? p.nodes : JSON.parse(p.nodes || '[]');
-        } catch(e) { nodes = []; }
-        
-        const segmentsStr = nodes.join(' ➝ ');
-        
-        const div = document.createElement('div');
-        div.className = 'path-mgmt-item';
-        div.style.border = '1px solid #444';
-        div.style.borderRadius = '5px';
-        div.style.padding = '15px';
-        div.style.marginBottom = '10px';
-        div.style.backgroundColor = 'var(--bg-secondary)';
-        
-        let buttons = `<div style="display:flex; gap:5px;">`;
-        buttons += `<button class="action-btn" style="background-color:#3b82f6; font-size:0.9em; padding:5px 10px;" onclick="viewPathOnMap('${p.path_id}')">🗺️ 檢視</button>`;
-        
-        if(isAdminLoggedIn) {
-             buttons += `
-                    <button class="action-btn" style="background-color:var(--primary-color); font-size:0.9em; padding:5px 10px;" onclick="openEditPathModal('${p.path_id}')">編輯</button>
-                    <button class="action-btn" style="background-color:var(--danger-color); font-size:0.9em; padding:5px 10px;" onclick="deletePath('${p.path_id}')">刪除</button>
-            `;
-        }
-        buttons += `</div>`;
-
-        div.innerHTML = `
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px;">
-                <div>
-                    <h4 style="margin:0; color:var(--primary-color);">${p.usage || '無用途'}</h4>
-                    <small style="color:#888;">${dateStr} | ID: ${p.path_id}</small>
-                </div>
-                ${buttons}
-            </div>
-            <div style="font-size:0.9em; color:#ccc;">
-                <div><strong>使用單位:</strong> ${p.department || '-'} | <strong>聯絡人:</strong> ${p.contact || '-'}</div>
-                <div><strong>備註:</strong> ${p.notes || '-'}</div>
-                <div style="margin-top:5px;"><strong>路徑:</strong> ${segmentsStr}</div>
-            </div>
-        `;
-        container.appendChild(div);
-    });
-};
 
 window.deletePath = async function(pathId) {
     if(!isAdminLoggedIn) {
