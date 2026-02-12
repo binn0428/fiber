@@ -225,30 +225,6 @@ h2 {
     z-index: 20;
 }
 
-/* Special styling for User Selected Center Nodes (Yellow Highlighting) */
-.site-node.center-node {
-    background-color: #f59e0b !important; /* Yellow-Orange */
-    color: #000 !important; /* Black text for contrast */
-    border-color: #b45309 !important; /* Darker orange border */
-    font-weight: bold;
-    box-shadow: 0 0 20px rgba(245, 158, 11, 0.6); /* Glow */
-    z-index: 20; /* Highest priority */
-}
-
-/* Original Backbone Style (Red Border) - Keep as fallback or system default */
-.site-node.backbone {
-    border-color: #ef4444; /* Red border for backbone */
-    border-width: 3px;
-    background-color: #4b5563; /* Slightly lighter bg */
-    z-index: 15; /* Higher than normal nodes */
-    box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
-}
-
-.site-node.edit-mode {
-    border-style: dashed;
-    cursor: move;
-}
-
 .connections {
     position: absolute;
     top: 0;
@@ -408,7 +384,7 @@ input:focus, select:focus, textarea:focus {
     width: 100%; /* Full width */
     height: 100%; /* Full height */
     overflow: auto; /* Enable scroll if needed */
-    background-color: rgba(0,0,0,0.85); /* Darker overlay */
+    background-color: rgba(0,0,0,0.7); /* Black w/ opacity */
     backdrop-filter: blur(5px);
 }
 
@@ -438,51 +414,6 @@ input:focus, select:focus, textarea:focus {
 
 .modal-content.sm {
     max-width: 500px;
-}
-
-/* Admin Login Modal Specifics */
-.modal-content.login-content {
-    background-color: #1f2937; /* Darker gray */
-    border: 1px solid #374151;
-    color: #f3f4f6;
-    padding: 1.5rem;
-    max-width: 350px; /* Smaller width for mobile feel */
-    margin-top: 20vh; /* Center vertically more */
-}
-
-.modal-content.login-content h3 {
-    font-size: 1.25rem;
-    margin-bottom: 0.5rem;
-    text-align: center;
-}
-
-.modal-content.login-content p {
-    font-size: 0.875rem;
-    color: #9ca3af;
-    text-align: center;
-    margin-bottom: 1.5rem;
-}
-
-.modal-content.login-content input {
-    background-color: #111827;
-    border: 1px solid #4b5563;
-    color: white;
-    font-size: 0.9rem;
-    padding: 0.75rem;
-    margin-bottom: 1rem;
-    width: 100%;
-    border-radius: 0.375rem;
-}
-
-.modal-content.login-content input:focus {
-    border-color: var(--primary-color);
-    outline: none;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
-}
-
-.modal-content.login-content button {
-    font-size: 0.9rem;
-    padding: 0.75rem;
 }
 
 .modal-content.large-modal {
@@ -649,54 +580,11 @@ input:focus, select:focus, textarea:focus {
     .map-container {
         height: 500px;
         min-height: 500px;
-        overflow: hidden; /* Ensure content is clipped */
-        position: relative; /* For absolute positioning of buttons */
     }
     
     #fiber-map {
-        /* Force a landscape canvas coordinate system to preserve layout shape on mobile */
-        min-width: 800px;
-        min-height: 600px;
-        transform-origin: center center; /* Zoom from center */
-    }
-
-    .site-node {
-        min-width: auto;
-        min-height: auto;
-        font-size: 14px; /* Increased from 10px */
-        padding: 4px 8px; /* Increased padding */
-        border-width: 1px;
-        white-space: nowrap; /* Prevent wrapping */
-    }
-    
-    /* Hide Level info on mobile to save space */
-    .site-node div:nth-child(2) {
-        display: none;
-    }
-
-    .site-node.backbone {
-        border-width: 2px;
-    }
-
-    /* Hide Map Controls on Map Overlay */
-    .map-controls {
-        display: none !important;
-    }
-    
-    /* Show Sidebar Mobile Map Actions */
-    .mobile-map-actions {
-        display: block !important;
-    }
-    
-    /* Toggle Button for Sidebar */
-    #mobile-menu-btn {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        font-size: 1.5rem;
+        min-width: 100%;
+        min-height: 100%;
     }
 }
 
