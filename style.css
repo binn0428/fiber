@@ -529,8 +529,43 @@ input:focus, select:focus, textarea:focus {
         width: 250px;
     }
     
-    .sidebar.open {
+    .sidebar.active {
         transform: translateX(0);
+    }
+    
+    .stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.5rem;
+    }
+    
+    .stat-card {
+        padding: 0.5rem;
+    }
+    
+    .stat-card h3 {
+        font-size: 0.9rem;
+    }
+    
+    .stat-row {
+        font-size: 0.8rem;
+    }
+
+    /* Optimize Path Management for Mobile */
+    #tab-auto-mgmt .search-box {
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    #tab-auto-mgmt select,
+    #tab-auto-mgmt input,
+    #tab-auto-mgmt .action-btn {
+        font-size: 0.85rem;
+        padding: 6px;
+        height: auto;
+    }
+
+    #tab-auto-mgmt .path-list {
+        font-size: 0.85rem;
     }
     
     #mobile-menu-btn {
