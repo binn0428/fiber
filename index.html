@@ -207,9 +207,12 @@
                 </div>
 
                 <!-- Tab 2: Management -->
-                <div id="tab-path-mgmt" class="tab-content-panel" style="display:none;">
-                    <div class="search-box" style="margin-bottom: 15px;">
-                         <input type="text" id="path-search" placeholder="搜尋用途、備註或站點..." style="width: 100%; padding: 8px;">
+                <div id="tab-auto-mgmt" class="tab-content-panel" style="display:none;">
+                    <div class="search-box" style="margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 10px;">
+                         <select id="path-history-select" style="padding: 8px; flex: 1; min-width: 200px;">
+                            <option value="">-- 選擇歷史路徑紀錄 --</option>
+                         </select>
+                         <input type="text" id="path-search" placeholder="搜尋用途、備註或站點..." style="flex: 2; padding: 8px; min-width: 200px;">
                          <button id="path-search-btn">🔍</button>
                          <button id="path-refresh-btn" class="action-btn" style="background-color: var(--success-color); margin-left: 5px;">🔄 重新整理</button>
                     </div>
