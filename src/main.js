@@ -1240,7 +1240,10 @@ window.deletePath = async function(pathId) {
                     phone: null, 
                     notes: newNotes,
                     core_count: null,
-                    port: null
+                    port: null,
+                    net_start: null,
+                    net_end: null,
+                    connection_line: null
                 }, r._table);
             }
         }
