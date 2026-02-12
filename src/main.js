@@ -1215,6 +1215,10 @@ window.deletePath = async function(pathId) {
                 port: null
             }, r._table);
         }
+        
+        // Also delete from path_history table
+        await deletePathHistory(pathId);
+        
         alert(`已成功刪除路徑並釋放 ${records.length} 筆芯線資料。`);
         loadPathMgmtList(); // Refresh list
         renderDataTable(); // Refresh main table
@@ -2054,6 +2058,14 @@ if (saveMapBtn) {
     // Initialize Map Panning
     initMapPanning();
 
+    // Add Resize Listener to auto-fit map on orientation change/resize
+    window.addEventListener('resize', () => {
+        const mapVisible = document.getElementById('fiber-map')?.offsetParent;
+        if (mapVisible) {
+            fitMapToView();
+        }
+    });
+
     if (closeModals) {
     closeModals.forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -2182,8 +2194,29 @@ function renderMap() {
     svg.appendChild(defs);
     mapContainer.appendChild(svg);
 
-    if (activeRoots.length > 0) {
+    // Determine Layout Mode
+    // Default to Original Backbone Sequence (Ring Layout) if possible, as it's the preferred "Previous State"
+    const backboneSequence = ['ROOM', 'UDC', '1PH', '2PH', 'DKB', 'MS2', 'MS3', 'MS4', '5KB', '2O2'];
+    
+    // Check if we have any backbone nodes in the data
+    const hasBackboneNodes = backboneSequence.some(key => {
+        return Object.keys(nodes).some(n => {
+            const normN = n.toUpperCase().replace('#', '');
+            const normK = key.toUpperCase().replace('#', '');
+            return normN.includes(normK) || normK.includes(normN);
+        });
+    });
+
+    // Use Original Layout if we have backbone nodes, OR if we have no active roots (fallback)
+    // Only use "Cluster Layout" if user explicitly has Main Sites AND we don't want the Ring Layout?
+    // Actually, user feedback suggests they prefer the Ring Layout even if they set Main Sites.
+    // So we prioritize Ring Layout if matches are found.
+    
+    let useRingLayout = hasBackboneNodes;
+
+    if (!useRingLayout && activeRoots.length > 0) {
         // --- Custom Main Site Layout (Independent Clusters) ---
+        // This runs only if NO backbone nodes are found (e.g. a completely different site dataset)
         
         // Iterate through each root and layout its owned nodes
         activeRoots.forEach(root => {
@@ -2195,13 +2228,7 @@ function renderMap() {
                 rootX = nodePositions[root.name].x;
                 rootY = nodePositions[root.name].y;
             } else {
-                // If multiple roots have no position, maybe spread them initially? 
-                // But user says "drag to sort", so we assume they place the roots.
-                // If they are all at 50,50, it will overlap.
-                // Let's check if we have multiple roots without positions.
                 if (activeRoots.length > 1 && !nodePositions[root.name]) {
-                    // Spread them out in a circle if undefined
-                    // This is a fallback initialization
                     const idx = activeRoots.indexOf(root);
                     const angle = (idx / activeRoots.length) * 2 * Math.PI;
                     rootX = 50 + 30 * Math.cos(angle);
@@ -2209,11 +2236,10 @@ function renderMap() {
                 }
             }
 
-            // Set Root Position (only if not saved, otherwise it's already set by loop end override)
-            // Actually, we set .xPct here for the calculation of children
+            // Set Root Position
             root.xPct = rootX;
             root.yPct = rootY;
-            root.isBackbone = true;
+            // root.isBackbone = true; // Set later globally
 
             // Get owned nodes for this cluster
             const clusterNodes = clusters[root.name] || [];
@@ -2231,14 +2257,8 @@ function renderMap() {
             // Layout Children Radially around THIS Root
             Object.entries(levels).forEach(([lvl, group]) => {
                 const levelIdx = parseInt(lvl);
-                
-                // Radius increases with level
                 const radius = 20 * levelIdx; 
-                
-                // Angle Step
                 const step = (2 * Math.PI) / group.length;
-                
-                // Optional: Rotate each level slightly to avoid straight lines
                 const offsetAngle = levelIdx * 0.2; 
 
                 group.forEach((node, idx) => {
@@ -2250,8 +2270,9 @@ function renderMap() {
         });
 
     } else {
-        // --- Original Backbone Layout ---
-        const backboneSequence = ['ROOM', 'UDC', '1PH', '2PH', 'DKB', 'MS2', 'MS3', 'MS4', '5KB', '2O2'];
+        // --- Original Backbone Layout (Ring Layout) ---
+        // This is the default preferred layout
+        
         const radius = 45;
         const angleStep = (2 * Math.PI) / backboneSequence.length;
         
@@ -2265,10 +2286,11 @@ function renderMap() {
 
             if (nodeName && nodes[nodeName]) {
                 const node = nodes[nodeName];
+                // Only set position if not already set (though loop below will override)
                 const angle = idx * angleStep - (Math.PI / 2);
                 node.xPct = 50 + radius * Math.cos(angle);
                 node.yPct = 50 + radius * Math.sin(angle);
-                node.isBackbone = true;
+                // node.isBackbone = true; // Set later
                 node.level = -1; 
                 backboneNodes.push(node);
             }
@@ -2277,7 +2299,8 @@ function renderMap() {
         const satelliteGroups = {};
         backboneNodes.forEach(bn => satelliteGroups[bn.name] = []);
         const orphans = [];
-        const nonBackboneNodes = Object.values(nodes).filter(n => !n.isBackbone);
+        // Identify non-backbone nodes
+        const nonBackboneNodes = Object.values(nodes).filter(n => !backboneNodes.includes(n));
         
         nonBackboneNodes.forEach(node => {
             const connectedBackbone = backboneNodes.find(bn => {
@@ -2322,8 +2345,8 @@ function renderMap() {
             orphans.forEach((node, idx) => {
                 const angle = (idx / orphans.length) * 2 * Math.PI;
                 const r = 10;
-                node.xPct = centerX + r * Math.cos(angle);
-                node.yPct = centerY + r * Math.sin(angle);
+                node.xPct = 50 + r * Math.cos(angle);
+                node.yPct = 50 + r * Math.sin(angle);
             });
         }
     }
@@ -2333,6 +2356,20 @@ function renderMap() {
         if (nodePositions[node.name]) {
             node.xPct = nodePositions[node.name].x;
             node.yPct = nodePositions[node.name].y;
+        }
+        
+        // Set Backbone Flag for Highlighting
+        // 1. Is in Current Main Sites (User Selected)
+        // 2. Is in Original Backbone Sequence (System Default)
+        const isUserMain = currentMainSites.includes(node.name);
+        const isSystemBackbone = backboneSequence.some(key => {
+            const normN = node.name.toUpperCase().replace('#', '');
+            const normK = key.toUpperCase().replace('#', '');
+            return normN.includes(normK) || normK.includes(normN);
+        });
+        
+        if (isUserMain || isSystemBackbone) {
+            node.isBackbone = true;
         }
     });
 
