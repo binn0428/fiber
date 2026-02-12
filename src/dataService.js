@@ -625,23 +625,7 @@ export async function savePathHistory(pathData) {
             .select();
             
         if (error) {
-            // Smart Retry for Column Mismatch (path_id vs id)
-            if (error.message && (error.message.includes('column') || error.message.includes('does not exist')) && pathData.path_id) {
-                console.warn("savePathHistory: Column mismatch detected. Retrying with 'id' instead of 'path_id'...");
-                
-                const fallbackData = { ...pathData };
-                fallbackData.id = fallbackData.path_id;
-                delete fallbackData.path_id;
-                
-                const { data: data2, error: error2 } = await sb
-                    .from('path_history')
-                    .insert([fallbackData])
-                    .select();
-                    
-                if (error2) throw error2;
-                return data2;
-            }
-            throw error;
+             throw error;
         }
         return data;
     } catch (e) {
@@ -670,30 +654,14 @@ export async function deletePathHistory(pathId) {
     if (!sb) return;
 
     try {
-        // First try deleting by 'path_id' (standard)
+        // Try deleting by 'id' (standard per new schema)
         const { error } = await sb
             .from('path_history')
             .delete()
-            .eq('path_id', pathId);
+            .eq('id', pathId);
             
         if (error) {
-            // If column path_id doesn't exist, try 'id' as fallback
-            // This handles cases where user created table with default 'id' column for the path ID
-            if (error.message && (error.message.includes('column') || error.message.includes('does not exist'))) {
-                console.warn("Column 'path_id' not found in path_history, attempting fallback to 'id'...");
-                const { error: error2 } = await sb
-                    .from('path_history')
-                    .delete()
-                    .eq('id', pathId);
-                
-                if (error2) {
-                     console.warn("Failed to delete from path_history (fallback 'id' also failed):", error2);
-                     // Don't throw, just log. History cleanup is secondary to core release.
-                }
-            } else {
-                // For other errors (permissions, network), we might want to throw or just log
-                console.warn("Error deleting path history:", error);
-            }
+             console.warn("Error deleting path history:", error);
         }
     } catch (e) {
         // Catch-all to ensure main delete flow doesn't break
