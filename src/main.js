@@ -42,12 +42,12 @@ try {
     }
 } catch (e) { console.error("Failed to load map state", e); }
 
-// Node Positions Memory
 let nodePositions = {};
 let hasAutoFitted = false; // Track if we have auto-fitted the map
-
 let currentPage = 1;
 const ITEMS_PER_PAGE = 20;
+
+
 
 // DOM Elements
 const navBtns = document.querySelectorAll('.nav-btn');
@@ -1357,8 +1357,7 @@ function showToast(message, duration = 3000) {
 
 
 
-let currentPage = 1;
-const ITEMS_PER_PAGE = 20;
+
 
 // Auto Fit Map Logic
 function fitMapToView() {
