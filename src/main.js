@@ -325,7 +325,7 @@ window.loadPathMgmtList = async function() {
         }
 
         if(!pathList || pathList.length === 0) {
-            container.innerHTML = '<div style="padding:10px; color:#aaa; text-align:center;">無符合條件的路徑資料 (Supabase)</div>';
+            container.innerHTML = '<div style="padding:10px; color:#aaa; text-align:center;">無符合條件的路徑資料</div>';
             return;
         }
         
