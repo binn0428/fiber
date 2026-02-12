@@ -98,85 +98,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderDataTable();
         populateSiteSelector();
         
-        // Mobile Sidebar Button Logic
-        const mobileRefreshBtn = document.getElementById('mobile-refresh-map-btn');
-        if (mobileRefreshBtn) {
-            mobileRefreshBtn.addEventListener('click', () => {
-                renderMap();
-                const sidebar = document.querySelector('.sidebar');
-                if (sidebar) sidebar.classList.remove('active');
-            });
-        }
-
-        const mobileCenterSortBtn = document.getElementById('mobile-center-sort-btn');
-        if (mobileCenterSortBtn) {
-            mobileCenterSortBtn.addEventListener('click', () => {
-                const newMainSites = prompt("請輸入中心站點名稱 (多個請用逗號分隔):", currentMainSites.join(','));
-                if (newMainSites !== null) {
-                    const sites = newMainSites.split(/[,，]/).map(s => s.trim()).filter(s => s);
-                    if (sites.length > 0) {
-                        currentMainSites = sites;
-                        setAppSettings('main_site', { names: sites }); // Save to Supabase
-                        renderMap();
-                    }
-                }
-                const sidebar = document.querySelector('.sidebar');
-                if (sidebar) sidebar.classList.remove('active');
-            });
-        }
-
-        const mobileSaveMapBtn = document.getElementById('mobile-save-map-btn');
-        if (mobileSaveMapBtn) {
-            mobileSaveMapBtn.addEventListener('click', async () => {
-                if (!isAdminLoggedIn) {
-                    alert("權限不足：儲存佈局功能僅供管理員使用");
-                    return;
-                }
-                const positions = {};
-                document.querySelectorAll('.site-node').forEach(el => {
-                    const name = el.getAttribute('data-site');
-                    const left = parseFloat(el.style.left);
-                    const top = parseFloat(el.style.top);
-                    positions[name] = { x: left, y: top };
-                });
-                
-                try {
-                    await setAppSettings('fiber_node_positions', positions);
-                    alert('佈局已儲存！');
-                } catch (e) {
-                    alert('儲存失敗：' + e.message);
-                }
-                const sidebar = document.querySelector('.sidebar');
-                if (sidebar) sidebar.classList.remove('active');
-            });
-        }
-
-        const mobileEditMapBtn = document.getElementById('mobile-edit-map-btn');
-        if (mobileEditMapBtn) {
-            mobileEditMapBtn.addEventListener('click', () => {
-                if (!isAdminLoggedIn) {
-                    const password = prompt("請輸入管理員密碼：");
-                    if (password === "0000") {
-                        isAdminLoggedIn = true;
-                        alert("已切換為管理員模式");
-                        document.body.classList.add('admin-mode');
-                        // Show admin buttons
-                        const adminBtns = document.querySelectorAll('.admin-only');
-                        adminBtns.forEach(btn => btn.style.display = 'inline-block');
-                        
-                        toggleEditMode();
-                    } else {
-                        alert("密碼錯誤");
-                        return;
-                    }
-                } else {
-                    toggleEditMode();
-                }
-                const sidebar = document.querySelector('.sidebar');
-                if (sidebar) sidebar.classList.remove('active');
-            });
-        }
-        
     } catch (e) {
         if (window.logToScreen) window.logToScreen(`Init Error: ${e.message}`, "error");
         console.error("Error in initialization:", e);
@@ -1233,7 +1154,6 @@ function loadPathMgmtList() {
                     <button class="action-btn" style="background-color:var(--danger-color); font-size:0.9em; padding:5px 10px;" onclick="deletePath('${p.id}')">刪除</button>
             `;
         }
-        
         buttons += `</div>`;
 
         div.innerHTML = `
@@ -1294,10 +1214,6 @@ window.deletePath = async function(pathId) {
                 port: null
             }, r._table);
         }
-        
-        // Also delete from path_history table
-        await deletePathHistory(pathId);
-        
         alert(`已成功刪除路徑並釋放 ${records.length} 筆芯線資料。`);
         loadPathMgmtList(); // Refresh list
         renderDataTable(); // Refresh main table
@@ -2137,14 +2053,6 @@ if (saveMapBtn) {
     // Initialize Map Panning
     initMapPanning();
 
-    // Add Resize Listener to auto-fit map on orientation change/resize
-    window.addEventListener('resize', () => {
-        const mapVisible = document.getElementById('fiber-map')?.offsetParent;
-        if (mapVisible) {
-            fitMapToView();
-        }
-    });
-
     if (closeModals) {
     closeModals.forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -2273,54 +2181,38 @@ function renderMap() {
     svg.appendChild(defs);
     mapContainer.appendChild(svg);
 
-    // Determine Layout Mode
-    // 1. If User has selected Main Sites (activeRoots > 0), use Radial Cluster Layout (Independent)
-    // 2. Otherwise, use Original Backbone Sequence (Ring Layout) if backbone nodes exist
-    
-    const backboneSequence = ['ROOM', 'UDC', '1PH', '2PH', 'DKB', 'MS2', 'MS3', 'MS4', '5KB', '2O2'];
-    const hasBackboneNodes = backboneSequence.some(key => {
-        return Object.keys(nodes).some(n => {
-            const normN = n.toUpperCase().replace('#', '');
-            const normK = key.toUpperCase().replace('#', '');
-            return normN.includes(normK) || normK.includes(normN);
-        });
-    });
-
-    // Priority: User Selected Main Sites > Default Backbone Ring
     if (activeRoots.length > 0) {
-        // --- Custom Main Site Radial Layout (Independent Clusters) ---
-        console.log("Using Radial Cluster Layout");
+        // --- Custom Main Site Layout (Independent Clusters) ---
         
         // Iterate through each root and layout its owned nodes
-        activeRoots.forEach((root, rootIdx) => {
-            // Determine Root Center (Default spread or Saved Position)
-            let rootX, rootY;
+        activeRoots.forEach(root => {
+            // Determine Root Center (Default 50,50 or Saved Position)
+            let rootX = 50;
+            let rootY = 50;
             
             if (nodePositions[root.name]) {
                 rootX = nodePositions[root.name].x;
                 rootY = nodePositions[root.name].y;
             } else {
-                // Distribute roots in a large circle if no saved position
-                // If only 1 root, put in center (50,50)
-                if (activeRoots.length === 1) {
-                    rootX = 50;
-                    rootY = 50;
-                } else {
-                    // Multiple roots: Spread them out so clusters don't overlap
-                    // Use a moderate radius (e.g., 25%) to keep everything visible
-                    const angle = (rootIdx / activeRoots.length) * 2 * Math.PI;
-                    rootX = 50 + 25 * Math.cos(angle);
-                    rootY = 50 + 25 * Math.sin(angle);
+                // If multiple roots have no position, maybe spread them initially? 
+                // But user says "drag to sort", so we assume they place the roots.
+                // If they are all at 50,50, it will overlap.
+                // Let's check if we have multiple roots without positions.
+                if (activeRoots.length > 1 && !nodePositions[root.name]) {
+                    // Spread them out in a circle if undefined
+                    // This is a fallback initialization
+                    const idx = activeRoots.indexOf(root);
+                    const angle = (idx / activeRoots.length) * 2 * Math.PI;
+                    rootX = 50 + 30 * Math.cos(angle);
+                    rootY = 50 + 30 * Math.sin(angle);
                 }
             }
 
-            // Set Root Position
+            // Set Root Position (only if not saved, otherwise it's already set by loop end override)
+            // Actually, we set .xPct here for the calculation of children
             root.xPct = rootX;
             root.yPct = rootY;
-            
-            // Highlight Root (User Selected Center)
-            root.isCenter = true; // New flag for yellow highlight
-            root.isBackbone = true; // Keep backbone logic for fallback/compatibility
+            root.isBackbone = true;
 
             // Get owned nodes for this cluster
             const clusterNodes = clusters[root.name] || [];
@@ -2330,9 +2222,6 @@ function renderMap() {
             let maxLvl = 0;
             
             clusterNodes.forEach(n => {
-                // Skip the root itself if it's in the list (though BFS usually puts it as level 0)
-                if (n.name === root.name) return;
-                
                 if (!levels[n.level]) levels[n.level] = [];
                 levels[n.level].push(n);
                 if (n.level > maxLvl) maxLvl = n.level;
@@ -2341,18 +2230,15 @@ function renderMap() {
             // Layout Children Radially around THIS Root
             Object.entries(levels).forEach(([lvl, group]) => {
                 const levelIdx = parseInt(lvl);
-                if (levelIdx === 0) return; // Root is already set
-
-                // Dynamic Radius: 
-                // Increase radius for each level. 
-                // Increased to 20% + 12% per subsequent level to prevent blocking the center
-                const baseRadius = 20; 
-                const increment = 12;
-                const radius = baseRadius + (increment * (levelIdx - 1)); 
                 
+                // Radius increases with level
+                const radius = 20 * levelIdx; 
+                
+                // Angle Step
                 const step = (2 * Math.PI) / group.length;
-                // Offset angle to prevent straight lines overlap between levels
-                const offsetAngle = levelIdx * 0.5; 
+                
+                // Optional: Rotate each level slightly to avoid straight lines
+                const offsetAngle = levelIdx * 0.2; 
 
                 group.forEach((node, idx) => {
                     const angle = idx * step + offsetAngle;
@@ -2363,13 +2249,8 @@ function renderMap() {
         });
 
     } else {
-        // --- Original Backbone Layout (Ring Layout) ---
-        // Fallback when no Main Sites are selected
-        console.log("Using Backbone Ring Layout");
-        
-        // 1. Identify Backbone Nodes (User Main Sites OR System Default)
-        // Since activeRoots is empty here, we rely on backboneSequence match
-        
+        // --- Original Backbone Layout ---
+        const backboneSequence = ['ROOM', 'UDC', '1PH', '2PH', 'DKB', 'MS2', 'MS3', 'MS4', '5KB', '2O2'];
         const radius = 45;
         const angleStep = (2 * Math.PI) / backboneSequence.length;
         
@@ -2383,11 +2264,10 @@ function renderMap() {
 
             if (nodeName && nodes[nodeName]) {
                 const node = nodes[nodeName];
-                // Only set position if not already set (though loop below will override)
                 const angle = idx * angleStep - (Math.PI / 2);
                 node.xPct = 50 + radius * Math.cos(angle);
                 node.yPct = 50 + radius * Math.sin(angle);
-                // node.isBackbone = true; // Set later
+                node.isBackbone = true;
                 node.level = -1; 
                 backboneNodes.push(node);
             }
@@ -2396,8 +2276,7 @@ function renderMap() {
         const satelliteGroups = {};
         backboneNodes.forEach(bn => satelliteGroups[bn.name] = []);
         const orphans = [];
-        // Identify non-backbone nodes
-        const nonBackboneNodes = Object.values(nodes).filter(n => !backboneNodes.includes(n));
+        const nonBackboneNodes = Object.values(nodes).filter(n => !n.isBackbone);
         
         nonBackboneNodes.forEach(node => {
             const connectedBackbone = backboneNodes.find(bn => {
@@ -2442,8 +2321,8 @@ function renderMap() {
             orphans.forEach((node, idx) => {
                 const angle = (idx / orphans.length) * 2 * Math.PI;
                 const r = 10;
-                node.xPct = 50 + r * Math.cos(angle);
-                node.yPct = 50 + r * Math.sin(angle);
+                node.xPct = centerX + r * Math.cos(angle);
+                node.yPct = centerY + r * Math.sin(angle);
             });
         }
     }
@@ -2454,36 +2333,18 @@ function renderMap() {
             node.xPct = nodePositions[node.name].x;
             node.yPct = nodePositions[node.name].y;
         }
-        
-        // Set Backbone Flag for Highlighting
-        // 1. Is in Current Main Sites (User Selected)
-        // 2. Is in Original Backbone Sequence (System Default)
-        const isUserMain = currentMainSites.includes(node.name);
-        const isSystemBackbone = backboneSequence.some(key => {
-            const normN = node.name.toUpperCase().replace('#', '');
-            const normK = key.toUpperCase().replace('#', '');
-            return normN.includes(normK) || normK.includes(normN);
-        });
-        
-        if (isUserMain || isSystemBackbone) {
-            node.isBackbone = true;
-        }
     });
 
     // Create Elements
     Object.values(nodes).forEach(node => {
         const el = document.createElement('div');
         el.className = 'site-node';
-        if (node.isCenter) {
-            el.classList.add('center-node');
-        } else if (node.isBackbone) {
-            el.classList.add('backbone');
-        }
+        if (node.isBackbone) el.classList.add('backbone');
         if (isEditMode) el.classList.add('edit-mode');
         
         el.innerHTML = `
             <div>${node.name}</div>
-            ${(node.isBackbone || node.isCenter) ? '' : `<div style="font-size: 0.7em; opacity: 0.8">L${node.level}</div>`}
+            ${node.isBackbone ? '' : `<div style="font-size: 0.7em; opacity: 0.8">L${node.level}</div>`}
         `;
         el.style.left = `${node.xPct}%`;
         el.style.top = `${node.yPct}%`;
