@@ -321,51 +321,6 @@ export async function syncData(rows, progressCallback) {
     notify();
 }
 
-// --- Path History Management ---
-
-export async function savePathHistory(pathData) {
-    const sb = getSupabase();
-    if (!sb) throw new Error("Supabase not configured");
-
-    // Table: path_history
-    if (!pathData.id) pathData.id = 'PATH-' + Date.now();
-
-    const { data, error } = await sb.from('path_history').insert([pathData]).select();
-    
-    if (error) {
-        console.error("Error saving path history:", error);
-        throw error;
-    }
-    return data;
-}
-
-export async function getPathHistoryList() {
-    const sb = getSupabase();
-    if (!sb) return [];
-    
-    const { data, error } = await sb.from('path_history')
-        .select('*')
-        .order('created_at', { ascending: false });
-        
-    if (error) {
-        console.error("Error fetching path history:", error);
-        return [];
-    }
-    return data;
-}
-
-export async function deletePathHistory(id) {
-    const sb = getSupabase();
-    if (!sb) return false;
-
-    const { error } = await sb.from('path_history').delete().eq('id', id);
-    if (error) {
-        console.error("Error deleting path history:", error);
-        throw error;
-    }
-    return true;
-}
-
 export function getData() {
     return currentData;
 }
