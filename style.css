@@ -225,6 +225,19 @@ h2 {
     z-index: 20;
 }
 
+.site-node.backbone {
+    border-color: #ef4444; /* Red border for backbone */
+    border-width: 3px;
+    background-color: #4b5563; /* Slightly lighter bg */
+    z-index: 15; /* Higher than normal nodes */
+    box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
+}
+
+.site-node.edit-mode {
+    border-style: dashed;
+    cursor: move;
+}
+
 .connections {
     position: absolute;
     top: 0;
@@ -580,11 +593,33 @@ input:focus, select:focus, textarea:focus {
     .map-container {
         height: 500px;
         min-height: 500px;
+        overflow: hidden; /* Ensure content is clipped */
+        position: relative; /* For absolute positioning of buttons */
     }
     
     #fiber-map {
-        min-width: 100%;
-        min-height: 100%;
+        /* Force a landscape canvas coordinate system to preserve layout shape on mobile */
+        min-width: 800px;
+        min-height: 600px;
+        transform-origin: center center; /* Zoom from center */
+    }
+
+    .site-node {
+        min-width: auto;
+        min-height: auto;
+        font-size: 10px;
+        padding: 2px 4px;
+        border-width: 1px;
+        white-space: nowrap; /* Prevent wrapping */
+    }
+    
+    /* Hide Level info on mobile to save space */
+    .site-node div:nth-child(2) {
+        display: none;
+    }
+
+    .site-node.backbone {
+        border-width: 2px;
     }
 }
 
