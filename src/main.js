@@ -324,6 +324,9 @@ window.loadPathMgmtList = async function() {
             });
         }
 
+        // Save list for global access (for showPathDetails)
+        window.lastPathHistoryList = pathList;
+
         if(!pathList || pathList.length === 0) {
             container.innerHTML = '<div style="padding:10px; color:#aaa; text-align:center;">無符合條件的路徑資料</div>';
             return;
@@ -374,7 +377,9 @@ window.loadPathMgmtList = async function() {
 
             tr.innerHTML = `
                 <td style="padding:8px; font-size:0.9em; color:#888;">${(p.id||'').substring(0,6)}...</td>
-                <td style="padding:8px;">${routeStr}</td>
+                <td style="padding:8px; cursor:pointer;" onclick="showPathDetails('${p.id}')" title="點選查看詳細路徑">
+                    ${routeStr}
+                </td>
                 <td style="padding:8px;">${p.usage || '-'}</td>
                 <td style="padding:8px;">${p.department || '-'}</td>
                 <td style="padding:8px; text-align:center;">${coreCount}</td>
@@ -1192,11 +1197,67 @@ window.viewPathOnMap = function(pathId) {
         const mapBtn = document.querySelector('[data-target="map-view"]');
         if(mapBtn) {
             mapBtn.click();
-            showToast(`已顯示路徑: ${nodes.join('->')}`, 3000);
+            // User requested to hide the right-side info toast on map view
+            // showToast(`已顯示路徑: ${nodes.join('->')}`, 3000);
         }
     } else {
         alert("此路徑未包含視覺化資料");
     }
+};
+
+window.showPathDetails = function(pathId) {
+    if (!window.lastPathHistoryList) return;
+    const path = window.lastPathHistoryList.find(p => p.id === pathId);
+    if (!path) return;
+
+    let nodes = [];
+    if (path.nodes) {
+         nodes = typeof path.nodes === 'string' ? JSON.parse(path.nodes) : path.nodes;
+    } else if (path.path_nodes) {
+         nodes = typeof path.path_nodes === 'string' ? JSON.parse(path.path_nodes) : path.path_nodes;
+    }
+
+    const container = document.getElementById('path-container');
+    if (!container) return;
+
+    if (document.getElementById('modal-path-title')) {
+        document.getElementById('modal-path-title').textContent = `詳細路徑: ${path.start_station || nodes[0]} ➝ ${path.end_station || nodes[nodes.length-1]}`;
+    }
+    
+    container.innerHTML = '';
+    
+    if (!nodes || nodes.length === 0) {
+        container.innerHTML = '無路徑資料';
+    } else {
+        const pathDiv = document.createElement('div');
+        pathDiv.style.display = 'flex';
+        pathDiv.style.alignItems = 'center';
+        pathDiv.style.gap = '10px';
+        pathDiv.style.flexWrap = 'wrap';
+        pathDiv.style.padding = '20px';
+        pathDiv.style.justifyContent = 'center';
+
+        nodes.forEach((nodeName, index) => {
+            const node = document.createElement('div');
+            node.className = 'path-node';
+            node.innerHTML = `<strong>${nodeName}</strong>`;
+            
+            pathDiv.appendChild(node);
+
+            if (index < nodes.length - 1) {
+                const arrow = document.createElement('div');
+                arrow.innerHTML = '➜';
+                arrow.style.fontSize = '20px';
+                arrow.style.color = '#555';
+                pathDiv.appendChild(arrow);
+            }
+        });
+        
+        container.appendChild(pathDiv);
+    }
+    
+    const modal = document.getElementById('path-modal');
+    if (modal) openModal(modal);
 };
 
 
