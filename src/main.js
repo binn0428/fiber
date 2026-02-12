@@ -1255,6 +1255,73 @@ window.showPathDetails = function(pathId) {
         
         container.appendChild(pathDiv);
     }
+
+    // 2. Display Detailed Records Table
+    const allData = getData();
+    // Filter records that belong to this path (using PathID in notes)
+    const pathRecords = allData.filter(d => d.notes && d.notes.includes(`[PathID:${pathId}]`));
+
+    if (pathRecords.length > 0) {
+        // Sort records by order in path (if possible)
+        pathRecords.sort((a, b) => {
+            const idxA = nodes.indexOf(a.station_name);
+            const idxB = nodes.indexOf(b.station_name);
+            // If station not found in nodes, put at end
+            if (idxA === -1) return 1;
+            if (idxB === -1) return -1;
+            return idxA - idxB;
+        });
+
+        const detailsDiv = document.createElement('div');
+        detailsDiv.style.marginTop = '20px';
+        detailsDiv.style.borderTop = '1px solid #555';
+        detailsDiv.style.paddingTop = '10px';
+        
+        detailsDiv.innerHTML = '<h3 style="margin-bottom:10px; color:#ddd;">詳細線路資料</h3>';
+        
+        const tableContainer = document.createElement('div');
+        tableContainer.style.overflowX = 'auto';
+        
+        const table = document.createElement('table');
+        table.style.width = '100%';
+        table.style.borderCollapse = 'collapse';
+        table.style.fontSize = '0.9rem';
+        
+        // Header
+        const thead = document.createElement('thead');
+        thead.innerHTML = `
+            <tr style="background-color: #333; color: #fff;">
+                <th style="padding:8px; border:1px solid #555; text-align:left;">站點</th>
+                <th style="padding:8px; border:1px solid #555; text-align:left;">線路名稱</th>
+                <th style="padding:8px; border:1px solid #555; text-align:left;">目的地</th>
+                <th style="padding:8px; border:1px solid #555; text-align:center;">芯數</th>
+                <th style="padding:8px; border:1px solid #555; text-align:center;">Port</th>
+                <th style="padding:8px; border:1px solid #555; text-align:left;">備註</th>
+            </tr>
+        `;
+        table.appendChild(thead);
+        
+        // Body
+        const tbody = document.createElement('tbody');
+        pathRecords.forEach(r => {
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid #444';
+            tr.innerHTML = `
+                <td style="padding:8px; border:1px solid #555;">${r.station_name || '-'}</td>
+                <td style="padding:8px; border:1px solid #555;">${r.fiber_name || '-'}</td>
+                <td style="padding:8px; border:1px solid #555;">${r.destination || '-'}</td>
+                <td style="padding:8px; border:1px solid #555; text-align:center;">${r.core_count || '-'}</td>
+                <td style="padding:8px; border:1px solid #555; text-align:center;">${r.port || '-'}</td>
+                <td style="padding:8px; border:1px solid #555; font-size:0.85em; color:#aaa;">${(r.notes||'').replace(/\[PathID:[^\]]+\]/g, '').replace(/\[PathNodes:[^\]]+\]/g, '').trim()}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        
+        tableContainer.appendChild(table);
+        detailsDiv.appendChild(tableContainer);
+        container.appendChild(detailsDiv);
+    }
     
     const modal = document.getElementById('path-modal');
     if (modal) openModal(modal);
