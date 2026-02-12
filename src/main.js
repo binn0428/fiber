@@ -1233,18 +1233,24 @@ window.deletePath = async function(pathId) {
                                       .trim();
                 newNotes = newNotes.replace(/\s+/g, ' ');
                 
-                await updateRecord(r.id, {
-                    usage: null,
-                    department: null,
-                    contact: null,
-                    phone: null, 
-                    notes: newNotes,
-                    core_count: null,
-                    port: null,
-                    net_start: null,
-                    net_end: null,
-                    connection_line: null
-                }, r._table);
+                if (r.source === 'AUTO') {
+                    // 如果是自動生成的虛擬路徑，直接刪除該筆資料
+                    await deleteRecord(r.id, r._table);
+                } else {
+                    // 如果是既有實體線路被佔用，則清除使用資訊
+                    await updateRecord(r.id, {
+                        usage: null,
+                        department: null,
+                        contact: null,
+                        phone: null, 
+                        notes: newNotes,
+                        core_count: null,
+                        port: null,
+                        net_start: null,
+                        net_end: null,
+                        connection_line: null
+                    }, r._table);
+                }
             }
         }
         
