@@ -1341,7 +1341,11 @@ window.showPathDetails = function(pathId) {
             });
 
             segmentRecords.forEach(r => {
-                sortedRecords.push(r);
+                // Determine display direction: if record is stored as V->U but path is U->V, mark as reversed
+                const rStart = normalizeStationName(r.station_name);
+                const isReversed = (rStart === v); // If record start is 'v' (destination of this segment), it's reversed
+                
+                sortedRecords.push({ data: r, isReversed: isReversed });
                 usedRecordIds.add(r.id);
             });
         }
@@ -1349,7 +1353,7 @@ window.showPathDetails = function(pathId) {
         // Add any remaining records (fallback)
         pathRecords.forEach(r => {
             if (!usedRecordIds.has(r.id)) {
-                sortedRecords.push(r);
+                sortedRecords.push({ data: r, isReversed: false });
             }
         });
 
@@ -1384,13 +1388,20 @@ window.showPathDetails = function(pathId) {
         
         // Body
         const tbody = document.createElement('tbody');
-        sortedRecords.forEach(r => {
+        sortedRecords.forEach(item => {
+            const r = item.data;
+            const isReversed = item.isReversed;
+            
+            // Swap display if reversed to match path flow
+            const displayStart = isReversed ? r.destination : r.station_name;
+            const displayEnd = isReversed ? r.station_name : r.destination;
+            
             const tr = document.createElement('tr');
             tr.style.borderBottom = '1px solid #444';
             tr.innerHTML = `
-                <td style="padding:8px; border:1px solid #555;">${r.station_name || '-'}</td>
+                <td style="padding:8px; border:1px solid #555;">${displayStart || '-'}</td>
                 <td style="padding:8px; border:1px solid #555;">${r.fiber_name || '-'}</td>
-                <td style="padding:8px; border:1px solid #555;">${r.destination || '-'}</td>
+                <td style="padding:8px; border:1px solid #555;">${displayEnd || '-'}</td>
                 <td style="padding:8px; border:1px solid #555; text-align:center;">${r.core_count || '-'}</td>
                 <td style="padding:8px; border:1px solid #555; text-align:center;">${r.port || '-'}</td>
                 <td style="padding:8px; border:1px solid #555; font-size:0.85em; color:#aaa;">${(r.notes||'').replace(/\[PathID:[^\]]+\]/g, '').replace(/\[PathNodes:[^\]]+\]/g, '').trim()}</td>
