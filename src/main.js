@@ -299,6 +299,16 @@ if (mapControlsToggle && mapControlsMenu) {
     });
 }
 
+// Restore Sidebar Button Logic
+const restoreSidebarBtn = document.getElementById('restore-sidebar-btn');
+if (restoreSidebarBtn) {
+    restoreSidebarBtn.addEventListener('click', () => {
+        const sidebar = document.querySelector('.sidebar');
+        if(sidebar) sidebar.style.display = ''; // Restore default
+        restoreSidebarBtn.style.display = 'none';
+    });
+}
+
 // --- Auto Add & Path Management Logic ---
 
 window.loadPathMgmtList = async function() {
@@ -384,6 +394,7 @@ window.loadPathMgmtList = async function() {
                 <td style="padding:8px;">${p.department || '-'}</td>
                 <td style="padding:8px; text-align:center;">${coreCount}</td>
                 <td style="padding:8px; text-align:center;">
+                    <button onclick="showPathDetails('${p.id}')" title="詳細路徑" style="background:none; border:none; cursor:pointer; color:#8b5cf6; margin-right:5px;">📄</button>
                     <button onclick="viewPathOnMap('${p.id}')" title="地圖" style="background:none; border:none; cursor:pointer; color:var(--primary-color); margin-right:5px;">🗺️</button>
                     <button onclick="openEditPathModal('${p.id}')" title="編輯" style="background:none; border:none; cursor:pointer; color:var(--warning-color); margin-right:5px;">✏️</button>
                     <button onclick="deletePath('${p.id}')" title="刪除" style="background:none; border:none; cursor:pointer; color:#ef4444;">🗑️</button>
@@ -454,6 +465,25 @@ if (generatePathBtn) {
         }
         
         generatePaths(start, end);
+    });
+}
+
+const clearPathBtn = document.getElementById('clear-path-btn');
+if (clearPathBtn) {
+    clearPathBtn.addEventListener('click', () => {
+        document.getElementById('auto-start-node').value = '';
+        document.getElementById('auto-end-node').value = '';
+        document.getElementById('auto-core-count').value = '1';
+        
+        // Clear results
+        const resultsDiv = document.getElementById('path-results');
+        if(resultsDiv) resultsDiv.innerHTML = '';
+        
+        const detailsForm = document.getElementById('path-details-form');
+        if(detailsForm) detailsForm.style.display = 'none';
+        
+        currentGeneratedPaths = [];
+        selectedPathIndex = -1;
     });
 }
 
@@ -875,7 +905,16 @@ function selectPath(index) {
                 const mapBtn = document.querySelector('[data-target="map-view"]');
                 if(mapBtn) {
                     mapBtn.click();
-                    showToast(`已顯示路徑: ${path.nodes.join('->')}`, 3000);
+                    
+                    // Hide Sidebar
+                    const sidebar = document.querySelector('.sidebar');
+                    if(sidebar) sidebar.style.display = 'none';
+                    
+                    // Show Restore Button
+                    const restoreBtn = document.getElementById('restore-sidebar-btn');
+                    if(restoreBtn) restoreBtn.style.display = 'inline-flex';
+                    
+                    // showToast(`已顯示路徑: ${path.nodes.join('->')}`, 3000);
                 }
             });
         }
@@ -1197,8 +1236,14 @@ window.viewPathOnMap = function(pathId) {
         const mapBtn = document.querySelector('[data-target="map-view"]');
         if(mapBtn) {
             mapBtn.click();
-            // User requested to hide the right-side info toast on map view
-            // showToast(`已顯示路徑: ${nodes.join('->')}`, 3000);
+            
+            // Hide Sidebar
+            const sidebar = document.querySelector('.sidebar');
+            if(sidebar) sidebar.style.display = 'none';
+            
+            // Show Restore Button
+            const restoreBtn = document.getElementById('restore-sidebar-btn');
+            if(restoreBtn) restoreBtn.style.display = 'inline-flex';
         }
     } else {
         alert("此路徑未包含視覺化資料");
