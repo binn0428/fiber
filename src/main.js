@@ -2,7 +2,7 @@
 console.log("Main script starting...");
 
 import { initSupabase, checkConnection, getSupabase } from './supabase.js';
-import { loadData, addRecord, updateRecord, deleteRecord, getData, getStats, getSiteData, searchLine, getFiberPath, syncData, deleteStation, getAppSettings, setAppSettings } from './dataService.js';
+import { loadData, addRecord, updateRecord, deleteRecord, getData, getStats, getSiteData, searchLine, getFiberPath, syncData, deleteStation, getAppSettings, setAppSettings, savePathHistory, getPathHistoryList, deletePathHistory } from './dataService.js';
 import { parseExcel, exportToExcel } from './excelService.js';
 import './mobile.js';
 
@@ -964,6 +964,26 @@ async function confirmAutoAdd() {
         // Switch to Management Tab to show the new record
         switchAutoTab('mgmt');
         
+        // Save to Path History Table (New Feature)
+        try {
+            const pathHistory = {
+                id: pathId,
+                start_station: path.originalStart,
+                end_station: path.originalEnd,
+                path_nodes: path.nodes, // Supabase handles array->json
+                usage: updates.usage,
+                department: updates.department,
+                contact: updates.contact,
+                notes: updates.notes,
+                created_at: new Date().toISOString()
+            };
+            await savePathHistory(pathHistory);
+            // Refresh dropdown
+            initPathHistoryDropdown();
+        } catch (histErr) {
+            console.warn("Failed to save path history:", histErr);
+        }
+
     } catch(e) {
         console.error(e);
         alert("錯誤: " + e.message);
@@ -1004,6 +1024,60 @@ window.viewPathOnMap = function(pathId) {
 };
 
 // Path Management (Delete/Restore)
+async function initPathHistoryDropdown() {
+    const select = document.getElementById('path-history-select');
+    if (!select) return;
+
+    select.innerHTML = '<option value="">載入中...</option>';
+    
+    try {
+        const history = await getPathHistoryList();
+        
+        if (history.length === 0) {
+            select.innerHTML = '<option value="">無歷史紀錄</option>';
+            return;
+        }
+
+        select.innerHTML = '<option value="">請選擇路徑紀錄...</option>';
+        history.forEach(h => {
+            const opt = document.createElement('option');
+            opt.value = h.id;
+            // Display format: Usage (Start->End) - Date
+            const dateStr = new Date(h.created_at).toLocaleDateString();
+            opt.textContent = `${h.usage || '無用途'} (${h.start_station}->${h.end_station}) [${dateStr}]`;
+            select.appendChild(opt);
+        });
+
+        // Event Listener
+        select.onchange = () => {
+            const selectedId = select.value;
+            if (selectedId) {
+                // Set search box to ID and trigger search
+                const searchInput = document.getElementById('path-search');
+                if (searchInput) {
+                    searchInput.value = selectedId;
+                    loadPathMgmtList();
+                }
+            }
+        };
+
+    } catch (e) {
+        console.error("Error loading path history dropdown:", e);
+        select.innerHTML = '<option value="">載入失敗</option>';
+    }
+}
+
+// Load dropdown on init
+document.addEventListener('DOMContentLoaded', () => {
+    // Other init code...
+    initPathHistoryDropdown();
+});
+
+const loadHistoryBtn = document.getElementById('load-history-btn');
+if (loadHistoryBtn) {
+    loadHistoryBtn.addEventListener('click', initPathHistoryDropdown);
+}
+
 function loadPathMgmtList() {
     const queryInput = document.getElementById('path-search');
     const query = queryInput ? queryInput.value.toLowerCase().trim() : '';
@@ -1143,6 +1217,12 @@ window.deletePath = async function(pathId) {
         alert(`已成功刪除路徑並釋放 ${records.length} 筆芯線資料。`);
         loadPathMgmtList(); // Refresh list
         renderDataTable(); // Refresh main table
+        
+        // Also delete from history table
+        deletePathHistory(pathId).catch(console.error);
+        // Refresh dropdown
+        initPathHistoryDropdown();
+        
     } catch(e) {
         console.error(e);
         alert('刪除失敗: ' + e.message);
