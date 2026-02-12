@@ -1227,23 +1227,18 @@ window.deletePath = async function(pathId) {
     try {
         if(records.length > 0) {
             for(const r of records) {
-                // Remove PathID and PathNodes from notes
-                let newNotes = r.notes.replace(`[PathID:${pathId}]`, '')
-                                      .replace(/\[PathNodes:[^\]]+\]/, '')
-                                      .trim();
-                newNotes = newNotes.replace(/\s+/g, ' ');
-                
                 if (r.source === 'AUTO') {
                     // 如果是自動生成的虛擬路徑，直接刪除該筆資料
                     await deleteRecord(r.id, r._table);
                 } else {
                     // 如果是既有實體線路被佔用，則清除使用資訊
+                    // 同步清除備註欄位 (因路徑生成時會覆蓋備註，刪除時應一併移除)
                     await updateRecord(r.id, {
                         usage: null,
                         department: null,
                         contact: null,
                         phone: null, 
-                        notes: newNotes,
+                        notes: null,
                         core_count: null,
                         port: null,
                         net_start: null,
