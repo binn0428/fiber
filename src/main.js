@@ -2195,10 +2195,10 @@ function renderMap() {
     mapContainer.appendChild(svg);
 
     // Determine Layout Mode
-    // Default to Original Backbone Sequence (Ring Layout) if possible, as it's the preferred "Previous State"
-    const backboneSequence = ['ROOM', 'UDC', '1PH', '2PH', 'DKB', 'MS2', 'MS3', 'MS4', '5KB', '2O2'];
+    // 1. If User has selected Main Sites (activeRoots > 0), use Radial Cluster Layout (Independent)
+    // 2. Otherwise, use Original Backbone Sequence (Ring Layout) if backbone nodes exist
     
-    // Check if we have any backbone nodes in the data
+    const backboneSequence = ['ROOM', 'UDC', '1PH', '2PH', 'DKB', 'MS2', 'MS3', 'MS4', '5KB', '2O2'];
     const hasBackboneNodes = backboneSequence.some(key => {
         return Object.keys(nodes).some(n => {
             const normN = n.toUpperCase().replace('#', '');
@@ -2207,39 +2207,40 @@ function renderMap() {
         });
     });
 
-    // Use Original Layout if we have backbone nodes, OR if we have no active roots (fallback)
-    // Only use "Cluster Layout" if user explicitly has Main Sites AND we don't want the Ring Layout?
-    // Actually, user feedback suggests they prefer the Ring Layout even if they set Main Sites.
-    // So we prioritize Ring Layout if matches are found.
-    
-    let useRingLayout = hasBackboneNodes;
-
-    if (!useRingLayout && activeRoots.length > 0) {
-        // --- Custom Main Site Layout (Independent Clusters) ---
-        // This runs only if NO backbone nodes are found (e.g. a completely different site dataset)
+    // Priority: User Selected Main Sites > Default Backbone Ring
+    if (activeRoots.length > 0) {
+        // --- Custom Main Site Radial Layout (Independent Clusters) ---
+        console.log("Using Radial Cluster Layout");
         
         // Iterate through each root and layout its owned nodes
-        activeRoots.forEach(root => {
-            // Determine Root Center (Default 50,50 or Saved Position)
-            let rootX = 50;
-            let rootY = 50;
+        activeRoots.forEach((root, rootIdx) => {
+            // Determine Root Center (Default spread or Saved Position)
+            let rootX, rootY;
             
             if (nodePositions[root.name]) {
                 rootX = nodePositions[root.name].x;
                 rootY = nodePositions[root.name].y;
             } else {
-                if (activeRoots.length > 1 && !nodePositions[root.name]) {
-                    const idx = activeRoots.indexOf(root);
-                    const angle = (idx / activeRoots.length) * 2 * Math.PI;
-                    rootX = 50 + 30 * Math.cos(angle);
-                    rootY = 50 + 30 * Math.sin(angle);
+                // Distribute roots in a large circle if no saved position
+                // If only 1 root, put in center (50,50)
+                if (activeRoots.length === 1) {
+                    rootX = 50;
+                    rootY = 50;
+                } else {
+                    // Multiple roots: Spread them out so clusters don't overlap
+                    // Use a moderate radius (e.g., 25%) to keep everything visible
+                    const angle = (rootIdx / activeRoots.length) * 2 * Math.PI;
+                    rootX = 50 + 25 * Math.cos(angle);
+                    rootY = 50 + 25 * Math.sin(angle);
                 }
             }
 
             // Set Root Position
             root.xPct = rootX;
             root.yPct = rootY;
-            // root.isBackbone = true; // Set later globally
+            
+            // Highlight Root
+            root.isBackbone = true; 
 
             // Get owned nodes for this cluster
             const clusterNodes = clusters[root.name] || [];
@@ -2249,6 +2250,9 @@ function renderMap() {
             let maxLvl = 0;
             
             clusterNodes.forEach(n => {
+                // Skip the root itself if it's in the list (though BFS usually puts it as level 0)
+                if (n.name === root.name) return;
+                
                 if (!levels[n.level]) levels[n.level] = [];
                 levels[n.level].push(n);
                 if (n.level > maxLvl) maxLvl = n.level;
@@ -2257,9 +2261,16 @@ function renderMap() {
             // Layout Children Radially around THIS Root
             Object.entries(levels).forEach(([lvl, group]) => {
                 const levelIdx = parseInt(lvl);
-                const radius = 20 * levelIdx; 
+                if (levelIdx === 0) return; // Root is already set
+
+                // Dynamic Radius: 
+                // Increase radius for each level. 
+                // Fixed step of 10% to keep it compact
+                const radius = 10 * levelIdx; 
+                
                 const step = (2 * Math.PI) / group.length;
-                const offsetAngle = levelIdx * 0.2; 
+                // Offset angle to prevent straight lines overlap between levels
+                const offsetAngle = levelIdx * 0.5; 
 
                 group.forEach((node, idx) => {
                     const angle = idx * step + offsetAngle;
@@ -2271,7 +2282,11 @@ function renderMap() {
 
     } else {
         // --- Original Backbone Layout (Ring Layout) ---
-        // This is the default preferred layout
+        // Fallback when no Main Sites are selected
+        console.log("Using Backbone Ring Layout");
+        
+        // 1. Identify Backbone Nodes (User Main Sites OR System Default)
+        // Since activeRoots is empty here, we rely on backboneSequence match
         
         const radius = 45;
         const angleStep = (2 * Math.PI) / backboneSequence.length;
