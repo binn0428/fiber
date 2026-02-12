@@ -1310,14 +1310,47 @@ window.showPathDetails = function(pathId) {
     const pathRecords = allData.filter(d => d.notes && d.notes.includes(`[PathID:${pathId}]`));
 
     if (pathRecords.length > 0) {
-        // Sort records by order in path (if possible)
-        pathRecords.sort((a, b) => {
-            const idxA = nodes.indexOf(a.station_name);
-            const idxB = nodes.indexOf(b.station_name);
-            // If station not found in nodes, put at end
-            if (idxA === -1) return 1;
-            if (idxB === -1) return -1;
-            return idxA - idxB;
+        // Sort records by order in path
+        const sortedRecords = [];
+        const usedRecordIds = new Set();
+        
+        // Iterate through path segments to find matching records
+        for (let i = 0; i < nodes.length - 1; i++) {
+            const u = nodes[i];
+            const v = nodes[i+1];
+            
+            const segmentRecords = pathRecords.filter(r => {
+                if (usedRecordIds.has(r.id)) return false;
+                
+                const rStart = normalizeStationName(r.station_name);
+                const rEnd = normalizeStationName(r.destination);
+                
+                // Check if record connects u and v (bidirectional check)
+                const match = (rStart === u && rEnd === v) || (rStart === v && rEnd === u);
+                return match;
+            });
+            
+            // Sort segment records by core count/number if needed, or just keep as is
+            // Usually we want lower core numbers first? 
+            // Let's assume default order is fine or sort by fiber_name/core
+            segmentRecords.sort((a, b) => {
+                // Try to sort by numeric part of fiber_name if possible
+                const nA = parseInt((a.fiber_name || '').replace(/\D/g, '')) || 0;
+                const nB = parseInt((b.fiber_name || '').replace(/\D/g, '')) || 0;
+                return nA - nB;
+            });
+
+            segmentRecords.forEach(r => {
+                sortedRecords.push(r);
+                usedRecordIds.add(r.id);
+            });
+        }
+        
+        // Add any remaining records (fallback)
+        pathRecords.forEach(r => {
+            if (!usedRecordIds.has(r.id)) {
+                sortedRecords.push(r);
+            }
         });
 
         const detailsDiv = document.createElement('div');
@@ -1351,7 +1384,7 @@ window.showPathDetails = function(pathId) {
         
         // Body
         const tbody = document.createElement('tbody');
-        pathRecords.forEach(r => {
+        sortedRecords.forEach(r => {
             const tr = document.createElement('tr');
             tr.style.borderBottom = '1px solid #444';
             tr.innerHTML = `
