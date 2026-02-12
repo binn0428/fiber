@@ -307,111 +307,88 @@ window.loadPathMgmtList = async function() {
     
     container.innerHTML = '<p>載入中...</p>';
     
-    // Ensure data is loaded
-    const data = getData();
-    if(!data || data.length === 0) {
-        await loadData();
-    }
-    
-    const allData = getData();
-    
-    // Group by PathID
-    const paths = {};
-    
-    allData.forEach(d => {
-        if(d.notes && d.notes.includes('[PathID:')) {
-            const match = d.notes.match(/\[PathID:([^\]]+)\]/);
-            if(match) {
-                const id = match[1];
-                if(!paths[id]) {
-                    paths[id] = {
-                        id: id,
-                        usage: d.usage,
-                        department: d.department,
-                        contact: d.contact,
-                        notes: d.notes,
-                        records: []
-                    };
-                }
-                paths[id].records.push(d);
-            }
-        }
-    });
-
-    // Filter by Search
-    const searchInput = document.getElementById('path-search');
-    const keyword = searchInput ? searchInput.value.trim().toLowerCase() : '';
-    
-    let pathList = Object.values(paths);
-    
-    if(keyword) {
-        pathList = pathList.filter(p => {
-            const searchStr = `${p.usage || ''} ${p.department || ''} ${p.notes || ''} ${p.id}`.toLowerCase();
-            return searchStr.includes(keyword);
-        });
-    }
-
-    if(pathList.length === 0) {
-        container.innerHTML = '<div style="padding:10px; color:#aaa; text-align:center;">無符合條件的路徑資料</div>';
-        return;
-    }
-    
-    // Sort by ID (descending)
-    pathList.sort((a,b) => b.id.localeCompare(a.id));
-    
-    const table = document.createElement('table');
-    table.style.width = '100%';
-    table.style.borderCollapse = 'collapse';
-    
-    table.innerHTML = `
-        <thead>
-            <tr style="background:rgba(255,255,255,0.05); color:var(--text-primary);">
-                <th style="padding:8px; border-bottom:1px solid #555; text-align:left;">ID</th>
-                <th style="padding:8px; border-bottom:1px solid #555; text-align:left;">起訖點</th>
-                <th style="padding:8px; border-bottom:1px solid #555; text-align:left;">用途</th>
-                <th style="padding:8px; border-bottom:1px solid #555; text-align:left;">單位</th>
-                <th style="padding:8px; border-bottom:1px solid #555; text-align:center;">芯數</th>
-                <th style="padding:8px; border-bottom:1px solid #555; text-align:center;">操作</th>
-            </tr>
-        </thead>
-        <tbody></tbody>
-    `;
-    
-    const tbody = table.querySelector('tbody');
-    
-    pathList.forEach(p => {
-        const tr = document.createElement('tr');
-        tr.style.borderBottom = '1px solid #444';
+    try {
+        // Fetch from Supabase History Table
+        const historyList = await getPathHistoryList();
         
-        // Extract Route
-        let routeStr = '未知路徑';
-        const nodesMatch = p.notes.match(/\[PathNodes:([^\]]+)\]/);
-        if(nodesMatch) {
-            const nodes = nodesMatch[1].split(',');
-            if(nodes.length >= 2) {
-                routeStr = `${nodes[0]} <span style="color:var(--primary-color)">➝</span> ${nodes[nodes.length-1]}`;
-            } else {
-                routeStr = nodes.join(' ➝ ');
-            }
+        // Filter by Search
+        const searchInput = document.getElementById('path-search');
+        const keyword = searchInput ? searchInput.value.trim().toLowerCase() : '';
+        
+        let pathList = historyList;
+        
+        if(keyword) {
+            pathList = pathList.filter(p => {
+                const searchStr = `${p.usage || ''} ${p.department || ''} ${p.notes || ''} ${p.path_id || ''}`.toLowerCase();
+                return searchStr.includes(keyword);
+            });
+        }
+
+        if(!pathList || pathList.length === 0) {
+            container.innerHTML = '<div style="padding:10px; color:#aaa; text-align:center;">無符合條件的路徑資料 (Supabase)</div>';
+            return;
         }
         
-        tr.innerHTML = `
-            <td style="padding:8px; font-size:0.9em; color:#888;">${p.id.substring(0,6)}...</td>
-            <td style="padding:8px;">${routeStr}</td>
-            <td style="padding:8px;">${p.usage || '-'}</td>
-            <td style="padding:8px;">${p.department || '-'}</td>
-            <td style="padding:8px; text-align:center;">${p.records.length}</td>
-            <td style="padding:8px; text-align:center;">
-                <button onclick="viewPathOnMap('${p.id}')" title="地圖" style="background:none; border:none; cursor:pointer; color:var(--primary-color); margin-right:5px;">🗺️</button>
-                <button onclick="openEditPathModal('${p.id}')" title="編輯" style="background:none; border:none; cursor:pointer; color:var(--warning-color); margin-right:5px;">✏️</button>
-                <button onclick="deletePath('${p.id}')" title="刪除" style="background:none; border:none; cursor:pointer; color:#ef4444;">🗑️</button>
-            </td>
+        const table = document.createElement('table');
+        table.style.width = '100%';
+        table.style.borderCollapse = 'collapse';
+        
+        table.innerHTML = `
+            <thead>
+                <tr style="background:rgba(255,255,255,0.05); color:var(--text-primary);">
+                    <th style="padding:8px; border-bottom:1px solid #555; text-align:left;">ID</th>
+                    <th style="padding:8px; border-bottom:1px solid #555; text-align:left;">起訖點</th>
+                    <th style="padding:8px; border-bottom:1px solid #555; text-align:left;">用途</th>
+                    <th style="padding:8px; border-bottom:1px solid #555; text-align:left;">單位</th>
+                    <th style="padding:8px; border-bottom:1px solid #555; text-align:center;">芯數</th>
+                    <th style="padding:8px; border-bottom:1px solid #555; text-align:center;">操作</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
         `;
-        tbody.appendChild(tr);
-    });
-    
-    container.innerHTML = '';
-    container.appendChild(table);
+        
+        const tbody = table.querySelector('tbody');
+        
+        pathList.forEach(p => {
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid #444';
+            
+            // Extract Route
+            let routeStr = '未知路徑';
+            if (p.start_node && p.end_node) {
+                 routeStr = `${p.start_node} <span style="color:var(--primary-color)">➝</span> ${p.end_node}`;
+            } else if (p.nodes) {
+                 let nodesArr = typeof p.nodes === 'string' ? JSON.parse(p.nodes) : p.nodes;
+                 if(Array.isArray(nodesArr) && nodesArr.length >= 2) {
+                     routeStr = `${nodesArr[0]} <span style="color:var(--primary-color)">➝</span> ${nodesArr[nodesArr.length-1]}`;
+                 }
+            }
+            
+            // Core Count
+            const coreCount = p.core_count ? p.core_count : '-';
+
+            tr.innerHTML = `
+                <td style="padding:8px; font-size:0.9em; color:#888;">${(p.path_id||'').substring(0,6)}...</td>
+                <td style="padding:8px;">${routeStr}</td>
+                <td style="padding:8px;">${p.usage || '-'}</td>
+                <td style="padding:8px;">${p.department || '-'}</td>
+                <td style="padding:8px; text-align:center;">${coreCount}</td>
+                <td style="padding:8px; text-align:center;">
+                    <button onclick="viewPathOnMap('${p.path_id}')" title="地圖" style="background:none; border:none; cursor:pointer; color:var(--primary-color); margin-right:5px;">🗺️</button>
+                    <button onclick="openEditPathModal('${p.path_id}')" title="編輯" style="background:none; border:none; cursor:pointer; color:var(--warning-color); margin-right:5px;">✏️</button>
+                    <button onclick="deletePath('${p.path_id}')" title="刪除" style="background:none; border:none; cursor:pointer; color:#ef4444;">🗑️</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+        
+        container.innerHTML = '';
+        container.appendChild(table);
+
+    } catch(e) {
+        console.error(e);
+        container.innerHTML = '<div style="color:red;">載入失敗: ' + e.message + '</div>';
+    }
 };
 
 window.switchAutoTab = function(tab) {
@@ -950,6 +927,7 @@ async function confirmAutoAdd() {
             department: updates.department,
             contact: updates.contact,
             notes: existingNotes,
+            core_count: requiredCores, // Add core_count for querying
             // created_at is usually auto-generated by DB, but we can send it
             created_at: new Date().toISOString()
         };
