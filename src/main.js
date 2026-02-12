@@ -477,7 +477,10 @@ if (clearPathBtn) {
         
         // Clear results
         const resultsDiv = document.getElementById('path-results');
-        if(resultsDiv) resultsDiv.innerHTML = '';
+        if(resultsDiv) resultsDiv.style.display = 'none';
+        
+        const pathList = document.getElementById('path-list');
+        if(pathList) pathList.innerHTML = '';
         
         const detailsForm = document.getElementById('path-details-form');
         if(detailsForm) detailsForm.style.display = 'none';
