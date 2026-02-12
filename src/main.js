@@ -9,6 +9,46 @@ import './mobile.js';
 if (window.logToScreen) window.logToScreen("main.js loaded.");
 console.log("main.js loaded");
 
+// Global State
+let isAdminLoggedIn = false;
+let currentMainSites = []; // Stores the user-selected main sites for layout (Array)
+let isEditMode = false; // New Edit Mode State
+
+// Connection Creation State
+let connectionCreationState = {
+    active: false,
+    step: 0, // 0: inactive, 1: select source, 2: select target
+    source: null,
+    target: null
+};
+
+let mapState = {
+    panning: false,
+    startX: 0,
+    startY: 0,
+    tx: 0,
+    ty: 0,
+    scale: 1
+};
+
+// Load saved map state
+try {
+    const saved = localStorage.getItem('fiber_map_state');
+    if (saved) {
+        const parsed = JSON.parse(saved);
+        mapState.tx = parsed.tx || 0;
+        mapState.ty = parsed.ty || 0;
+        mapState.scale = parsed.scale || 1;
+    }
+} catch (e) { console.error("Failed to load map state", e); }
+
+// Node Positions Memory
+let nodePositions = {};
+let hasAutoFitted = false; // Track if we have auto-fitted the map
+
+let currentPage = 1;
+const ITEMS_PER_PAGE = 20;
+
 // DOM Elements
 const navBtns = document.querySelectorAll('.nav-btn');
 const viewSections = document.querySelectorAll('.view-section');
@@ -1303,18 +1343,7 @@ if(editPathForm) {
     });
 }
 
-// Global State
-let isAdminLoggedIn = false;
-let currentMainSites = []; // Stores the user-selected main sites for layout (Array)
-let isEditMode = false; // New Edit Mode State
 
-// Connection Creation State
-let connectionCreationState = {
-    active: false,
-    step: 0, // 0: inactive, 1: select source, 2: select target
-    source: null,
-    target: null
-};
 
 function showToast(message, duration = 3000) {
     const toast = document.createElement('div');
@@ -1326,36 +1355,7 @@ function showToast(message, duration = 3000) {
     }, duration);
 }
 
-let mapState = {
-    panning: false,
-    startX: 0,
-    startY: 0,
-    tx: 0,
-    ty: 0,
-    scale: 1
-};
 
-// Load saved map state
-try {
-    const saved = localStorage.getItem('fiber_map_state');
-    if (saved) {
-        const parsed = JSON.parse(saved);
-        mapState.tx = parsed.tx || 0;
-        mapState.ty = parsed.ty || 0;
-        mapState.scale = parsed.scale || 1;
-    }
-} catch (e) { console.error("Failed to load map state", e); }
-
-// Node Positions Memory
-let nodePositions = {};
-let hasAutoFitted = false; // Track if we have auto-fitted the map
-
-// try {
-//     const savedNodes = localStorage.getItem('fiber_node_positions');
-//     if (savedNodes) {
-//         nodePositions = JSON.parse(savedNodes);
-//     }
-// } catch (e) { console.error("Failed to load node positions", e); }
 
 let currentPage = 1;
 const ITEMS_PER_PAGE = 20;
