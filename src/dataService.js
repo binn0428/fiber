@@ -607,3 +607,50 @@ export async function deleteStation(stationName) {
     currentData = currentData.filter(d => d.station_name !== stationName);
     notify();
 }
+
+// --- Path History (Supabase) ---
+export async function savePathHistory(pathData) {
+    const sb = getSupabase();
+    if (!sb) throw new Error("Supabase client not initialized");
+    
+    // Ensure nodes is an array or string depending on column type. 
+    // Usually Supabase handles array->jsonb. 
+    // If table column is text, use JSON.stringify(pathData.nodes).
+    // Let's assume JSONB for 'nodes' column as per modern standard.
+    
+    const { data, error } = await sb
+        .from('path_history')
+        .insert([pathData])
+        .select();
+        
+    if (error) throw error;
+    return data;
+}
+
+export async function getPathHistoryList() {
+    const sb = getSupabase();
+    if (!sb) return []; // Fallback if offline/no-sb
+    
+    const { data, error } = await sb
+        .from('path_history')
+        .select('*')
+        .order('created_at', { ascending: false });
+        
+    if (error) {
+        console.error("Error fetching path history:", error);
+        return [];
+    }
+    return data;
+}
+
+export async function deletePathHistory(pathId) {
+    const sb = getSupabase();
+    if (!sb) return;
+
+    const { error } = await sb
+        .from('path_history')
+        .delete()
+        .eq('path_id', pathId);
+        
+    if (error) throw error;
+}

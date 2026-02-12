@@ -1,39 +1,50 @@
-// Mobile Menu Logic
-const mobileMenuBtn = document.getElementById('mobile-menu-btn');
-const sidebar = document.querySelector('.sidebar');
-const navBtns = document.querySelectorAll('.nav-btn');
-
-if (mobileMenuBtn && sidebar) {
-    mobileMenuBtn.addEventListener('click', () => {
-        sidebar.classList.toggle('active');
-    });
-
-    // Close sidebar when clicking outside
-    document.addEventListener('click', (e) => {
-        if (window.innerWidth <= 768 && 
-            sidebar.classList.contains('active') && 
-            !sidebar.contains(e.target) && 
-            !mobileMenuBtn.contains(e.target)) {
-            sidebar.classList.remove('active');
-        }
-    });
-
-    // Close on nav click
-    if (navBtns) {
-        navBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                 if (window.innerWidth <= 768) {
-                    sidebar.classList.remove('active');
-                }
-            });
-        });
+// Helper to run code when DOM is ready
+function onReady(fn) {
+    if (document.readyState !== 'loading') {
+        fn();
+    } else {
+        document.addEventListener('DOMContentLoaded', fn);
     }
 }
+
+// Mobile Menu Logic
+onReady(() => {
+    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+    const sidebar = document.querySelector('.sidebar');
+    const navBtns = document.querySelectorAll('.nav-btn');
+
+    if (mobileMenuBtn && sidebar) {
+        mobileMenuBtn.addEventListener('click', () => {
+            sidebar.classList.toggle('active');
+        });
+
+        // Close sidebar when clicking outside
+        document.addEventListener('click', (e) => {
+            if (window.innerWidth <= 768 && 
+                sidebar.classList.contains('active') && 
+                !sidebar.contains(e.target) && 
+                !mobileMenuBtn.contains(e.target)) {
+                sidebar.classList.remove('active');
+            }
+        });
+
+        // Close on nav click
+        if (navBtns) {
+            navBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                        if (window.innerWidth <= 768) {
+                        sidebar.classList.remove('active');
+                    }
+                });
+            });
+        }
+    }
+});
 
 // Mobile Back Button Confirmation
 // This ensures that when the user presses the back button on mobile,
 // they are prompted before leaving the application.
-document.addEventListener('DOMContentLoaded', () => {
+onReady(() => {
     // Check if we are already in a state (to avoid duplicate pushes on reload if browser restores state)
     // But usually simple pushState is fine.
     
