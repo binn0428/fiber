@@ -98,6 +98,85 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderDataTable();
         populateSiteSelector();
         
+        // Mobile Sidebar Button Logic
+        const mobileRefreshBtn = document.getElementById('mobile-refresh-map-btn');
+        if (mobileRefreshBtn) {
+            mobileRefreshBtn.addEventListener('click', () => {
+                renderMap();
+                const sidebar = document.querySelector('.sidebar');
+                if (sidebar) sidebar.classList.remove('active');
+            });
+        }
+
+        const mobileCenterSortBtn = document.getElementById('mobile-center-sort-btn');
+        if (mobileCenterSortBtn) {
+            mobileCenterSortBtn.addEventListener('click', () => {
+                const newMainSites = prompt("請輸入中心站點名稱 (多個請用逗號分隔):", currentMainSites.join(','));
+                if (newMainSites !== null) {
+                    const sites = newMainSites.split(/[,，]/).map(s => s.trim()).filter(s => s);
+                    if (sites.length > 0) {
+                        currentMainSites = sites;
+                        setAppSettings('main_site', { names: sites }); // Save to Supabase
+                        renderMap();
+                    }
+                }
+                const sidebar = document.querySelector('.sidebar');
+                if (sidebar) sidebar.classList.remove('active');
+            });
+        }
+
+        const mobileSaveMapBtn = document.getElementById('mobile-save-map-btn');
+        if (mobileSaveMapBtn) {
+            mobileSaveMapBtn.addEventListener('click', async () => {
+                if (!isAdminLoggedIn) {
+                    alert("權限不足：儲存佈局功能僅供管理員使用");
+                    return;
+                }
+                const positions = {};
+                document.querySelectorAll('.site-node').forEach(el => {
+                    const name = el.getAttribute('data-site');
+                    const left = parseFloat(el.style.left);
+                    const top = parseFloat(el.style.top);
+                    positions[name] = { x: left, y: top };
+                });
+                
+                try {
+                    await setAppSettings('fiber_node_positions', positions);
+                    alert('佈局已儲存！');
+                } catch (e) {
+                    alert('儲存失敗：' + e.message);
+                }
+                const sidebar = document.querySelector('.sidebar');
+                if (sidebar) sidebar.classList.remove('active');
+            });
+        }
+
+        const mobileEditMapBtn = document.getElementById('mobile-edit-map-btn');
+        if (mobileEditMapBtn) {
+            mobileEditMapBtn.addEventListener('click', () => {
+                if (!isAdminLoggedIn) {
+                    const password = prompt("請輸入管理員密碼：");
+                    if (password === "0000") {
+                        isAdminLoggedIn = true;
+                        alert("已切換為管理員模式");
+                        document.body.classList.add('admin-mode');
+                        // Show admin buttons
+                        const adminBtns = document.querySelectorAll('.admin-only');
+                        adminBtns.forEach(btn => btn.style.display = 'inline-block');
+                        
+                        toggleEditMode();
+                    } else {
+                        alert("密碼錯誤");
+                        return;
+                    }
+                } else {
+                    toggleEditMode();
+                }
+                const sidebar = document.querySelector('.sidebar');
+                if (sidebar) sidebar.classList.remove('active');
+            });
+        }
+        
     } catch (e) {
         if (window.logToScreen) window.logToScreen(`Init Error: ${e.message}`, "error");
         console.error("Error in initialization:", e);
@@ -2239,8 +2318,9 @@ function renderMap() {
             root.xPct = rootX;
             root.yPct = rootY;
             
-            // Highlight Root
-            root.isBackbone = true; 
+            // Highlight Root (User Selected Center)
+            root.isCenter = true; // New flag for yellow highlight
+            root.isBackbone = true; // Keep backbone logic for fallback/compatibility
 
             // Get owned nodes for this cluster
             const clusterNodes = clusters[root.name] || [];
@@ -2265,8 +2345,10 @@ function renderMap() {
 
                 // Dynamic Radius: 
                 // Increase radius for each level. 
-                // Fixed step of 10% to keep it compact
-                const radius = 10 * levelIdx; 
+                // Increased to 20% + 12% per subsequent level to prevent blocking the center
+                const baseRadius = 20; 
+                const increment = 12;
+                const radius = baseRadius + (increment * (levelIdx - 1)); 
                 
                 const step = (2 * Math.PI) / group.length;
                 // Offset angle to prevent straight lines overlap between levels
@@ -2392,12 +2474,16 @@ function renderMap() {
     Object.values(nodes).forEach(node => {
         const el = document.createElement('div');
         el.className = 'site-node';
-        if (node.isBackbone) el.classList.add('backbone');
+        if (node.isCenter) {
+            el.classList.add('center-node');
+        } else if (node.isBackbone) {
+            el.classList.add('backbone');
+        }
         if (isEditMode) el.classList.add('edit-mode');
         
         el.innerHTML = `
             <div>${node.name}</div>
-            ${node.isBackbone ? '' : `<div style="font-size: 0.7em; opacity: 0.8">L${node.level}</div>`}
+            ${(node.isBackbone || node.isCenter) ? '' : `<div style="font-size: 0.7em; opacity: 0.8">L${node.level}</div>`}
         `;
         el.style.left = `${node.xPct}%`;
         el.style.top = `${node.yPct}%`;
