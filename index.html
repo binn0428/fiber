@@ -71,6 +71,7 @@
             <section id="map-view" class="view-section">
                 <div class="map-header">
                     <button id="map-controls-toggle" class="icon-btn" title="功能選單">☰</button>
+                    <button id="restore-sidebar-btn" class="action-btn" style="display: none; margin-right: 10px; background-color: #4b5563;">🔙 顯示選單</button>
                     <h2 id="map-title">光纖架構圖</h2>
                     <div class="map-controls" id="map-controls-menu">
                          <button id="refresh-map-btn" class="action-btn">🔄 重新整理</button>
@@ -168,6 +169,7 @@
                             <input type="number" id="auto-core-count" placeholder="1" value="1" min="1">
                         </div>
                         <button id="generate-path-btn" class="btn-primary gen-btn">生成路徑</button>
+                        <button id="clear-path-btn" class="btn-primary gen-btn" style="background-color: #6c757d; margin-left: 5px;">清除</button>
                     </div>
 
                     <div id="path-results" class="path-results-container" style="display:none;">
