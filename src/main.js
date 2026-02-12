@@ -788,17 +788,42 @@ function generatePaths(start, end) {
                 // Get available rows for this link
                 let availableRows = graph[current][neighbor];
                 
-                // Sorting: Numeric Descending, then Non-Numeric Descending
+                // 1. Filter by Capacity (from Fiber Name Prefix)
+                // e.g. "48_aa_1" -> Max 48 cores. "24-bb-2" -> Max 24 cores.
+                if (availableRows.length > 0) {
+                    const fName = availableRows[0].fiber_name || '';
+                    const match = fName.match(/^(\d+)[-_]/);
+                    if (match) {
+                        const capacity = parseInt(match[1]);
+                        if (!isNaN(capacity) && capacity > 0) {
+                            availableRows = availableRows.filter(r => {
+                                const c = parseInt(r.core_count);
+                                // If core_count is present, it must be <= capacity.
+                                // If core_count is missing (virtual row), keep it.
+                                return isNaN(c) || c <= capacity;
+                            });
+                        }
+                    }
+                }
+
+                // 2. Sorting: Core Number Ascending (Gap Filling)
+                // Real records with lower core numbers come first.
+                // Virtual/Undefined core numbers come last (or handle as needed).
                 availableRows.sort((a, b) => {
+                     const cA = parseInt(a.core_count);
+                     const cB = parseInt(b.core_count);
+                     
+                     const hasA = !isNaN(cA);
+                     const hasB = !isNaN(cB);
+                     
+                     if (hasA && hasB) return cA - cB; // Both have cores: Ascending (1, 2, 3...)
+                     if (hasA && !hasB) return -1;     // A has core, B doesn't -> Prefer A (Reuse existing)
+                     if (!hasA && hasB) return 1;      // B has core, A doesn't -> Prefer B
+                     
+                     // Fallback: Sort by Fiber Name if no cores (or both virtual)
                      const fA = a.fiber_name || '';
                      const fB = b.fiber_name || '';
-                     const isANum = /^\d/.test(fA);
-                     const isBNum = /^\d/.test(fB);
-                     
-                     if(isANum && !isBNum) return -1;
-                     if(!isANum && isBNum) return 1;
-                     
-                     return fB.localeCompare(fA, undefined, {numeric: true});
+                     return fA.localeCompare(fB, undefined, {numeric: true});
                 });
 
                 if (availableRows.length < requiredCores) {
@@ -1014,6 +1039,11 @@ async function confirmAutoAdd() {
             const dNorm = normalizeStationName(destination);
             const fName = fiberName.trim();
 
+            // Extract Capacity from Fiber Name
+            // e.g. "48_aa_1" -> 48. "24-bb" -> 24.
+            const capMatch = fName.match(/^(\d+)[-_]/);
+            const capacity = capMatch ? parseInt(capMatch[1]) : 9999;
+
             const existingCores = new Set(data.filter(d => {
                 const uNorm = normalizeStationName(d.station_name);
                 const vNorm = normalizeStationName(d.destination);
@@ -1053,6 +1083,8 @@ async function confirmAutoAdd() {
             const available = [];
             let candidate = 1;
             while (available.length < requiredCount) {
+                if (candidate > capacity) break; // Enforce Capacity Limit
+
                 if (!existingCores.has(candidate)) {
                     available.push(candidate);
                 }
@@ -1121,6 +1153,10 @@ async function confirmAutoAdd() {
                      const idx = allocatedCoresIndex[key]++;
                      const assignedCore = allocatedCoresCache[key][idx];
                      
+                     if (!assignedCore) {
+                         throw new Error(`芯線容量不足！(${row.fiber_name} 上限 ${allocatedCoresCache[key].length < 1 ? '未知' : '已滿'})`);
+                     }
+
                      row._assignedCore = String(assignedCore);
                      recordsToCreate.push(row);
                      continue;
@@ -1141,6 +1177,10 @@ async function confirmAutoAdd() {
                       const idx = allocatedCoresIndex[key]++;
                       const assignedCore = allocatedCoresCache[key][idx];
                       
+                      if (!assignedCore) {
+                          throw new Error(`芯線容量不足！(${freshRow.fiber_name} 上限已滿)`);
+                      }
+
                       freshRow._assignedCore = String(assignedCore);
                  }
                  recordsToUpdate.push(freshRow);
