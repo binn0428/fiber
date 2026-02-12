@@ -147,27 +147,27 @@
             <section id="auto-add" class="view-section">
                 <h2>自動新增與路徑管理</h2>
                 
-                <div class="tabs" style="margin-bottom: 20px;">
+                <div class="tabs">
                     <button class="tab-btn active" onclick="switchAutoTab('gen')">自動生成路徑</button>
                     <button class="tab-btn" onclick="switchAutoTab('mgmt')">路徑管理 (查詢/刪除)</button>
                 </div>
 
                 <!-- Tab 1: Auto Generate -->
                 <div id="tab-auto-gen" class="tab-content-panel">
-                    <div class="form-inline auto-gen-form" style="display: flex; gap: 10px; align-items: flex-end; margin-bottom: 20px;">
-                        <div class="form-group start-node-group" style="flex: 1;">
+                    <div class="form-inline auto-gen-form">
+                        <div class="form-group start-node-group">
                             <label>起點站點</label>
                             <input type="text" id="auto-start-node" list="station-list" placeholder="輸入起點">
                         </div>
-                        <div class="form-group end-node-group" style="flex: 1;">
+                        <div class="form-group end-node-group">
                             <label>終點站點</label>
                             <input type="text" id="auto-end-node" list="station-list" placeholder="輸入終點">
                         </div>
-                        <div class="form-group core-count-group" style="width: 100px;">
-                            <label>使用芯數</label>
-                            <input type="number" id="auto-core-count" placeholder="1" value="1" min="1" style="width: 100%;">
+                        <div class="form-group core-count-group">
+                            <label>芯數</label>
+                            <input type="number" id="auto-core-count" placeholder="1" value="1" min="1">
                         </div>
-                        <button id="generate-path-btn" class="btn-primary gen-btn" style="height: 40px; margin-bottom: 2px;">生成路徑</button>
+                        <button id="generate-path-btn" class="btn-primary gen-btn">生成路徑</button>
                     </div>
 
                     <div id="path-results" class="path-results-container" style="display:none;">
@@ -208,13 +208,13 @@
 
                 <!-- Tab 2: Management -->
                 <div id="tab-auto-mgmt" class="tab-content-panel" style="display:none;">
-                    <div class="search-box" style="margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 10px;">
-                         <select id="path-history-select" style="padding: 8px; flex: 1; min-width: 200px;">
+                    <div class="search-box">
+                         <select id="path-history-select">
                             <option value="">-- 選擇歷史路徑紀錄 --</option>
                          </select>
-                         <input type="text" id="path-search" placeholder="搜尋用途、備註或站點..." style="flex: 2; padding: 8px; min-width: 200px;">
+                         <input type="text" id="path-search" placeholder="搜尋用途、備註或站點...">
                          <button id="path-search-btn">🔍</button>
-                         <button id="path-refresh-btn" class="action-btn" style="background-color: var(--success-color); margin-left: 5px;">🔄 重新整理</button>
+                         <button id="path-refresh-btn" class="action-btn">🔄 重新整理</button>
                     </div>
                     <div id="mgmt-path-list" class="path-list">
                         <!-- List of created paths/circuits -->
