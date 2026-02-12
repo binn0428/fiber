@@ -1154,6 +1154,7 @@ function loadPathMgmtList() {
                     <button class="action-btn" style="background-color:var(--danger-color); font-size:0.9em; padding:5px 10px;" onclick="deletePath('${p.id}')">刪除</button>
             `;
         }
+        
         buttons += `</div>`;
 
         div.innerHTML = `
