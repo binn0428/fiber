@@ -410,7 +410,17 @@ window.loadPathMgmtList = async function() {
         console.error(e);
         container.innerHTML = '<div style="color:red;">載入失敗: ' + e.message + '</div>';
     }
-};
+ };
+ 
+ function showToast(message, duration = 3000) {
+     const toast = document.createElement('div');
+     toast.className = 'toast-notification';
+     toast.textContent = message;
+     document.body.appendChild(toast);
+     setTimeout(() => {
+         toast.remove();
+     }, duration);
+ }
 
 window.switchAutoTab = function(tab) {
     document.querySelectorAll('#auto-add .tab-btn').forEach(b => b.classList.remove('active'));
@@ -1152,8 +1162,13 @@ async function confirmAutoAdd() {
                      const key = `${row.station_name}|${row.destination}|${row.fiber_name}`;
                      const idx = allocatedCoresIndex[key]++;
                      const assignedCore = allocatedCoresCache[key][idx];
-                     
-                     row._assignedCore = String(assignedCore);
+                    
+                    // Safety check for undefined core
+                    if (assignedCore === undefined) {
+                         throw new Error(`無法分配足夠芯線 (${row.station_name} -> ${row.destination})。請重試或檢查芯線容量。`);
+                    }
+
+                    row._assignedCore = String(assignedCore);
                      recordsToCreate.push(row);
                      continue;
                  }
@@ -1173,6 +1188,10 @@ async function confirmAutoAdd() {
                       const idx = allocatedCoresIndex[key]++;
                       const assignedCore = allocatedCoresCache[key][idx];
                       
+                      if (assignedCore === undefined) {
+                           throw new Error(`無法分配足夠芯線 (${freshRow.station_name} -> ${freshRow.destination})。請重試或檢查芯線容量。`);
+                      }
+
                       freshRow._assignedCore = String(assignedCore);
                  }
                  recordsToUpdate.push(freshRow);
@@ -1423,7 +1442,7 @@ window.showPathDetails = function(pathId) {
                 <td style="padding:8px; border:1px solid #555;">${r.station_name || '-'}</td>
                 <td style="padding:8px; border:1px solid #555;">${r.fiber_name || '-'}</td>
                 <td style="padding:8px; border:1px solid #555;">${r.destination || '-'}</td>
-                <td style="padding:8px; border:1px solid #555; text-align:center;">${r.core_count || '-'}</td>
+                <td style="padding:8px; border:1px solid #555; text-align:center;">${(r.core_count && r.core_count !== 'undefined') ? r.core_count : '-'}</td>
                 <td style="padding:8px; border:1px solid #555; text-align:center;">${r.port || '-'}</td>
                 <td style="padding:8px; border:1px solid #555; font-size:0.85em; color:#aaa;">${(r.notes||'').replace(/\[PathID:[^\]]+\]/g, '').replace(/\[PathNodes:[^\]]+\]/g, '').trim()}</td>
             `;
@@ -1457,8 +1476,25 @@ window.deletePath = async function(pathId) {
         if(records.length > 0) {
             for(const r of records) {
                 if (r.source === 'AUTO') {
-                    // 如果是自動生成的虛擬路徑，直接刪除該筆資料
-                    await deleteRecord(r.id, r._table);
+                    // Even if AUTO, we preserve the core if it's a valid number (Gap Filling persistence)
+                    // Only delete if it has NO core_count or invalid
+                    if (!r.core_count || r.core_count === 'undefined') {
+                         await deleteRecord(r.id, r._table);
+                    } else {
+                        // Clear usage but KEEP the record (Core Preservation)
+                        await updateRecord(r.id, {
+                            usage: null,
+                            department: null,
+                            contact: null,
+                            phone: null, 
+                            notes: null,
+                            // core_count: null, // DO NOT DELETE CORE NUMBER
+                            port: null,
+                            net_start: null,
+                            net_end: null,
+                            connection_line: null
+                        }, r._table);
+                    }
                 } else {
                     // 如果是既有實體線路被佔用，則清除使用資訊
                     // 同步清除備註欄位 (因路徑生成時會覆蓋備註，刪除時應一併移除)
@@ -1468,7 +1504,7 @@ window.deletePath = async function(pathId) {
                         contact: null,
                         phone: null, 
                         notes: null,
-                        core_count: null,
+                        // core_count: null, // DO NOT DELETE CORE NUMBER
                         port: null,
                         net_start: null,
                         net_end: null,
@@ -1582,15 +1618,98 @@ if(editPathForm) {
 
 
 
-function showToast(message, duration = 3000) {
-    const toast = document.createElement('div');
-    toast.className = 'toast-notification';
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    setTimeout(() => {
-        toast.remove();
-    }, duration);
-}
+// Data Integrity Utility
+window.fixCoreGaps = async function() {
+    if(!isAdminLoggedIn) {
+        alert("權限不足");
+        return;
+    }
+    
+    if(!confirm("這將掃描所有光纖線路，並為缺失的芯線 (1 ~ 上限) 補齊空記錄。\n可能需要一些時間，確定執行？")) return;
+    
+    const data = getData();
+    const recordsToCreate = [];
+    
+    // Group by Link (Station + Dest + FiberName)
+    const links = {};
+    data.forEach(d => {
+        // Use normalized names for grouping? Or strict?
+        // Since we are checking gaps within a fiber, strict names are safer to avoid cross-link pollution
+        const key = `${d.station_name}|${d.destination}|${d.fiber_name}`;
+        if(!links[key]) links[key] = [];
+        links[key].push(d);
+    });
+    
+    for(const key in links) {
+        const rows = links[key];
+        if(rows.length === 0) continue;
+        
+        const fName = rows[0].fiber_name || '';
+        // Parse Capacity
+        const match = fName.match(/^(\d+)/);
+        if(!match) continue; // No capacity prefix, skip
+        
+        const capacity = parseInt(match[1]);
+        if(isNaN(capacity) || capacity <= 0) continue;
+        
+        // Find existing core numbers
+        const existingCores = new Set();
+        rows.forEach(r => {
+            const c = parseInt(r.core_count);
+            if(!isNaN(c)) existingCores.add(c);
+        });
+        
+        // Check for gaps
+        for(let i=1; i<=capacity; i++) {
+            if(!existingCores.has(i)) {
+                // Found gap
+                recordsToCreate.push({
+                    station_name: rows[0].station_name,
+                    destination: rows[0].destination,
+                    fiber_name: rows[0].fiber_name,
+                    core_count: String(i),
+                    usage: '',
+                    source: 'AUTO-FIX'
+                });
+            }
+        }
+    }
+    
+    if(recordsToCreate.length === 0) {
+        alert("檢查完成：沒有發現缺失的芯線。");
+        return;
+    }
+    
+    if(!confirm(`檢查完成：發現 ${recordsToCreate.length} 筆缺失的芯線記錄。\n是否立即建立？`)) return;
+    
+    try {
+        let count = 0;
+        // Batch create? Or loop?
+        // Supabase/API might rate limit. Loop with small delay or just loop.
+        // Assuming addRecord handles it.
+        
+        // Show progress
+        const btn = document.activeElement; // The button that triggered this
+        if(btn) btn.disabled = true;
+        
+        for(const rec of recordsToCreate) {
+             await addRecord(rec);
+             count++;
+             if(count % 10 === 0) console.log(`Fixed ${count}/${recordsToCreate.length}`);
+        }
+        
+        alert(`已成功補齊 ${count} 筆芯線記錄！`);
+        await loadData();
+        renderDataTable();
+        
+    } catch(e) {
+        console.error(e);
+        alert("補齊過程發生錯誤: " + e.message);
+    } finally {
+        const btn = document.activeElement;
+        if(btn) btn.disabled = false;
+    }
+};
 
 
 
