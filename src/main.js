@@ -280,6 +280,106 @@ if (saveConfigBtn) {
     });
 }
 
+// --- Per-Link Gap Fixing Logic ---
+async function fixGapsForLink(rows, currentSiteName) {
+    if(!rows || rows.length === 0) {
+        alert("無法補齊：無效的資料來源");
+        return;
+    }
+
+    const first = rows[0];
+    const fiberName = first.fiber_name || '';
+    const stationName = first.station_name;
+    const destination = first.destination;
+
+    // Parse Capacity
+    const match = fiberName.match(/^(\d+)/);
+    if(!match) {
+        alert(`無法識別芯數容量：${fiberName}\n請確認光纖名稱以數字開頭 (例如 48-24...)`);
+        return;
+    }
+    const capacity = parseInt(match[1]);
+    
+    // Find missing cores
+    const existingCores = new Set();
+    rows.forEach(r => {
+        const c = parseInt(r.core_count);
+        if(!isNaN(c)) existingCores.add(c);
+    });
+
+    const missingCores = [];
+    for(let i=1; i<=capacity; i++) {
+        if(!existingCores.has(i)) {
+            missingCores.push(i);
+        }
+    }
+
+    if(missingCores.length === 0) {
+        alert(`光纖 ${fiberName} (至 ${destination}) 芯號完整 (1-${capacity})，無需補齊。`);
+        return;
+    }
+
+    if(!confirm(`光纖: ${fiberName}\n目的: ${destination}\n容量: ${capacity} 芯\n缺失: ${missingCores.length} 芯\n\n是否立即補齊缺失的芯號？`)) return;
+
+    // Progress UI
+    const overlay = document.getElementById('progress-overlay');
+    const bar = document.getElementById('progress-bar');
+    const text = document.getElementById('progress-text');
+
+    if (overlay) {
+        overlay.style.display = 'flex';
+        if(text) text.innerText = `準備補齊 ${missingCores.length} 筆...`;
+        if(bar) bar.style.width = '0%';
+    }
+    
+    let count = 0;
+    
+    // Use for...of loop for async
+    for(const coreNum of missingCores) {
+        const newRecord = {
+            station_name: stationName,
+            destination: destination,
+            fiber_name: fiberName,
+            core_count: String(coreNum),
+            usage: '',
+            department: '',
+            note: '',
+            net_start: '',
+            net_end: ''
+        };
+        
+        try {
+            await addRecord(newRecord);
+            count++;
+        } catch(e) {
+            console.error(`Error adding core ${coreNum}:`, e);
+        }
+        
+        if(overlay && bar && text) {
+             const pct = Math.round((count / missingCores.length) * 100);
+             bar.style.width = `${pct}%`;
+             text.innerText = `補齊中: ${count} / ${missingCores.length}`;
+        }
+        
+        // Small delay to allow UI update and prevent freezing
+        if(count % 5 === 0) await new Promise(r => setTimeout(r, 10));
+    }
+    
+    if (overlay) overlay.style.display = 'none';
+    
+    alert(`已補齊 ${count} 筆芯號！`);
+    
+    // Refresh Data
+    await loadData();
+    renderDataTable();
+    
+    // Refresh Modal if open
+    if(currentSiteName) {
+        // Re-open modal to refresh data
+        openSiteDetails(currentSiteName);
+    }
+}
+
 // Map Controls Toggle Logic moved to mobile.js to prevent duplicate listeners
 
 // Restore Sidebar Button Logic
@@ -3458,13 +3558,29 @@ function openSiteDetails(siteName) {
                 header.style.justifyContent = 'space-between';
                 header.style.alignItems = 'center';
                 
+                let fixBtnHtml = '';
+                if (isAdminLoggedIn) {
+                     fixBtnHtml = `<button class="btn-fix-gaps" style="margin-left: 10px; padding: 2px 8px; font-size: 12px; background: #f59e0b; color: white; border: none; border-radius: 4px; cursor: pointer;">🛠️ 補齊芯號</button>`;
+                }
+
                 header.innerHTML = `
-                    <strong>${key}</strong>
+                    <div style="display: flex; align-items: center;">
+                        <strong>${key}</strong>
+                        ${fixBtnHtml}
+                    </div>
                     <div style="font-size: 0.9em;">
                         <span style="color: #ef4444; margin-right: 12px; font-weight: bold;">已用: ${used} ${usedCoresText}</span>
                         <span style="color: #10b981; font-weight: bold;">可用: ${free}</span>
                     </div>
                 `;
+                
+                const fixBtn = header.querySelector('.btn-fix-gaps');
+                if(fixBtn) {
+                    fixBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        fixGapsForLink(displayRows, siteName);
+                    });
+                }
                 
                 // Content (Hidden by default)
                 const content = document.createElement('div');
