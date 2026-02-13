@@ -2665,8 +2665,8 @@ function renderMap() {
             orphans.forEach((node, idx) => {
                 const angle = (idx / orphans.length) * 2 * Math.PI;
                 const r = 10;
-                node.xPct = centerX + r * Math.cos(angle);
-                node.yPct = centerY + r * Math.sin(angle);
+                node.xPct = 50 + r * Math.cos(angle);
+                node.yPct = 50 + r * Math.sin(angle);
             });
         }
     }
