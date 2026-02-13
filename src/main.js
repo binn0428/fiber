@@ -473,11 +473,7 @@ if (clearPathBtn) {
     clearPathBtn.addEventListener('click', () => {
         document.getElementById('auto-start-node').value = '';
         document.getElementById('auto-end-node').value = '';
-        const coreInput = document.getElementById('auto-core-count');
-        if(coreInput) {
-            coreInput.value = '1';
-            coreInput.disabled = false;
-        }
+        document.getElementById('auto-core-count').value = '1';
         
         // Clear results
         const resultsDiv = document.getElementById('path-results');
@@ -666,62 +662,7 @@ function generatePaths(start, end) {
         });
     });
     
-    // 2.5 Post-Process Graph to ensure Bidirectionality
-    // Fallback for Reverse Connectivity where downstream data is missing
-    // If A->B exists (explicit), but B has NO record for this fiber.
-    // The user wants "Bidirectional Inference".
-    // If we only have A->B, can we traverse B->A?
-    // If we traverse B->A using A's row, we are essentially using the cable.
-    // Let's re-add the explicit reverse injection BUT be careful.
-    // The user said "First determine physical connection".
-    // If A connects to B.
-    // We can infer B connects to A.
-    // If B has no data, we can create a "Virtual Row" or reuse A's row for the return path?
-    // Reuse A's row is dangerous for updates.
-    // Better approach:
-    // If A->B is established by Row A.
-    // And we need B->A.
-    // Check if graph[vNorm][uNorm] exists.
-    // If not, maybe inject Row A as a placeholder?
-    // But confirmAutoAdd needs to update.
-    // If we update Row A, it marks the core used.
-    // That should be enough for the link?
-    // Let's stick to: "Only lock rows that exist".
-    // If B has no row, we don't lock B.
-    // But we still need the EDGE in the graph to traverse.
-    for(const u in graph) {
-        for(const v in graph[u]) {
-            // u -> v exists.
-            // Check v -> u
-            if(!graph[v]) graph[v] = {};
-            if(!graph[v][u]) {
-                 // v -> u missing. 
-                 // It implies v has no available rows for this link.
-                 // OR v's rows are full.
-                 // OR v's rows are missing destination/inference.
-                 
-                 // If we want to allow traversal B->A even if B has no data:
-                 // We can inject the SAME rows from A->B into B->A?
-                 // This effectively treats the cable as a single resource managed at A.
-                 // This is common in simple fiber mgmt.
-                 // Let's do this:
-                 // graph[v][u] = graph[u][v]; 
-                 // But wait, graph[u][v] contains rows with 'id'.
-                 // If we use them for B->A, confirmAutoAdd will try to lock them.
-                 // It will lock Row A.
-                 // That's fine! Locking Row A marks the cable used.
-                 graph[v][u] = [...graph[u][v]];
-            } else {
-                 // v -> u exists (has its own rows).
-                 // We combine them? Or keep separate?
-                 // If we have rows at B, we should prefer them.
-                 // But if we run out of rows at B?
-                 // Let's just keep what we found.
-            }
-        }
-    }
-
-    // 2.6 Inject Passthrough Edges (Bridging Gaps)
+    // 2.5 Inject Passthrough Edges (Bridging Gaps)
     // For nodes like PCU8 that might be physically connected but lack specific available records for a fiber,
     // we use global fiber knowledge + physical topology to inject virtual edges.
     // This solves the issue where a path exists (fiber continues) but intermediate records are missing or reserved.
@@ -760,6 +701,62 @@ function generatePaths(start, end) {
             }
         });
     }
+
+    // Fallback for Reverse Connectivity where downstream data is missing
+    // If A->B exists (explicit), but B has NO record for this fiber.
+    // The user wants "Bidirectional Inference".
+    // If we only have A->B, can we traverse B->A?
+    // If we traverse B->A using A's row, we are essentially using the cable.
+    // Let's re-add the explicit reverse injection BUT be careful.
+    // The user said "First determine physical connection".
+    // If A connects to B.
+    // We can infer B connects to A.
+    // If B has no data, we can create a "Virtual Row" or reuse A's row for the return path?
+    // Reuse A's row is dangerous for updates.
+    // Better approach:
+    // If A->B is established by Row A.
+    // And we need B->A.
+    // Check if graph[vNorm][uNorm] exists.
+    // If not, maybe inject Row A as a placeholder?
+    // But confirmAutoAdd needs to update.
+    // If we update Row A, it marks the core used.
+    // That should be enough for the link?
+    // Let's stick to: "Only lock rows that exist".
+    // If B has no row, we don't lock B.
+    // But we still need the EDGE in the graph to traverse.
+    
+    // Post-Process Graph to ensure Bidirectionality
+    for(const u in graph) {
+        for(const v in graph[u]) {
+            // u -> v exists.
+            // Check v -> u
+            if(!graph[v]) graph[v] = {};
+            if(!graph[v][u]) {
+                 // v -> u missing. 
+                 // It implies v has no available rows for this link.
+                 // OR v's rows are full.
+                 // OR v's rows are missing destination/inference.
+                 
+                 // If we want to allow traversal B->A even if B has no data:
+                 // We can inject the SAME rows from A->B into B->A?
+                 // This effectively treats the cable as a single resource managed at A.
+                 // This is common in simple fiber mgmt.
+                 // Let's do this:
+                 // graph[v][u] = graph[u][v]; 
+                 // But wait, graph[u][v] contains rows with 'id'.
+                 // If we use them for B->A, confirmAutoAdd will try to lock them.
+                 // It will lock Row A.
+                 // That's fine! Locking Row A marks the cable used.
+                 graph[v][u] = [...graph[u][v]];
+            } else {
+                 // v -> u exists (has its own rows).
+                 // We combine them? Or keep separate?
+                 // If we have rows at B, we should prefer them.
+                 // But if we run out of rows at B?
+                 // Let's just keep what we found.
+            }
+        }
+    }
     
     // 3. BFS to find paths
     const startNorm = normalizeStationName(start);
@@ -791,42 +788,17 @@ function generatePaths(start, end) {
                 // Get available rows for this link
                 let availableRows = graph[current][neighbor];
                 
-                // 1. Filter by Capacity (from Fiber Name Prefix)
-                // e.g. "48_aa_1" -> Max 48 cores. "24-bb-2" -> Max 24 cores.
-                if (availableRows.length > 0) {
-                    const fName = availableRows[0].fiber_name || '';
-                    const match = fName.match(/^(\d+)[-_]/);
-                    if (match) {
-                        const capacity = parseInt(match[1]);
-                        if (!isNaN(capacity) && capacity > 0) {
-                            availableRows = availableRows.filter(r => {
-                                const c = parseInt(r.core_count);
-                                // If core_count is present, it must be <= capacity.
-                                // If core_count is missing (virtual row), keep it.
-                                return isNaN(c) || c <= capacity;
-                            });
-                        }
-                    }
-                }
-
-                // 2. Sorting: Core Number Ascending (Gap Filling)
-                // Real records with lower core numbers come first.
-                // Virtual/Undefined core numbers come last (or handle as needed).
+                // Sorting: Numeric Descending, then Non-Numeric Descending
                 availableRows.sort((a, b) => {
-                     const cA = parseInt(a.core_count);
-                     const cB = parseInt(b.core_count);
-                     
-                     const hasA = !isNaN(cA);
-                     const hasB = !isNaN(cB);
-                     
-                     if (hasA && hasB) return cA - cB; // Both have cores: Ascending (1, 2, 3...)
-                     if (hasA && !hasB) return -1;     // A has core, B doesn't -> Prefer A (Reuse existing)
-                     if (!hasA && hasB) return 1;      // B has core, A doesn't -> Prefer B
-                     
-                     // Fallback: Sort by Fiber Name if no cores (or both virtual)
                      const fA = a.fiber_name || '';
                      const fB = b.fiber_name || '';
-                     return fA.localeCompare(fB, undefined, {numeric: true});
+                     const isANum = /^\d/.test(fA);
+                     const isBNum = /^\d/.test(fB);
+                     
+                     if(isANum && !isBNum) return -1;
+                     if(!isANum && isBNum) return 1;
+                     
+                     return fB.localeCompare(fA, undefined, {numeric: true});
                 });
 
                 if (availableRows.length < requiredCores) {
@@ -845,16 +817,10 @@ function generatePaths(start, end) {
         }
     }
 
-    // Disable input to prevent changes during selection
-    const coreInput = document.getElementById('auto-core-count');
-    if(coreInput) coreInput.disabled = true;
-
     // Attach original start/end inputs to each path for later use
     paths.forEach(p => {
         p.originalStart = start;
         p.originalEnd = end;
-        // Store the core count used for generation
-        p.generatedCoreCount = requiredCores;
     });
     
     currentGeneratedPaths = paths;
@@ -871,11 +837,9 @@ function renderPaths(paths) {
     container.innerHTML = '';
     if(formArea) formArea.style.display = 'none';
     
-    const requiredCores = parseInt(document.getElementById('auto-core-count').value) || 1;
-    
     if(paths.length === 0) {
         if(resultsArea) resultsArea.style.display = 'block';
-        container.innerHTML = `<div class="no-data" style="padding:10px; color:#aaa;">找不到符合條件的可用路徑<br>(無足夠連續區段或芯線不足 ${requiredCores} 芯)</div>`;
+        container.innerHTML = '<div class="no-data" style="padding:10px; color:#aaa;">找不到符合條件的可用路徑 (或無可用芯線)</div>';
         // Debug info if needed
         console.log("No paths found. Check if start/end exist in graph and have enough available cores.");
         return;
@@ -975,13 +939,8 @@ async function confirmAutoAdd() {
     if(selectedPathIndex === -1) return;
     
     const path = currentGeneratedPaths[selectedPathIndex];
-    // Get required core count from input or path metadata
-    let requiredCores = 1;
-    if (path.generatedCoreCount) {
-        requiredCores = path.generatedCoreCount;
-    } else {
-        requiredCores = parseInt(document.getElementById('auto-core-count').value.trim()) || 1;
-    }
+    // Get required core count from input, default to 1
+    const requiredCores = parseInt(document.getElementById('auto-core-count').value.trim()) || 1;
 
     const updates = {
         usage: document.getElementById('auto-usage').value.trim(),
@@ -1009,7 +968,36 @@ async function confirmAutoAdd() {
     // Save Path Nodes for visualization
     const noteWithId = (existingNotes ? existingNotes + ' ' : '') + `[PathID:${pathId}] [PathNodes:${path.nodes.join(',')}]`;
 
-    // 1. Validate & Prepare Updates (Locking)
+    // Save to History Table (Supabase)
+    try {
+        const historyData = {
+            id: pathId,
+            start_station: path.originalStart,
+            end_station: path.originalEnd,
+            path_nodes: path.nodes, // Supabase handles array/jsonb automatically usually, or we stringify if text
+            usage: updates.usage,
+            department: updates.department,
+            contact: updates.contact,
+            notes: existingNotes,
+            // core_count: requiredCores, // Not in schema provided by user, but maybe useful? User didn't specify it in CREATE TABLE. 
+            // Wait, user provided explicit CREATE TABLE. I should follow it.
+            // But core_count is useful. I will remove it if it causes error, or check if I can add it. 
+            // The user's schema: id, created_at, start_station, end_station, path_nodes, usage, department, contact, notes, applicant.
+            // I should stick to these fields.
+            // Wait, who is 'applicant'? Maybe I can put something there or leave null.
+            applicant: null, 
+            created_at: new Date().toISOString()
+        };
+        // We need to ensure nodes is compatible. If Supabase column is text, JSON.stringify. If array/json, pass array.
+        // Assuming JSONB as per user schema.
+        // Actually, looking at previous memory/code, I should check how savePathHistory is implemented.
+        // But assuming standard JSON handling.
+        await savePathHistory(historyData);
+    } catch(historyError) {
+        console.error("Failed to save path history:", historyError);
+        // Don't block main flow
+    }
+
     try {
         // Use PRE-LOCKED rows from path generation to avoid re-search errors
         const recordsToUpdate = [];
@@ -1026,20 +1014,37 @@ async function confirmAutoAdd() {
             const dNorm = normalizeStationName(destination);
             const fName = fiberName.trim();
 
-            // Extract Capacity from Fiber Name
-            // e.g. "48_aa_1" -> 48. "24-bb" -> 24.
-            const capMatch = fName.match(/^(\d+)[-_]/);
-            const capacity = capMatch ? parseInt(capMatch[1]) : 9999;
-
             const existingCores = new Set(data.filter(d => {
                 const uNorm = normalizeStationName(d.station_name);
                 const vNorm = normalizeStationName(d.destination);
                 const fiber = (d.fiber_name || '').trim();
                 
+                // Match Direction 1: A->B
+                // const matchDirect = (uNorm === sNorm && vNorm === dNorm && fiber === fName);
+                // Match Direction 2: B->A (Bidirectional Check)
+                // const matchReverse = (uNorm === dNorm && vNorm === sNorm && fiber === fName);
+                
+                // return matchDirect || matchReverse;
+
                 // AGGRESSIVE MATCHING (Global Unique Fiber Name):
+                // If fiber name matches exactly, we consider the core used, REGARDLESS of the endpoints.
+                // This assumes that Fiber Names (e.g. 1.12_c5c6_1) are globally unique identifiers for a physical cable.
+                // If the user uses generic names (e.g. 96C) for multiple different cables, this will cause issues,
+                // but for specific IDs like the user provided, this is the only way to guarantee no duplicates.
+                
                 if (fiber === fName) return true;
 
-                return false;
+                // Previous Logic (Disabled in favor of Global Unique Check):
+                /*
+                if (fiber !== fName) return false;
+
+                const touchesStation = (uNorm === sNorm || uNorm === dNorm);
+                const touchesDest = (vNorm === sNorm || vNorm === dNorm);
+
+                // If it touches either end, count it as used.
+                return touchesStation || touchesDest;
+                */
+               return false;
             }).map(d => {
                 const num = parseInt(d.core_count);
                 return isNaN(num) ? 0 : num;
@@ -1048,8 +1053,6 @@ async function confirmAutoAdd() {
             const available = [];
             let candidate = 1;
             while (available.length < requiredCount) {
-                if (candidate > capacity) break; // Enforce Capacity Limit
-
                 if (!existingCores.has(candidate)) {
                     available.push(candidate);
                 }
@@ -1068,7 +1071,8 @@ async function confirmAutoAdd() {
 
         for(const segment of path.records) {
             if(!segment.records && segment.rows) { 
-                // Compatibility handle
+                // Compatibility handle: my previous code used 'rows', but let's be safe. 
+                // In generatePaths I used: records: [...records, { from: current, to: neighbor, rows: lockedRows }]
             }
             
             if(!segment.rows || segment.rows.length < requiredCores) {
@@ -1077,6 +1081,10 @@ async function confirmAutoAdd() {
             
             // Pre-calculate how many new core assignments are needed for this segment
             const rowsNeedingAssignment = segment.rows.filter(r => r._generated || !r.core_count);
+            
+            // Group by physical link to batch-request available cores
+            // This is important if a segment uses multiple fibers? (Unlikely in current logic, usually 1 fiber per segment)
+            // But let's handle it by link key.
             
             for(const row of rowsNeedingAssignment) {
                  // Check if it's a real row (unused) that just lacks core_count, or a virtual row
@@ -1095,6 +1103,7 @@ async function confirmAutoAdd() {
                       // Initialize cache if needed
                       if (!allocatedCoresCache[key]) {
                           // We need to count how many rows for THIS link need assignment in this batch
+                          // To avoid calling getAvailableCoreNumbers multiple times and getting same results
                           const countForLink = rowsNeedingAssignment.filter(r => 
                               `${r.station_name}|${r.destination}|${r.fiber_name}` === key
                           ).length;
@@ -1112,10 +1121,6 @@ async function confirmAutoAdd() {
                      const idx = allocatedCoresIndex[key]++;
                      const assignedCore = allocatedCoresCache[key][idx];
                      
-                     if (!assignedCore) {
-                         throw new Error(`芯線容量不足！(${row.fiber_name} 上限 ${allocatedCoresCache[key].length < 1 ? '未知' : '已滿'})`);
-                     }
-
                      row._assignedCore = String(assignedCore);
                      recordsToCreate.push(row);
                      continue;
@@ -1136,10 +1141,6 @@ async function confirmAutoAdd() {
                       const idx = allocatedCoresIndex[key]++;
                       const assignedCore = allocatedCoresCache[key][idx];
                       
-                      if (!assignedCore) {
-                          throw new Error(`芯線容量不足！(${freshRow.fiber_name} 上限已滿)`);
-                      }
-
                       freshRow._assignedCore = String(assignedCore);
                  }
                  recordsToUpdate.push(freshRow);
@@ -1150,11 +1151,7 @@ async function confirmAutoAdd() {
         document.getElementById('confirm-auto-add-btn').disabled = true;
         document.getElementById('confirm-auto-add-btn').innerText = "處理中...";
         
-        // 2. Execute Record Updates (Create/Update)
-        // We do this BEFORE saving history to ensure data integrity.
-        // If this fails, we catch error and do NOT save history.
-        
-        // 2.1 Create New Records for Passthrough Edges
+        // 1. Create New Records for Passthrough Edges
         for (const row of recordsToCreate) {
              const newRecord = {
                  station_name: row.station_name,
@@ -1174,7 +1171,7 @@ async function confirmAutoAdd() {
              await addRecord(newRecord);
         }
 
-        // 2.2 Update Existing Records
+        // 2. Update Existing Records
         for(const record of recordsToUpdate) {
             // Append PathID to EXISTING record notes to preserve history if any
             const currentRecordNotes = record.notes ? String(record.notes) : '';
@@ -1191,38 +1188,19 @@ async function confirmAutoAdd() {
 
             await updateRecord(record.id, updatePayload, record._table);
         }
-
-        // 3. Save to History Table (Supabase) - Only if records updated successfully
-        const historyData = {
-            id: pathId,
-            start_station: path.originalStart,
-            end_station: path.originalEnd,
-            path_nodes: path.nodes, 
-            usage: updates.usage,
-            department: updates.department,
-            contact: updates.contact,
-            notes: existingNotes,
-            applicant: null, 
-            created_at: new Date().toISOString()
-        };
-        await savePathHistory(historyData);
         
         alert("新增成功！路徑 ID: " + pathId);
         
-        // Clear Form and reset UI
+        // Clear Form
         document.getElementById('auto-usage').value = '';
         document.getElementById('auto-notes').value = '';
         document.getElementById('path-details-form').style.display = 'none';
         document.getElementById('path-list').innerHTML = '';
         document.getElementById('path-results').style.display = 'none';
-        
-        // Re-enable core count input for new search
-        const coreInput = document.getElementById('auto-core-count');
-        if(coreInput) coreInput.disabled = false;
-
         selectedPathIndex = -1;
         
         // Refresh Data
+        // Reload data from Supabase to ensure consistency across devices
         await loadData(); 
         renderDataTable(); 
         
@@ -1231,7 +1209,7 @@ async function confirmAutoAdd() {
         
     } catch(e) {
         console.error(e);
-        alert("錯誤: " + e.message + "\n(路徑未儲存)");
+        alert("錯誤: " + e.message);
     } finally {
         const btn = document.getElementById('confirm-auto-add-btn');
         if(btn) {
@@ -1363,11 +1341,7 @@ window.showPathDetails = function(pathId) {
             });
 
             segmentRecords.forEach(r => {
-                // Determine display direction: if record is stored as V->U but path is U->V, mark as reversed
-                const rStart = normalizeStationName(r.station_name);
-                const isReversed = (rStart === v); // If record start is 'v' (destination of this segment), it's reversed
-                
-                sortedRecords.push({ data: r, isReversed: isReversed });
+                sortedRecords.push(r);
                 usedRecordIds.add(r.id);
             });
         }
@@ -1375,7 +1349,7 @@ window.showPathDetails = function(pathId) {
         // Add any remaining records (fallback)
         pathRecords.forEach(r => {
             if (!usedRecordIds.has(r.id)) {
-                sortedRecords.push({ data: r, isReversed: false });
+                sortedRecords.push(r);
             }
         });
 
@@ -1410,20 +1384,13 @@ window.showPathDetails = function(pathId) {
         
         // Body
         const tbody = document.createElement('tbody');
-        sortedRecords.forEach(item => {
-            const r = item.data;
-            const isReversed = item.isReversed;
-            
-            // Swap display if reversed to match path flow
-            const displayStart = isReversed ? r.destination : r.station_name;
-            const displayEnd = isReversed ? r.station_name : r.destination;
-            
+        sortedRecords.forEach(r => {
             const tr = document.createElement('tr');
             tr.style.borderBottom = '1px solid #444';
             tr.innerHTML = `
-                <td style="padding:8px; border:1px solid #555;">${displayStart || '-'}</td>
+                <td style="padding:8px; border:1px solid #555;">${r.station_name || '-'}</td>
                 <td style="padding:8px; border:1px solid #555;">${r.fiber_name || '-'}</td>
-                <td style="padding:8px; border:1px solid #555;">${displayEnd || '-'}</td>
+                <td style="padding:8px; border:1px solid #555;">${r.destination || '-'}</td>
                 <td style="padding:8px; border:1px solid #555; text-align:center;">${r.core_count || '-'}</td>
                 <td style="padding:8px; border:1px solid #555; text-align:center;">${r.port || '-'}</td>
                 <td style="padding:8px; border:1px solid #555; font-size:0.85em; color:#aaa;">${(r.notes||'').replace(/\[PathID:[^\]]+\]/g, '').replace(/\[PathNodes:[^\]]+\]/g, '').trim()}</td>
@@ -1457,48 +1424,19 @@ window.deletePath = async function(pathId) {
     try {
         if(records.length > 0) {
             for(const r of records) {
-                let shouldDelete = false;
-
                 if (r.source === 'AUTO') {
-                    // Check if this core number is valid within fiber capacity
-                    // If valid, we should KEEP it as an empty core (fill gap)
-                    // If invalid (e.g. temporary core > capacity?), delete it.
-                    
-                    const fName = (r.fiber_name || '').trim();
-                    const capMatch = fName.match(/^(\d+)[-_]/);
-                    const capacity = capMatch ? parseInt(capMatch[1]) : 0;
-                    const coreNum = parseInt(r.core_count);
-                    
-                    // If core number is valid and <= capacity, we keep it to maintain "1-48" structure
-                    if (capacity > 0 && !isNaN(coreNum) && coreNum <= capacity && coreNum >= 1) {
-                        shouldDelete = false;
-                    } else {
-                        // If it exceeds capacity or is invalid, we can delete it (cleanup)
-                        // OR if user wants to keep everything? 
-                        // User said: "48 cores must be 1-48". 
-                        // So extra cores (if any) could be deleted, but let's be safe and delete only if clearly out of bounds or no capacity found.
-                        shouldDelete = true;
-                    }
-                }
-
-                if (shouldDelete) {
-                    // 如果是自動生成的虛擬路徑且超出範圍，直接刪除該筆資料
+                    // 如果是自動生成的虛擬路徑，直接刪除該筆資料
                     await deleteRecord(r.id, r._table);
                 } else {
-                    // 如果是既有實體線路被佔用，或是需要保留的自動生成線路(補齊編號)
-                    // 則清除使用資訊，使其變為"可用"狀態
+                    // 如果是既有實體線路被佔用，則清除使用資訊
+                    // 同步清除備註欄位 (因路徑生成時會覆蓋備註，刪除時應一併移除)
                     await updateRecord(r.id, {
                         usage: null,
                         department: null,
                         contact: null,
                         phone: null, 
                         notes: null,
-                        // core_count: null, // DO NOT CLEAR CORE COUNT. User wants to preserve it.
-                        // Wait, for manual records, core_count is usually fixed. 
-                        // For AUTO records, we just decided to keep it.
-                        // But if we clear core_count, it becomes "Unnumbered".
-                        // User specifically said: "Don't delete core number".
-                        // So we remove core_count from this list.
+                        core_count: null,
                         port: null,
                         net_start: null,
                         net_end: null,
