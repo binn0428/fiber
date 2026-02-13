@@ -1086,36 +1086,6 @@ async function confirmAutoAdd() {
     // Save Path Nodes for visualization
     const noteWithId = (existingNotes ? existingNotes + ' ' : '') + `[PathID:${pathId}] [PathNodes:${path.nodes.join(',')}]`;
 
-    // Save to History Table (Supabase)
-    try {
-        const historyData = {
-            id: pathId,
-            start_station: path.originalStart,
-            end_station: path.originalEnd,
-            path_nodes: path.nodes, // Supabase handles array/jsonb automatically usually, or we stringify if text
-            usage: updates.usage,
-            department: updates.department,
-            contact: updates.contact,
-            notes: existingNotes,
-            // core_count: requiredCores, // Not in schema provided by user, but maybe useful? User didn't specify it in CREATE TABLE. 
-            // Wait, user provided explicit CREATE TABLE. I should follow it.
-            // But core_count is useful. I will remove it if it causes error, or check if I can add it. 
-            // The user's schema: id, created_at, start_station, end_station, path_nodes, usage, department, contact, notes, applicant.
-            // I should stick to these fields.
-            // Wait, who is 'applicant'? Maybe I can put something there or leave null.
-            applicant: null, 
-            created_at: new Date().toISOString()
-        };
-        // We need to ensure nodes is compatible. If Supabase column is text, JSON.stringify. If array/json, pass array.
-        // Assuming JSONB as per user schema.
-        // Actually, looking at previous memory/code, I should check how savePathHistory is implemented.
-        // But assuming standard JSON handling.
-        await savePathHistory(historyData);
-    } catch(historyError) {
-        console.error("Failed to save path history:", historyError);
-        // Don't block main flow
-    }
-
     try {
         // Use PRE-LOCKED rows from path generation to avoid re-search errors
         const recordsToUpdate = [];
@@ -1124,7 +1094,8 @@ async function confirmAutoAdd() {
         const data = getData(); // Get fresh data for verification
 
         // Helper to find next available core number for a specific link
-        // UPDATED: Finds the smallest available core numbers (Gap Filling) instead of just Max+1
+        // UPDATED: Finds the smallest available core numbers (Gap Filling)
+        // STRATEGY: 1. Global Unique (Strict) -> 2. Local Link (Fallback)
         const getAvailableCoreNumbers = (station, destination, fiberName, requiredCount) => {
             // Find all records for this specific link (A->B or B->A with same fiber)
             // Normalize names to be safe
@@ -1137,54 +1108,56 @@ async function confirmAutoAdd() {
             const capMatch = fName.match(/^(\d+)/); // Relaxed regex: just start with digits
             const capacity = capMatch ? parseInt(capMatch[1]) : 9999;
             
-            const existingCores = new Set(data.filter(d => {
-                const uNorm = normalizeStationName(d.station_name);
-                const vNorm = normalizeStationName(d.destination);
+            // Strategy 1: Global Unique Check
+            // Assumes Fiber Name is unique across the entire project
+            const globalUsedCores = new Set(data.filter(d => {
                 const fiber = (d.fiber_name || '').trim();
-                
-                // Match Direction 1: A->B
-                // const matchDirect = (uNorm === sNorm && vNorm === dNorm && fiber === fName);
-                // Match Direction 2: B->A (Bidirectional Check)
-                // const matchReverse = (uNorm === dNorm && vNorm === sNorm && fiber === fName);
-                
-                // return matchDirect || matchReverse;
-
-                // AGGRESSIVE MATCHING (Global Unique Fiber Name):
-                // If fiber name matches exactly, we consider the core used, REGARDLESS of the endpoints.
-                // This assumes that Fiber Names (e.g. 1.12_c5c6_1) are globally unique identifiers for a physical cable.
-                // If the user uses generic names (e.g. 96C) for multiple different cables, this will cause issues,
-                // but for specific IDs like the user provided, this is the only way to guarantee no duplicates.
-                
                 if (fiber === fName) return true;
-
-                // Previous Logic (Disabled in favor of Global Unique Check):
-                /*
-                if (fiber !== fName) return false;
-
-                const touchesStation = (uNorm === sNorm || uNorm === dNorm);
-                const touchesDest = (vNorm === sNorm || vNorm === dNorm);
-
-                // If it touches either end, count it as used.
-                return touchesStation || touchesDest;
-                */
-               return false;
+                return false;
             }).map(d => {
                 const num = parseInt(d.core_count);
                 return isNaN(num) ? 0 : num;
             }));
 
-            const available = [];
-            let candidate = 1;
-            while (available.length < requiredCount) {
-                if (candidate > capacity) break; // Enforce Capacity Limit
-
-                if (!existingCores.has(candidate)) {
-                    available.push(candidate);
+            const findAvailable = (usedSet) => {
+                const res = [];
+                let candidate = 1;
+                while (res.length < requiredCount) {
+                    if (candidate > capacity) break; 
+                    if (!usedSet.has(candidate)) {
+                        res.push(candidate);
+                    }
+                    candidate++;
+                    if (candidate > 1000) break; // Safety
                 }
-                candidate++;
-                // Safety break to prevent infinite loops in extreme cases
-                if (candidate > 1000) break;
+                return res;
+            };
+
+            let available = findAvailable(globalUsedCores);
+
+            // Strategy 2: Fallback to Local Link Check if Global Check fails
+            // This handles cases where Fiber Names are reused (e.g. generic names like "96C")
+            if (available.length < requiredCount) {
+                console.warn(`Global Unique Check failed for ${fName} (Found ${available.length}, Need ${requiredCount}). Falling back to Local Link Check.`);
+                
+                const localUsedCores = new Set(data.filter(d => {
+                    const uNorm = normalizeStationName(d.station_name);
+                    const vNorm = normalizeStationName(d.destination);
+                    const fiber = (d.fiber_name || '').trim();
+                    
+                    if (fiber !== fName) return false;
+
+                    // Check if it belongs to THIS link (A->B or B->A)
+                    const isSameLink = (uNorm === sNorm && vNorm === dNorm) || (uNorm === dNorm && vNorm === sNorm);
+                    return isSameLink;
+                }).map(d => {
+                    const num = parseInt(d.core_count);
+                    return isNaN(num) ? 0 : num;
+                }));
+
+                available = findAvailable(localUsedCores);
             }
+
             return available;
         };
 
@@ -1321,6 +1294,26 @@ async function confirmAutoAdd() {
             }
 
             await updateRecord(record.id, updatePayload, record._table);
+        }
+
+        // Save to History Table (Supabase) - ONLY AFTER SUCCESSFUL RECORD UPDATES
+        try {
+            const historyData = {
+                id: pathId,
+                start_station: path.originalStart,
+                end_station: path.originalEnd,
+                path_nodes: path.nodes, 
+                usage: updates.usage,
+                department: updates.department,
+                contact: updates.contact,
+                notes: existingNotes,
+                applicant: null, 
+                created_at: new Date().toISOString()
+            };
+            await savePathHistory(historyData);
+        } catch(historyError) {
+            console.error("Failed to save path history:", historyError);
+            // Non-blocking, but user should know? Maybe just log it.
         }
         
         alert("新增成功！路徑 ID: " + pathId);
