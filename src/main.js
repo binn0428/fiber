@@ -3665,6 +3665,43 @@ function openSiteDetails(siteName) {
                 displayRows.forEach(row => {
                      const tr = document.createElement('tr');
                      tr.style.borderBottom = '1px solid rgba(255,255,255,0.1)';
+                     tr.style.userSelect = 'none'; // Prevent text selection during long press
+
+                     // Long Press to Delete (Admin Only)
+                     let pressTimer;
+                     const startPress = () => {
+                         if (!isAdminLoggedIn) return;
+                         pressTimer = setTimeout(async () => {
+                             // Vibration feedback if supported
+                             if (navigator.vibrate) navigator.vibrate(50);
+                             
+                             if(confirm(`確定要刪除此芯線資料嗎？\n(芯號: ${row.core_count || '-'}, 光纖: ${row.fiber_name || '-'})`)) {
+                                 try {
+                                     tr.style.opacity = '0.3';
+                                     await deleteRecord(row.id, row._table);
+                                     tr.remove();
+                                     // Refresh global views
+                                     renderDashboard();
+                                     renderMap();
+                                 } catch(err) {
+                                     alert('刪除失敗: ' + err.message);
+                                     tr.style.opacity = '1';
+                                 }
+                             }
+                         }, 800);
+                     };
+                     const cancelPress = () => clearTimeout(pressTimer);
+
+                     tr.addEventListener('mousedown', startPress);
+                     tr.addEventListener('touchstart', startPress, {passive: true});
+                     tr.addEventListener('mouseup', cancelPress);
+                     tr.addEventListener('touchend', cancelPress);
+                     tr.addEventListener('mouseleave', cancelPress);
+                     tr.addEventListener('touchmove', cancelPress);
+                     tr.addEventListener('contextmenu', (e) => {
+                         // Prevent default context menu if we are logged in (assuming long press is intended)
+                         if(isAdminLoggedIn) e.preventDefault();
+                     });
                      
                      // Helper
                      const createEditableCell = (field, value, id) => {
