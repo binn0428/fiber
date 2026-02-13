@@ -76,6 +76,9 @@ onReady(() => {
     const mapControlsMenu = document.getElementById('map-controls-menu');
 
     if (mapControlsToggle && mapControlsMenu) {
+        // Remove existing listeners if any (though we can't easily, we just rely on main.js removing its block)
+        // Or better, let's just keep it here and remove from main.js
+        
         mapControlsToggle.addEventListener('click', (e) => {
             e.stopPropagation(); // Prevent document click from closing immediately
             mapControlsMenu.classList.toggle('active');

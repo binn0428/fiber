@@ -170,8 +170,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                     mgmtBtn.style.color = 'var(--warning-color)';
                     alert('已登出，編輯功能已鎖定。');
 
+                    // Hide all Admin-Only elements
+                    document.querySelectorAll('.admin-only').forEach(el => {
+                        el.style.display = 'none';
+                    });
+
                     if (saveMapBtn) saveMapBtn.style.display = 'none';
                     if (addLinkBtn) addLinkBtn.style.display = 'none';
+                    const addStationBtn = document.getElementById('add-station-btn');
+                    if (addStationBtn) addStationBtn.style.display = 'none'; // Ensure Add Station is hidden too
                     if (editMapBtn) {
                          editMapBtn.textContent = '✏️ 編輯架構';
                          editMapBtn.style.backgroundColor = 'var(--warning-color)';
@@ -222,6 +229,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     mgmtBtn.style.color = 'var(--success-color)';
                 }
 
+                // Show all Admin-Only elements
+                document.querySelectorAll('.admin-only').forEach(el => {
+                    el.style.display = 'inline-block';
+                });
+
                 if (saveMapBtn) saveMapBtn.style.display = 'inline-block';
 
                 alert('登入成功！現在可以使用編輯和匯入功能。');
@@ -268,36 +280,7 @@ if (saveConfigBtn) {
     });
 }
 
-// Map Controls Toggle Logic (Mobile)
-const mapControlsToggle = document.getElementById('map-controls-toggle');
-const mapControlsMenu = document.getElementById('map-controls-menu');
-
-if (mapControlsToggle && mapControlsMenu) {
-    mapControlsToggle.addEventListener('click', (e) => {
-        e.stopPropagation(); // Prevent document click from closing immediately
-        mapControlsMenu.classList.toggle('active');
-    });
-
-    // Close menu when clicking outside
-    document.addEventListener('click', (e) => {
-        if (window.innerWidth <= 768 && 
-            mapControlsMenu.classList.contains('active') && 
-            !mapControlsMenu.contains(e.target) && 
-            !mapControlsToggle.contains(e.target)) {
-            mapControlsMenu.classList.remove('active');
-        }
-    });
-    
-    // Close menu when clicking a button inside it
-    const actionBtns = mapControlsMenu.querySelectorAll('.action-btn');
-    actionBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            if (window.innerWidth <= 768) {
-                    mapControlsMenu.classList.remove('active');
-            }
-        });
-    });
-}
+// Map Controls Toggle Logic moved to mobile.js to prevent duplicate listeners
 
 // Restore Sidebar Button Logic
 const restoreSidebarBtn = document.getElementById('restore-sidebar-btn');
