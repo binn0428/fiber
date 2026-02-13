@@ -473,7 +473,11 @@ if (clearPathBtn) {
     clearPathBtn.addEventListener('click', () => {
         document.getElementById('auto-start-node').value = '';
         document.getElementById('auto-end-node').value = '';
-        document.getElementById('auto-core-count').value = '1';
+        const coreInput = document.getElementById('auto-core-count');
+        if(coreInput) {
+            coreInput.value = '1';
+            coreInput.disabled = false;
+        }
         
         // Clear results
         const resultsDiv = document.getElementById('path-results');
@@ -841,10 +845,16 @@ function generatePaths(start, end) {
         }
     }
 
+    // Disable input to prevent changes during selection
+    const coreInput = document.getElementById('auto-core-count');
+    if(coreInput) coreInput.disabled = true;
+
     // Attach original start/end inputs to each path for later use
     paths.forEach(p => {
         p.originalStart = start;
         p.originalEnd = end;
+        // Store the core count used for generation
+        p.generatedCoreCount = requiredCores;
     });
     
     currentGeneratedPaths = paths;
@@ -861,9 +871,11 @@ function renderPaths(paths) {
     container.innerHTML = '';
     if(formArea) formArea.style.display = 'none';
     
+    const requiredCores = parseInt(document.getElementById('auto-core-count').value) || 1;
+    
     if(paths.length === 0) {
         if(resultsArea) resultsArea.style.display = 'block';
-        container.innerHTML = '<div class="no-data" style="padding:10px; color:#aaa;">找不到符合條件的可用路徑 (或無可用芯線)</div>';
+        container.innerHTML = `<div class="no-data" style="padding:10px; color:#aaa;">找不到符合條件的可用路徑<br>(無足夠連續區段或芯線不足 ${requiredCores} 芯)</div>`;
         // Debug info if needed
         console.log("No paths found. Check if start/end exist in graph and have enough available cores.");
         return;
@@ -963,8 +975,13 @@ async function confirmAutoAdd() {
     if(selectedPathIndex === -1) return;
     
     const path = currentGeneratedPaths[selectedPathIndex];
-    // Get required core count from input, default to 1
-    const requiredCores = parseInt(document.getElementById('auto-core-count').value.trim()) || 1;
+    // Get required core count from input or path metadata
+    let requiredCores = 1;
+    if (path.generatedCoreCount) {
+        requiredCores = path.generatedCoreCount;
+    } else {
+        requiredCores = parseInt(document.getElementById('auto-core-count').value.trim()) || 1;
+    }
 
     const updates = {
         usage: document.getElementById('auto-usage').value.trim(),
@@ -1192,12 +1209,17 @@ async function confirmAutoAdd() {
         
         alert("新增成功！路徑 ID: " + pathId);
         
-        // Clear Form
+        // Clear Form and reset UI
         document.getElementById('auto-usage').value = '';
         document.getElementById('auto-notes').value = '';
         document.getElementById('path-details-form').style.display = 'none';
         document.getElementById('path-list').innerHTML = '';
         document.getElementById('path-results').style.display = 'none';
+        
+        // Re-enable core count input for new search
+        const coreInput = document.getElementById('auto-core-count');
+        if(coreInput) coreInput.disabled = false;
+
         selectedPathIndex = -1;
         
         // Refresh Data
