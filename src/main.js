@@ -907,6 +907,11 @@ function generatePaths(start, end) {
                              const key = `${current}|${neighbor}|${r.fiber_name}|${r.core_count}`;
                              if (linkUsedCores.has(key)) return false;
                          }
+
+                         // User Request: Do not assign M-starting core/fiber (e.g. M1, M-Cable)
+                         if (r.core_count && String(r.core_count).trim().toUpperCase().startsWith('M')) return false;
+                         if (r.fiber_name && r.fiber_name.trim().toUpperCase().startsWith('M')) return false;
+
                          return true;
                     });
                 }
