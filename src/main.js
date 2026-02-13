@@ -1610,75 +1610,96 @@ window.fixCoreGaps = async function() {
     
     if(!confirm("這將掃描所有光纖線路，並為缺失的芯線 (1 ~ 上限) 補齊空記錄。\n可能需要一些時間，確定執行？")) return;
     
-    const data = getData();
-    const recordsToCreate = [];
-    
-    // Group by Link (Station + Dest + FiberName)
-    const links = {};
-    data.forEach(d => {
-        // Use normalized names for grouping? Or strict?
-        // Since we are checking gaps within a fiber, strict names are safer to avoid cross-link pollution
-        const key = `${d.station_name}|${d.destination}|${d.fiber_name}`;
-        if(!links[key]) links[key] = [];
-        links[key].push(d);
-    });
-    
-    for(const key in links) {
-        const rows = links[key];
-        if(rows.length === 0) continue;
+    const overlay = document.getElementById('progress-overlay');
+    const bar = document.getElementById('progress-bar');
+    const text = document.getElementById('progress-text');
+
+    if (overlay) {
+        overlay.style.display = 'flex';
+        if(text) text.innerText = "掃描中...";
+        if(bar) bar.style.width = '0%';
+    }
+
+    try {
+        // Wait a tick for UI to update
+        await new Promise(r => setTimeout(r, 100));
+
+        const data = getData();
+        const recordsToCreate = [];
         
-        const fName = rows[0].fiber_name || '';
-        // Parse Capacity
-        const match = fName.match(/^(\d+)/);
-        if(!match) continue; // No capacity prefix, skip
-        
-        const capacity = parseInt(match[1]);
-        if(isNaN(capacity) || capacity <= 0) continue;
-        
-        // Find existing core numbers
-        const existingCores = new Set();
-        rows.forEach(r => {
-            const c = parseInt(r.core_count);
-            if(!isNaN(c)) existingCores.add(c);
+        // Group by Link (Station + Dest + FiberName)
+        const links = {};
+        data.forEach(d => {
+            const key = `${d.station_name}|${d.destination}|${d.fiber_name}`;
+            if(!links[key]) links[key] = [];
+            links[key].push(d);
         });
         
-        // Check for gaps
-        for(let i=1; i<=capacity; i++) {
-            if(!existingCores.has(i)) {
-                // Found gap
-                recordsToCreate.push({
-                    station_name: rows[0].station_name,
-                    destination: rows[0].destination,
-                    fiber_name: rows[0].fiber_name,
-                    core_count: String(i),
-                    usage: '',
-                    source: 'AUTO-FIX'
-                });
+        for(const key in links) {
+            const rows = links[key];
+            if(rows.length === 0) continue;
+            
+            const fName = rows[0].fiber_name || '';
+            const match = fName.match(/^(\d+)/);
+            if(!match) continue;
+            
+            const capacity = parseInt(match[1]);
+            if(isNaN(capacity) || capacity <= 0) continue;
+            
+            const existingCores = new Set();
+            rows.forEach(r => {
+                const c = parseInt(r.core_count);
+                if(!isNaN(c)) existingCores.add(c);
+            });
+            
+            for(let i=1; i<=capacity; i++) {
+                if(!existingCores.has(i)) {
+                    recordsToCreate.push({
+                        station_name: rows[0].station_name,
+                        destination: rows[0].destination,
+                        fiber_name: rows[0].fiber_name,
+                        core_count: String(i),
+                        usage: '',
+                        department: '',
+                        note: '',
+                        net_start: '',
+                        net_end: ''
+                        // source removed to avoid usage classification
+                    });
+                }
             }
         }
-    }
-    
-    if(recordsToCreate.length === 0) {
-        alert("檢查完成：沒有發現缺失的芯線。");
-        return;
-    }
-    
-    if(!confirm(`檢查完成：發現 ${recordsToCreate.length} 筆缺失的芯線記錄。\n是否立即建立？`)) return;
-    
-    try {
-        let count = 0;
-        // Batch create? Or loop?
-        // Supabase/API might rate limit. Loop with small delay or just loop.
-        // Assuming addRecord handles it.
         
-        // Show progress
-        const btn = document.activeElement; // The button that triggered this
+        if (overlay) overlay.style.display = 'none';
+
+        if(recordsToCreate.length === 0) {
+            alert("檢查完成：沒有發現缺失的芯線。");
+            return;
+        }
+        
+        if(!confirm(`檢查完成：發現 ${recordsToCreate.length} 筆缺失的芯線記錄。\n是否立即建立？`)) return;
+        
+        if (overlay) {
+            overlay.style.display = 'flex';
+            if(text) text.innerText = `準備建立 ${recordsToCreate.length} 筆記錄...`;
+            if(bar) bar.style.width = '0%';
+        }
+
+        let count = 0;
+        const btn = document.activeElement;
         if(btn) btn.disabled = true;
         
         for(const rec of recordsToCreate) {
              await addRecord(rec);
              count++;
-             if(count % 10 === 0) console.log(`Fixed ${count}/${recordsToCreate.length}`);
+             
+             if (overlay && bar && text) {
+                 const pct = Math.round((count / recordsToCreate.length) * 100);
+                 bar.style.width = `${pct}%`;
+                 text.innerText = `建立中: ${count} / ${recordsToCreate.length}`;
+             }
+             // Small delay to allow UI update
+             if(count % 5 === 0) await new Promise(r => setTimeout(r, 10));
         }
         
         alert(`已成功補齊 ${count} 筆芯線記錄！`);
@@ -1689,6 +1710,7 @@ window.fixCoreGaps = async function() {
         console.error(e);
         alert("補齊過程發生錯誤: " + e.message);
     } finally {
+        if (overlay) overlay.style.display = 'none';
         const btn = document.activeElement;
         if(btn) btn.disabled = false;
     }
