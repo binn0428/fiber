@@ -862,6 +862,11 @@ function generatePaths(start, end) {
                 // Get available rows for this link
                 let availableRows = graph[current][neighbor];
                 
+                // 0. Strict Availability Filter (Fix for duplicate assignment)
+                if (availableRows) {
+                    availableRows = availableRows.filter(r => isRowAvailable(r));
+                }
+
                 // 1. Filter by Capacity (from Fiber Name Prefix)
                 // e.g. "48_aa_1" -> Max 48 cores. "24-bb-2" -> Max 24 cores.
                 if (availableRows.length > 0) {
