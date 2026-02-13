@@ -343,7 +343,7 @@ async function fixGapsForLink(rows, currentSiteName) {
             core_count: String(coreNum),
             usage: '',
             department: '',
-            note: '',
+            notes: '',
             net_start: '',
             net_end: ''
         };
@@ -1761,7 +1761,7 @@ window.fixCoreGaps = async function() {
                         core_count: String(i),
                         usage: '',
                         department: '',
-                        note: '',
+                        notes: '',
                         net_start: '',
                         net_end: ''
                         // source removed to avoid usage classification
