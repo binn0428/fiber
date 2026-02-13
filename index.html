@@ -363,5 +363,15 @@
             </form>
         </div>
     </div>
+    <!-- Progress Overlay -->
+    <div id="progress-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 9999; justify-content: center; align-items: center; flex-direction: column;">
+        <div style="background: white; padding: 20px; border-radius: 8px; width: 80%; max-width: 400px; text-align: center;">
+            <h3 style="color: #333; margin-bottom: 15px;">處理中...</h3>
+            <div style="width: 100%; background: #eee; height: 20px; border-radius: 10px; overflow: hidden; margin-bottom: 10px;">
+                <div id="progress-bar" style="width: 0%; height: 100%; background: #4caf50; transition: width 0.3s;"></div>
+            </div>
+            <p id="progress-text" style="color: #666; font-size: 14px;">0 / 0</p>
+        </div>
+    </div>
 </body>
 </html>
