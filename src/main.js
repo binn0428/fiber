@@ -992,36 +992,7 @@ async function confirmAutoAdd() {
     // Save Path Nodes for visualization
     const noteWithId = (existingNotes ? existingNotes + ' ' : '') + `[PathID:${pathId}] [PathNodes:${path.nodes.join(',')}]`;
 
-    // Save to History Table (Supabase)
-    try {
-        const historyData = {
-            id: pathId,
-            start_station: path.originalStart,
-            end_station: path.originalEnd,
-            path_nodes: path.nodes, // Supabase handles array/jsonb automatically usually, or we stringify if text
-            usage: updates.usage,
-            department: updates.department,
-            contact: updates.contact,
-            notes: existingNotes,
-            // core_count: requiredCores, // Not in schema provided by user, but maybe useful? User didn't specify it in CREATE TABLE. 
-            // Wait, user provided explicit CREATE TABLE. I should follow it.
-            // But core_count is useful. I will remove it if it causes error, or check if I can add it. 
-            // The user's schema: id, created_at, start_station, end_station, path_nodes, usage, department, contact, notes, applicant.
-            // I should stick to these fields.
-            // Wait, who is 'applicant'? Maybe I can put something there or leave null.
-            applicant: null, 
-            created_at: new Date().toISOString()
-        };
-        // We need to ensure nodes is compatible. If Supabase column is text, JSON.stringify. If array/json, pass array.
-        // Assuming JSONB as per user schema.
-        // Actually, looking at previous memory/code, I should check how savePathHistory is implemented.
-        // But assuming standard JSON handling.
-        await savePathHistory(historyData);
-    } catch(historyError) {
-        console.error("Failed to save path history:", historyError);
-        // Don't block main flow
-    }
-
+    // 1. Validate & Prepare Updates (Locking)
     try {
         // Use PRE-LOCKED rows from path generation to avoid re-search errors
         const recordsToUpdate = [];
@@ -1048,32 +1019,10 @@ async function confirmAutoAdd() {
                 const vNorm = normalizeStationName(d.destination);
                 const fiber = (d.fiber_name || '').trim();
                 
-                // Match Direction 1: A->B
-                // const matchDirect = (uNorm === sNorm && vNorm === dNorm && fiber === fName);
-                // Match Direction 2: B->A (Bidirectional Check)
-                // const matchReverse = (uNorm === dNorm && vNorm === sNorm && fiber === fName);
-                
-                // return matchDirect || matchReverse;
-
                 // AGGRESSIVE MATCHING (Global Unique Fiber Name):
-                // If fiber name matches exactly, we consider the core used, REGARDLESS of the endpoints.
-                // This assumes that Fiber Names (e.g. 1.12_c5c6_1) are globally unique identifiers for a physical cable.
-                // If the user uses generic names (e.g. 96C) for multiple different cables, this will cause issues,
-                // but for specific IDs like the user provided, this is the only way to guarantee no duplicates.
-                
                 if (fiber === fName) return true;
 
-                // Previous Logic (Disabled in favor of Global Unique Check):
-                /*
-                if (fiber !== fName) return false;
-
-                const touchesStation = (uNorm === sNorm || uNorm === dNorm);
-                const touchesDest = (vNorm === sNorm || vNorm === dNorm);
-
-                // If it touches either end, count it as used.
-                return touchesStation || touchesDest;
-                */
-               return false;
+                return false;
             }).map(d => {
                 const num = parseInt(d.core_count);
                 return isNaN(num) ? 0 : num;
@@ -1102,8 +1051,7 @@ async function confirmAutoAdd() {
 
         for(const segment of path.records) {
             if(!segment.records && segment.rows) { 
-                // Compatibility handle: my previous code used 'rows', but let's be safe. 
-                // In generatePaths I used: records: [...records, { from: current, to: neighbor, rows: lockedRows }]
+                // Compatibility handle
             }
             
             if(!segment.rows || segment.rows.length < requiredCores) {
@@ -1112,10 +1060,6 @@ async function confirmAutoAdd() {
             
             // Pre-calculate how many new core assignments are needed for this segment
             const rowsNeedingAssignment = segment.rows.filter(r => r._generated || !r.core_count);
-            
-            // Group by physical link to batch-request available cores
-            // This is important if a segment uses multiple fibers? (Unlikely in current logic, usually 1 fiber per segment)
-            // But let's handle it by link key.
             
             for(const row of rowsNeedingAssignment) {
                  // Check if it's a real row (unused) that just lacks core_count, or a virtual row
@@ -1134,7 +1078,6 @@ async function confirmAutoAdd() {
                       // Initialize cache if needed
                       if (!allocatedCoresCache[key]) {
                           // We need to count how many rows for THIS link need assignment in this batch
-                          // To avoid calling getAvailableCoreNumbers multiple times and getting same results
                           const countForLink = rowsNeedingAssignment.filter(r => 
                               `${r.station_name}|${r.destination}|${r.fiber_name}` === key
                           ).length;
@@ -1190,7 +1133,11 @@ async function confirmAutoAdd() {
         document.getElementById('confirm-auto-add-btn').disabled = true;
         document.getElementById('confirm-auto-add-btn').innerText = "處理中...";
         
-        // 1. Create New Records for Passthrough Edges
+        // 2. Execute Record Updates (Create/Update)
+        // We do this BEFORE saving history to ensure data integrity.
+        // If this fails, we catch error and do NOT save history.
+        
+        // 2.1 Create New Records for Passthrough Edges
         for (const row of recordsToCreate) {
              const newRecord = {
                  station_name: row.station_name,
@@ -1210,7 +1157,7 @@ async function confirmAutoAdd() {
              await addRecord(newRecord);
         }
 
-        // 2. Update Existing Records
+        // 2.2 Update Existing Records
         for(const record of recordsToUpdate) {
             // Append PathID to EXISTING record notes to preserve history if any
             const currentRecordNotes = record.notes ? String(record.notes) : '';
@@ -1227,6 +1174,21 @@ async function confirmAutoAdd() {
 
             await updateRecord(record.id, updatePayload, record._table);
         }
+
+        // 3. Save to History Table (Supabase) - Only if records updated successfully
+        const historyData = {
+            id: pathId,
+            start_station: path.originalStart,
+            end_station: path.originalEnd,
+            path_nodes: path.nodes, 
+            usage: updates.usage,
+            department: updates.department,
+            contact: updates.contact,
+            notes: existingNotes,
+            applicant: null, 
+            created_at: new Date().toISOString()
+        };
+        await savePathHistory(historyData);
         
         alert("新增成功！路徑 ID: " + pathId);
         
@@ -1239,7 +1201,6 @@ async function confirmAutoAdd() {
         selectedPathIndex = -1;
         
         // Refresh Data
-        // Reload data from Supabase to ensure consistency across devices
         await loadData(); 
         renderDataTable(); 
         
@@ -1248,7 +1209,7 @@ async function confirmAutoAdd() {
         
     } catch(e) {
         console.error(e);
-        alert("錯誤: " + e.message);
+        alert("錯誤: " + e.message + "\n(路徑未儲存)");
     } finally {
         const btn = document.getElementById('confirm-auto-add-btn');
         if(btn) {
@@ -1474,19 +1435,48 @@ window.deletePath = async function(pathId) {
     try {
         if(records.length > 0) {
             for(const r of records) {
+                let shouldDelete = false;
+
                 if (r.source === 'AUTO') {
-                    // 如果是自動生成的虛擬路徑，直接刪除該筆資料
+                    // Check if this core number is valid within fiber capacity
+                    // If valid, we should KEEP it as an empty core (fill gap)
+                    // If invalid (e.g. temporary core > capacity?), delete it.
+                    
+                    const fName = (r.fiber_name || '').trim();
+                    const capMatch = fName.match(/^(\d+)[-_]/);
+                    const capacity = capMatch ? parseInt(capMatch[1]) : 0;
+                    const coreNum = parseInt(r.core_count);
+                    
+                    // If core number is valid and <= capacity, we keep it to maintain "1-48" structure
+                    if (capacity > 0 && !isNaN(coreNum) && coreNum <= capacity && coreNum >= 1) {
+                        shouldDelete = false;
+                    } else {
+                        // If it exceeds capacity or is invalid, we can delete it (cleanup)
+                        // OR if user wants to keep everything? 
+                        // User said: "48 cores must be 1-48". 
+                        // So extra cores (if any) could be deleted, but let's be safe and delete only if clearly out of bounds or no capacity found.
+                        shouldDelete = true;
+                    }
+                }
+
+                if (shouldDelete) {
+                    // 如果是自動生成的虛擬路徑且超出範圍，直接刪除該筆資料
                     await deleteRecord(r.id, r._table);
                 } else {
-                    // 如果是既有實體線路被佔用，則清除使用資訊
-                    // 同步清除備註欄位 (因路徑生成時會覆蓋備註，刪除時應一併移除)
+                    // 如果是既有實體線路被佔用，或是需要保留的自動生成線路(補齊編號)
+                    // 則清除使用資訊，使其變為"可用"狀態
                     await updateRecord(r.id, {
                         usage: null,
                         department: null,
                         contact: null,
                         phone: null, 
                         notes: null,
-                        core_count: null,
+                        // core_count: null, // DO NOT CLEAR CORE COUNT. User wants to preserve it.
+                        // Wait, for manual records, core_count is usually fixed. 
+                        // For AUTO records, we just decided to keep it.
+                        // But if we clear core_count, it becomes "Unnumbered".
+                        // User specifically said: "Don't delete core number".
+                        // So we remove core_count from this list.
                         port: null,
                         net_start: null,
                         net_end: null,
