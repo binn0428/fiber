@@ -633,6 +633,24 @@ function normalizeStationName(name) {
     return clean.trim().toUpperCase();
 }
 
+function isRowAvailable(r) {
+    // Strict Availability Check:
+    // A core is considered available ONLY if all user-fillable fields are empty.
+    // Structural fields (station_name, destination, fiber_name, core_count, port) are allowed.
+    
+    if (r.usage && r.usage.trim() !== '') return false;
+    if (r.department && r.department.trim() !== '') return false;
+    if (r.contact && r.contact.trim() !== '') return false;
+    if (r.notes && r.notes.trim() !== '') return false;
+    if (r.net_start && r.net_start.trim() !== '') return false;
+    if (r.net_end && r.net_end.trim() !== '') return false;
+    
+    // Check other potential fields if they imply usage
+    if (r.applicant && r.applicant.trim() !== '') return false;
+    
+    return true;
+}
+
 function generatePaths(start, end) {
     const data = getData();
     // Get required core count from input, default to 1
@@ -699,9 +717,8 @@ function generatePaths(start, end) {
         if(!row.station_name) return;
         
         const uNorm = normalizeStationName(row.station_name);
-        // Check availability
-        const isAvailable = !row.usage || row.usage.trim() === '';
-        if(!isAvailable) return;
+        // Check availability (Strict Check)
+        if(!isRowAvailable(row)) return;
 
         // Determine Potential Destinations
         // 1. Explicit Destination
@@ -775,7 +792,7 @@ function generatePaths(start, end) {
                          // FIX: We need to inject enough virtual rows to satisfy the 'requiredCores' count.
                          // Otherwise, path finding will fail if user requests e.g. 2 cores but we only have 1 virtual row.
                          
-                         const availableCount = graph[u][v].filter(r => r.fiber_name === fName && (!r.usage || r.usage === '')).length;
+                         const availableCount = graph[u][v].filter(r => r.fiber_name === fName && isRowAvailable(r)).length;
                          
                          if (availableCount < requiredCores) {
                              const needed = requiredCores - availableCount;
@@ -1133,31 +1150,12 @@ async function confirmAutoAdd() {
                 return res;
             };
 
-            let available = findAvailable(globalUsedCores);
-
-            // Strategy 2: Fallback to Local Link Check if Global Check fails
-            // This handles cases where Fiber Names are reused (e.g. generic names like "96C")
-            if (available.length < requiredCount) {
-                console.warn(`Global Unique Check failed for ${fName} (Found ${available.length}, Need ${requiredCount}). Falling back to Local Link Check.`);
-                
-                const localUsedCores = new Set(data.filter(d => {
-                    const uNorm = normalizeStationName(d.station_name);
-                    const vNorm = normalizeStationName(d.destination);
-                    const fiber = (d.fiber_name || '').trim();
-                    
-                    if (fiber !== fName) return false;
-
-                    // Check if it belongs to THIS link (A->B or B->A)
-                    const isSameLink = (uNorm === sNorm && vNorm === dNorm) || (uNorm === dNorm && vNorm === sNorm);
-                    return isSameLink;
-                }).map(d => {
-                    const num = parseInt(d.core_count);
-                    return isNaN(num) ? 0 : num;
-                }));
-
-                available = findAvailable(localUsedCores);
-            }
-
+            const available = findAvailable(globalUsedCores);
+            
+            // Strategy 2: Removed to prevent duplicates. 
+            // If Global Check fails, it means all core numbers are taken globally.
+            // We should NOT create a duplicate core number on a local link.
+            
             return available;
         };
 
@@ -1234,7 +1232,7 @@ async function confirmAutoAdd() {
                  if(!freshRow) {
                       throw new Error(`芯線資料過期 (ID: ${row.id})，請重新搜尋。`);
                  }
-                 if(freshRow.usage && freshRow.usage.trim() !== '') {
+                 if(!isRowAvailable(freshRow)) {
                       throw new Error(`芯線已被佔用 (${freshRow.station_name} ${freshRow.fiber_name})，請重新搜尋。`);
                  }
                  
