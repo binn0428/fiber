@@ -712,15 +712,49 @@ function generatePaths(start, end) {
 
     // 2. Build Graph: Adjacency List (Normalized Nodes)
     const graph = {};
-    
+    const linkUsedCores = new Set(); // Stores "u|v|fiber|core" for USED cores (Bidirectional)
+
     data.forEach(row => {
         if(!row.station_name) return;
         
         const uNorm = normalizeStationName(row.station_name);
         // Check availability (Strict Check)
         const available = isRowAvailable(row);
-        // console.log(`Row ${row.id}: Available=${available}`, row); 
-        if(!available) return;
+        
+        // If row is used, record it to block reverse path assignment
+        if(!available) {
+             if (row.core_count && row.fiber_name) {
+                 const fName = row.fiber_name.trim();
+                 const cCount = String(row.core_count).trim();
+                 
+                 // Determine destination to block
+                 let dests = [];
+                 if(row.destination) {
+                     dests.push(normalizeStationName(row.destination));
+                 } else {
+                     // Try to infer destination using fiberDestinations (built in step 1)
+                     // or physicalAdj if fiber matches
+                     if (fiberDestinations[uNorm] && fiberDestinations[uNorm][fName]) {
+                         fiberDestinations[uNorm][fName].forEach(v => dests.push(v));
+                     } else if (globalFiberDestinations[fName]) {
+                          globalFiberDestinations[fName].forEach(v => {
+                              if (physicalAdj[uNorm] && physicalAdj[uNorm].has(v)) {
+                                  dests.push(v);
+                              }
+                          });
+                     }
+                 }
+                 
+                 dests.forEach(vNorm => {
+                     if (vNorm) {
+                         // Block both directions for this core
+                         linkUsedCores.add(`${uNorm}|${vNorm}|${fName}|${cCount}`);
+                         linkUsedCores.add(`${vNorm}|${uNorm}|${fName}|${cCount}`);
+                     }
+                 });
+             }
+             return;
+        }
 
         // Determine Potential Destinations
         // 1. Explicit Destination
@@ -864,7 +898,17 @@ function generatePaths(start, end) {
                 
                 // 0. Strict Availability Filter (Fix for duplicate assignment)
                 if (availableRows) {
-                    availableRows = availableRows.filter(r => isRowAvailable(r));
+                    availableRows = availableRows.filter(r => {
+                         if (!isRowAvailable(r)) return false;
+                         
+                         // Check Bidirectional Usage
+                         // If this core is used in ANY direction on this link, filter it out.
+                         if (r.fiber_name && r.core_count) {
+                             const key = `${current}|${neighbor}|${r.fiber_name}|${r.core_count}`;
+                             if (linkUsedCores.has(key)) return false;
+                         }
+                         return true;
+                    });
                 }
 
                 // 1. Filter by Capacity (from Fiber Name Prefix)
