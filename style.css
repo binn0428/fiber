@@ -480,6 +480,19 @@ tr:hover {
 
     #mobile-menu-btn {
         display: flex;
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        z-index: 1000;
+        background-color: rgba(31, 41, 55, 0.8);
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        padding: 8px;
+        cursor: pointer;
+        color: white;
+        font-size: 1.2rem;
+        align-items: center;
+        justify-content: center;
     }
 
     .main-content {
