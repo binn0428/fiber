@@ -718,7 +718,9 @@ function generatePaths(start, end) {
         
         const uNorm = normalizeStationName(row.station_name);
         // Check availability (Strict Check)
-        if(!isRowAvailable(row)) return;
+        const available = isRowAvailable(row);
+        // console.log(`Row ${row.id}: Available=${available}`, row); 
+        if(!available) return;
 
         // Determine Potential Destinations
         // 1. Explicit Destination
@@ -794,6 +796,8 @@ function generatePaths(start, end) {
                          
                          const availableCount = graph[u][v].filter(r => r.fiber_name === fName && isRowAvailable(r)).length;
                          
+                         // console.log(`Link ${u}->${v} Fiber ${fName}: Available Real=${availableCount}, Required=${requiredCores}`);
+
                          if (availableCount < requiredCores) {
                              const needed = requiredCores - availableCount;
                              for(let i=0; i<needed; i++) {
@@ -937,6 +941,7 @@ function generatePaths(start, end) {
                 });
 
                 if (availableRows.length < requiredCores) {
+                     // console.log(`Link ${current}->${neighbor} Skipped: Available=${availableRows.length} < Required=${requiredCores}`);
                      continue;
                 }
 
@@ -1118,7 +1123,7 @@ async function confirmAutoAdd() {
             // Normalize names to be safe
             const sNorm = normalizeStationName(station);
             const dNorm = normalizeStationName(destination);
-            const fName = fiberName.trim();
+            const fName = (fiberName || '').trim();
 
             // Extract Capacity from Fiber Name
             // e.g. "48_aa_1" -> 48. "24-bb" -> 24.
@@ -1152,9 +1157,35 @@ async function confirmAutoAdd() {
 
             const available = findAvailable(globalUsedCores);
             
-            // Strategy 2: Removed to prevent duplicates. 
-            // If Global Check fails, it means all core numbers are taken globally.
-            // We should NOT create a duplicate core number on a local link.
+            // Strategy 2: Local Link Fallback (Restored with Strict Logic)
+            // If Global Check fails (likely due to reused Fiber Names), fallback to checking ONLY this link.
+            // We must ensure we don't assign a number that is ALREADY present on this link.
+            if (available.length < requiredCount) {
+                console.warn(`Global Unique Check failed for ${fName}. Falling back to Local Link Check.`);
+                
+                const localUsedCores = new Set(data.filter(d => {
+                    const uNorm = normalizeStationName(d.station_name);
+                    const vNorm = normalizeStationName(d.destination);
+                    const fiber = (d.fiber_name || '').trim();
+                    
+                    if (fiber !== fName) return false;
+
+                    // Check if it belongs to THIS link (A->B or B->A)
+                    const isSameLink = (uNorm === sNorm && vNorm === dNorm) || (uNorm === dNorm && vNorm === sNorm);
+                    return isSameLink;
+                }).map(d => {
+                    const num = parseInt(d.core_count);
+                    return isNaN(num) ? 0 : num;
+                }));
+
+                // Re-run findAvailable with local set
+                const localAvailable = findAvailable(localUsedCores);
+                
+                // If we found enough locally, use them
+                if (localAvailable.length >= requiredCount) {
+                    return localAvailable;
+                }
+            }
             
             return available;
         };
