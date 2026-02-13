@@ -774,7 +774,23 @@ function generatePaths(start, end) {
         });
     });
     
-    // 2.5 Inject Passthrough Edges (Bridging Gaps)
+    // 2.5 Bidirectional Graph Completion (Moved Up)
+    // Ensures that if A->B exists but B->A is missing, we populate B->A with A->B's rows.
+    // This allows using the "Reverse" direction of an existing link if available.
+    for(const u in graph) {
+        for(const v in graph[u]) {
+            // u -> v exists.
+            // Check v -> u
+            if(!graph[v]) graph[v] = {};
+            if(!graph[v][u]) {
+                 // v -> u missing. 
+                 // Copy rows from u->v to v->u
+                 graph[v][u] = [...graph[u][v]];
+            }
+        }
+    }
+
+    // 2.6 Inject Passthrough Edges (Bridging Gaps)
     // For nodes like PCU8 that might be physically connected but lack specific available records for a fiber,
     // we use global fiber knowledge + physical topology to inject virtual edges.
     // This solves the issue where a path exists (fiber continues) but intermediate records are missing or reserved.
@@ -814,62 +830,6 @@ function generatePaths(start, end) {
                 });
             }
         });
-    }
-
-    // Fallback for Reverse Connectivity where downstream data is missing
-    // If A->B exists (explicit), but B has NO record for this fiber.
-    // The user wants "Bidirectional Inference".
-    // If we only have A->B, can we traverse B->A?
-    // If we traverse B->A using A's row, we are essentially using the cable.
-    // Let's re-add the explicit reverse injection BUT be careful.
-    // The user said "First determine physical connection".
-    // If A connects to B.
-    // We can infer B connects to A.
-    // If B has no data, we can create a "Virtual Row" or reuse A's row for the return path?
-    // Reuse A's row is dangerous for updates.
-    // Better approach:
-    // If A->B is established by Row A.
-    // And we need B->A.
-    // Check if graph[vNorm][uNorm] exists.
-    // If not, maybe inject Row A as a placeholder?
-    // But confirmAutoAdd needs to update.
-    // If we update Row A, it marks the core used.
-    // That should be enough for the link?
-    // Let's stick to: "Only lock rows that exist".
-    // If B has no row, we don't lock B.
-    // But we still need the EDGE in the graph to traverse.
-    
-    // Post-Process Graph to ensure Bidirectionality
-    for(const u in graph) {
-        for(const v in graph[u]) {
-            // u -> v exists.
-            // Check v -> u
-            if(!graph[v]) graph[v] = {};
-            if(!graph[v][u]) {
-                 // v -> u missing. 
-                 // It implies v has no available rows for this link.
-                 // OR v's rows are full.
-                 // OR v's rows are missing destination/inference.
-                 
-                 // If we want to allow traversal B->A even if B has no data:
-                 // We can inject the SAME rows from A->B into B->A?
-                 // This effectively treats the cable as a single resource managed at A.
-                 // This is common in simple fiber mgmt.
-                 // Let's do this:
-                 // graph[v][u] = graph[u][v]; 
-                 // But wait, graph[u][v] contains rows with 'id'.
-                 // If we use them for B->A, confirmAutoAdd will try to lock them.
-                 // It will lock Row A.
-                 // That's fine! Locking Row A marks the cable used.
-                 graph[v][u] = [...graph[u][v]];
-            } else {
-                 // v -> u exists (has its own rows).
-                 // We combine them? Or keep separate?
-                 // If we have rows at B, we should prefer them.
-                 // But if we run out of rows at B?
-                 // Let's just keep what we found.
-            }
-        }
     }
     
     // 3. BFS to find paths
