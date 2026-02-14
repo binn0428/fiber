@@ -481,23 +481,38 @@ tr:hover {
     #mobile-menu-btn {
         display: flex;
         position: fixed;
-        top: 10px;
-        left: 10px;
+        top: 5px;
+        left: 5px;
         z-index: 1000;
-        background-color: rgba(31, 41, 55, 0.8);
+        background-color: rgba(31, 41, 55, 0.9);
         border: 1px solid var(--border-color);
         border-radius: 4px;
-        padding: 8px;
+        padding: 4px;
         cursor: pointer;
         color: white;
-        font-size: 1.2rem;
+        font-size: 1rem;
+        width: 32px;
+        height: 32px;
         align-items: center;
         justify-content: center;
     }
 
     .main-content {
         padding: 1rem;
-        padding-top: 4rem; /* Space for menu btn */
+        padding-top: 10px; /* Reduced from 4rem for compact top alignment */
+    }
+
+    /* Compact Header for Mobile */
+    .view-section h2 {
+        font-size: 1.1rem;
+        margin-left: 40px; /* Space for the menu button */
+        margin-bottom: 0.75rem;
+        margin-top: 4px; /* Align with button */
+        line-height: 1.5;
+        border-bottom: 1px solid var(--border-color);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .modal-content {
@@ -912,6 +927,8 @@ tr:hover {
         background-color: rgba(0,0,0,0.2); /* Slight background to distinguish */
         border-radius: 4px;
         padding: 0 0.5rem;
+        margin-left: 36px; /* Avoid overlap with global menu button */
+        width: calc(100% - 36px);
     }
 
     #map-controls-toggle {
